@@ -13,6 +13,7 @@ const usage = `pdfspec - PDF tooling that does not fight you
 usage: pdfspec <command> [flags] <file.pdf>
 
 commands:
+  md       convert a PDF to Markdown
   probe    report what a PDF contains and which extraction path it will take
   version  print version
 
@@ -30,6 +31,8 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
 	switch cmd {
+	case "md":
+		err = runMD(args)
 	case "probe":
 		err = runProbe(args)
 	case "version", "-v", "--version":

@@ -112,6 +112,60 @@ All notable changes to this project are documented here, following
   only there, and a traversal stopping at the page dictionary omits them silently, which in
   an extractor means the text inside every form comes out undecoded.
 
+### Added — 2026-08-03
+
+- `sink/markdown` — the Markdown writer, and the completion of Phase 1's pipeline. Consumes
+  `doc` and nothing else: no PDFs, no fonts, no glyph positions, so a page recovered by OCR
+  and a page recovered from a content stream render identically. Writes to an `io.Writer`
+  and never touches the filesystem, because where files go and what they are called is a
+  decision only the command can make. No page markers and no rules between pages — a
+  paragraph continuing across a page break is one paragraph, and recovering that is
+  `sectionize`'s job, not something to make harder by asserting a boundary here.
+- `sink/markdown` escaping — the package's real risk surface, and deliberately narrow.
+  Extracted prose contains most of Markdown's syntax as ordinary text: a PDF specification
+  is full of `<</Type /Page>>`, `snake_case` identifiers, `[1]` citations, hyphenated
+  compounds, and clause numbers like `7.5.8`. Each metacharacter is escaped only where
+  CommonMark makes it live — `_` and `~` at word edges only, `-`/`#`/`>`/`+`/`=` at line
+  start only, `[` only when a `]` followed by `(`, `[`, or `:` follows it, `<` only when a
+  tag or autolink could begin, `&` only for a well-formed entity. Measured result: 0.34
+  backslashes per 1,000 characters on the arXiv paper and 0.16 on ISO 32000-2, so the
+  output reads as prose rather than as backslashes, and `<pdfd:conformsTo>` is still
+  escaped where raw HTML would otherwise be swallowed and vanish.
+- `sink/markdown` frontmatter — optional YAML, off by default, with a fixed field order so
+  two conversions of the same document diff cleanly. Hand-written rather than marshalled:
+  the output is a flat map of strings, integers, and booleans, so all a YAML library would
+  contribute is the quoting rule, and `gopkg.in/yaml.v3` reorders keys. Dates are emitted
+  as the strings the file contained — a PDF date is `D:20240131120000Z` and frequently
+  malformed, so converting to a YAML timestamp would mean dropping the ones that fail to
+  parse or inventing a value. `tagged` and `encrypted` are always emitted including when
+  false, because they report which extraction path ran and an absent key cannot be told
+  from a key the writer did not know about.
+- `cmd/pdfspec md` — the verb from `docs/DESIGN.md` §2. One long `.md` by default,
+  `-split` for one file per page, `-frontmatter` and `-artifacts` as settings. Split names
+  are zero-padded to the width of the highest page number: without it page 10 sorts before
+  page 2, and on a 1,023-page specification that makes the output unusable in any file
+  browser. Every page gets a file including a blank one, since a gap in the numbering reads
+  as a conversion that failed there.
+- `sink/markdown` tests built from `doc` values rather than fixture PDFs — this package's
+  input is `doc.Document` and nothing else, so a fixture would test `extract` as well and
+  could not express the cases that matter: a span boundary landing on the space after a
+  bold word, an `/Alt` containing a newline, a title with a colon in it. The escaping tests
+  assert against real corpus strings.
+- `cmd/pdfspec` end-to-end `md` tests, which re-measure the §1 metrics at the *end* of the
+  pipeline. The extraction metrics tests assert on `Document.Text()`; nothing there would
+  notice a sink that dropped a block or joined two paragraphs. Through `md` on the arXiv
+  paper: 39,781 non-space characters, 6,343 words, 14.04% spaces, 0.33% of words past 25
+  characters, longest 71, 18ms. On ISO 32000-2: 2.03M non-space, 383,956 words, 0.06% past
+  25 characters, 1.9s. Split output is checked to match whole-document output
+  character-for-character on non-space text, since a difference means one of the two paths
+  is wrong.
+- `TestMDEmitsNoHeadingsYet` records a Phase 1 limitation as a test rather than leaving it
+  to be discovered. `extract.roleOf` assigns `RoleParagraph` to every non-artifact block on
+  purpose — heading level is *declared* by the structure tree and reading it is
+  `sectionize`'s job — so ISO 32000-2's Markdown is currently flat prose despite `tag.Read`
+  finding 981 headings in the same file. The sink renders headings correctly when given
+  them; nothing gives it any yet. The test inverts when `sectionize` lands.
+
 ### Changed — 2026-08-02
 
 - `docs/DESIGN.md` §3: corrected the claim that a clause is "one contiguous subtree."
