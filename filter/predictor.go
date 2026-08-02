@@ -31,11 +31,24 @@ func applyPredictor(data []byte, params objects.Dict, s objects.Store) ([]byte, 
 		return data, fmt.Errorf("filter: predictor: bad geometry colors=%d bpc=%d columns=%d",
 			colors, bpc, columns)
 	}
-	// Guard the multiplication before it is used as an allocation size: a crafted
-	// /Columns of 2^40 would otherwise be an out-of-memory abort.
+	// Bound each factor, then the product. Bounding only the factors is not enough
+	// and was the original bug here: colors=32, bpc=32, columns=2^24 each pass
+	// individually while multiplying out to a 2 GiB row, so four bytes of input
+	// bought three multi-gigabyte allocations — out, prev, and cur. The product is
+	// computed in int64 so the check cannot itself overflow on a 32-bit build,
+	// where int is 32 bits and 32*32*2^24 wraps to zero.
 	if colors > 32 || bpc > 32 || columns > 1<<24 {
 		return data, fmt.Errorf("filter: predictor: implausible geometry colors=%d bpc=%d columns=%d",
 			colors, bpc, columns)
+	}
+	rowBits := int64(colors) * int64(bpc) * int64(columns)
+	rowBytes := (rowBits + 7) / 8
+	// A predicted row is one scanline or one cross-reference entry set. maxDecoded
+	// bounds the whole stream, so a single row at or above it is never real, and
+	// the check has to happen before the value reaches make.
+	if rowBytes >= maxDecoded {
+		return data, fmt.Errorf("filter: predictor: row of %d bytes exceeds the %d cap (colors=%d bpc=%d columns=%d)",
+			rowBytes, maxDecoded, colors, bpc, columns)
 	}
 
 	// Bytes per pixel, floored at 1: sub-byte pixels still predict against the
@@ -45,7 +58,7 @@ func applyPredictor(data []byte, params objects.Dict, s objects.Store) ([]byte, 
 	if bpp < 1 {
 		bpp = 1
 	}
-	rowLen := (colors*bpc*columns + 7) / 8
+	rowLen := int(rowBytes)
 	if rowLen < 1 {
 		return data, nil
 	}

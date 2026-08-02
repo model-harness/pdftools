@@ -254,7 +254,11 @@ func ascii85Decode(data []byte) ([]byte, error) {
 		group[n] = c - '!'
 		n++
 		if n == 5 {
-			out = appendGroup85(out, group, 5)
+			var err error
+			out, err = appendGroup85(out, group, 5)
+			if err != nil {
+				return out, err
+			}
 			n = 0
 		}
 	}
@@ -269,18 +273,34 @@ flush:
 		for i := n; i < 5; i++ {
 			group[i] = 84
 		}
-		out = appendGroup85(out, group, n)
+		return appendGroup85(out, group, n)
 	}
 	return out, nil
 }
 
-func appendGroup85(out []byte, g [5]byte, n int) []byte {
-	v := uint32(0)
+// appendGroup85 decodes one base-85 group and appends its first n-1 bytes.
+//
+// A group encodes a 32-bit value, so five digits can describe a number the
+// encoding cannot represent: "uuuuu" is 4,437,053,124. Accumulating that in a
+// uint32 wraps it to 142,085,828 and emits four plausible bytes that are simply
+// wrong, with no indication anything happened — the silent-corruption failure
+// this package exists to avoid. The value is accumulated in uint64 and rejected
+// instead.
+//
+// Overflow always means malformed input, so there is no case to salvage. A legal
+// partial group cannot overflow after padding: the largest one-, two-, and
+// three-byte prefixes pad to 4278608874, 4294908474, and 4294967124, all inside
+// the 32-bit range.
+func appendGroup85(out []byte, g [5]byte, n int) ([]byte, error) {
+	v := uint64(0)
 	for i := 0; i < 5; i++ {
-		v = v*85 + uint32(g[i])
+		v = v*85 + uint64(g[i])
+	}
+	if v > 0xFFFFFFFF {
+		return out, fmt.Errorf("filter: ASCII85: group value %d exceeds 32 bits", v)
 	}
 	b := [4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
-	return append(out, b[:n-1]...)
+	return append(out, b[:n-1]...), nil
 }
 
 // runLengthDecode decodes the byte-oriented run-length encoding of §7.4.5: a length

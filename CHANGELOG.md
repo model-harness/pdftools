@@ -76,6 +76,16 @@ All notable changes to this project are documented here, following
   independent PDF-flavored encoder for the tests: `compress/lzw` implements only the
   `EarlyChange=0` behavior, so round-tripping through this package's own decoder would have
   passed with both sides wrong the same way.
+- `filter`: the predictor's geometry guard bounded each factor but not their product, so
+  `/Colors 32`, `/BitsPerComponent 32`, and `/Columns` at the permitted 2^24 all passed
+  individually while multiplying out to a 2 GiB row — four bytes of input bought three
+  multi-gigabyte allocations and a memory-exhaustion abort. Now bounds the product against
+  `maxDecoded`, computed in int64 so the check cannot itself overflow on a 32-bit build,
+  where `int` is 32 bits and that product wraps to zero. Found in review.
+- `filter`: ASCII85 wrapped groups above 2^32-1 instead of rejecting them. Five base-85
+  digits can name a value the encoding cannot represent — `uuuuu` is 4,437,053,124, which
+  wrapped to 142,085,828 and emitted four plausible bytes with no error. Accumulated in
+  uint64 and rejected; the largest legal group, `s8W-!`, still decodes. Found in review.
 - `objects/pdfcpu`: indirect references never resolved. pdfcpu's `Dereference` type-asserts
   `types.IndirectRef` by value while `NewIndirectRef` returns a pointer, so every lookup
   fell through its type switch and returned the reference unchanged. Everything reachable as

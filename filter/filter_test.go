@@ -152,6 +152,55 @@ func TestASCII85ZeroGroupAndPartial(t *testing.T) {
 	}
 }
 
+func TestASCII85RejectsGroupsAboveThirtyTwoBits(t *testing.T) {
+	// A group encodes a 32-bit value, but five digits can name a larger number:
+	// "uuuuu" is 4,437,053,124. Accumulating that in a uint32 wrapped it to
+	// 142,085,828 and returned 08 78 0e c4 — four bytes that look like data and
+	// are not, with no error. Rejecting is the only correct answer; there is no
+	// value the encoder could have meant.
+	got, err := Decode("ASCII85Decode", []byte("uuuuu~>"), nil, nilStore{})
+	if err == nil {
+		t.Fatalf("expected an error for an out-of-range group, got % x", got)
+	}
+
+	// The bound sits exactly at 2^32-1, so the largest legal group must still
+	// decode. "s8W-!" is 4,294,967,295.
+	got, err = Decode("ASCII85Decode", []byte("s8W-!~>"), nil, nilStore{})
+	if err != nil {
+		t.Fatalf("largest legal group rejected: %v", err)
+	}
+	if want := []byte{0xFF, 0xFF, 0xFF, 0xFF}; !bytes.Equal(got, want) {
+		t.Fatalf("got % x, want % x", got, want)
+	}
+
+	// A partial group is padded with the maximum digit, and that padding must not
+	// push a legal group over the bound. These are the largest legal two-, three-,
+	// and four-digit groups: the encodings of 0xFF, 0xFFFF, and 0xFFFFFF, which pad
+	// to 4278608874, 4294908474, and 4294967124 — all just inside 32 bits.
+	//
+	// They are computed from those payloads rather than taken as prefixes of
+	// "s8W-!", because a prefix of a five-digit group is not a legal shorter group:
+	// "s8W-" pads to 4294967379 and is correctly rejected.
+	partial := []struct {
+		in   string
+		want []byte
+	}{
+		{"rr~>", []byte{0xFF}},
+		{"s8N~>", []byte{0xFF, 0xFF}},
+		{"s8W*~>", []byte{0xFF, 0xFF, 0xFF}},
+	}
+	for _, c := range partial {
+		got, err := Decode("ASCII85Decode", []byte(c.in), nil, nilStore{})
+		if err != nil {
+			t.Errorf("largest legal partial group %q rejected: %v", c.in, err)
+			continue
+		}
+		if !bytes.Equal(got, c.want) {
+			t.Errorf("%q decoded to % x, want % x", c.in, got, c.want)
+		}
+	}
+}
+
 func TestRunLength(t *testing.T) {
 	// 2 -> three literal bytes; 254 -> next byte repeated 3 times; 128 -> EOD.
 	in := []byte{2, 'a', 'b', 'c', 254, 'x', 128, 'i', 'g', 'n', 'o', 'r', 'e', 'd'}

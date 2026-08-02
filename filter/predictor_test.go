@@ -257,6 +257,41 @@ func TestPredictorRejectsImplausibleGeometry(t *testing.T) {
 	}
 }
 
+func TestPredictorRejectsGeometryThatOnlyOverflowsWhenMultiplied(t *testing.T) {
+	// Every factor here is inside its own bound — colors 32, bpc 32, and columns
+	// exactly the permitted 2^24 — while the product is a 2 GiB row. Bounding the
+	// factors individually let this through, so four bytes of input allocated three
+	// multi-gigabyte buffers (out, prev, cur) and the process died on memory rather
+	// than returning an error. The cases above all trip a per-factor bound and so
+	// never exercised the product at all.
+	params := objects.Dict{
+		"Predictor":        objects.Int(12),
+		"Colors":           objects.Int(32),
+		"BitsPerComponent": objects.Int(32),
+		"Columns":          objects.Int(1 << 24),
+	}
+	got, err := applyPredictor([]byte{0, 1, 2, 3}, params, nilStore{})
+	if err == nil {
+		t.Fatalf("expected an error for a 2 GiB row, got %d bytes", len(got))
+	}
+	if len(got) > len([]byte{0, 1, 2, 3}) {
+		t.Fatalf("rejected geometry still allocated %d bytes", len(got))
+	}
+
+	// The bound must not reject real geometry. A CMYK scanline 10,000 pixels wide
+	// is 40,000 bytes, and a cross-reference stream row is a handful.
+	for _, ok := range []objects.Dict{
+		{"Predictor": objects.Int(12), "Colors": objects.Int(4),
+			"BitsPerComponent": objects.Int(8), "Columns": objects.Int(10000)},
+		{"Predictor": objects.Int(12), "Colors": objects.Int(1),
+			"BitsPerComponent": objects.Int(8), "Columns": objects.Int(5)},
+	} {
+		if _, err := applyPredictor([]byte{0, 1, 2, 3}, ok, nilStore{}); err != nil {
+			t.Errorf("plausible geometry %v rejected: %v", ok, err)
+		}
+	}
+}
+
 func TestPNGPredictorUnknownFilterTypeKeepsRows(t *testing.T) {
 	// Two good rows then a bad filter byte. The recovered rows must survive: this
 	// is usually a truncated or mislabeled stream, not a total loss.
