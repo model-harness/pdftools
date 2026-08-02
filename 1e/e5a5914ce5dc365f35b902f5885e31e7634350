@@ -1,0 +1,92 @@
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_289a284ab778d5 392-396
+  s_5cd1b28ed520c1::t_2bdace9fd8663e 65,68-80,83-98
+  s_5cd1b28ed520c1::t_148441d9d75191 106-108,115-153
+  s_5cd1b28ed520c1::t_26743ba51f0b46 222-225
+  s_3f706e3f4b4643::t_380a9f0c142fa5 99,154
+tag/tag_test.go
+  s_5cd1b28ed520c1::t_acb34cb80440e0 1-168,201-329
+  s_5cd1b28ed520c1::t_6394082170dd68 169-200
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_ed6b4ad268f481 1-56
+  s_5cd1b28ed520c1::t_a89ca08124e9e4 57-60
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_f1d1eff8f8d52e 1-79
+geom/geom_test.go
+  s_5cd1b28ed520c1::t_b305fc1835ecb5 1-99
+cmd/pdfspec/span_test.go
+  s_5cd1b28ed520c1::t_c669b00ac8cae7 117-124
+  s_5cd1b28ed520c1::t_63120e7ce0beab 1-9,22-36,57-96,101,173,177-178,188-189
+  s_5cd1b28ed520c1::t_b58a75d80c21b5 10-21,37-56,97-100,102-116,125-172,174-176,179-187
+cmd/pdfspec/corpus_test.go
+  s_5cd1b28ed520c1::t_566406153f9486 1-168,174-216
+  s_5cd1b28ed520c1::t_acc3199bae2a15 169-173
+objects/objects.go
+  s_5cd1b28ed520c1::t_65e8ca1e14685b 1-256,306-319
+  s_5cd1b28ed520c1::t_1e02391ec8e998 257-305
+tag/tag.go
+  s_5cd1b28ed520c1::t_b0deb7052fa628 214-224,231-234
+  s_5cd1b28ed520c1::t_e75764b486beac 278
+  s_5cd1b28ed520c1::t_c63878a061d6dc 143-147
+  s_5cd1b28ed520c1::t_3b7a8726ce57a2 324
+  s_5cd1b28ed520c1::t_0513245f47c7ce 264
+  s_5cd1b28ed520c1::t_d43c8310e04b2c 177
+  s_5cd1b28ed520c1::t_2800e0b14b5d82 332-416
+  s_5cd1b28ed520c1::t_f21a599983b697 307,310,313,316
+  s_5cd1b28ed520c1::t_c2bc25bc69d37b 1-142,148-176,178-213,225-230,235-263,265-277,279-306,308-309,311-312,314-315,317-323,325-331,417-505
+geom/geom.go
+  s_5cd1b28ed520c1::t_9ee1fd009efdde 1-164
+LICENSE
+  s_5cd1b28ed520c1::t_41ee7f95b111c5 1-21
+docs/adr/0001-borrow-pdfcpu-behind-an-owned-object-model.md
+  s_5cd1b28ed520c1::t_61a6c7988f690c 1-65
+cmd/pdfspec/probe.go
+  s_5cd1b28ed520c1::t_873a993d6fcfd0 143
+  s_5cd1b28ed520c1::t_8f75c745c943ed 1-142,144-407
+objects/pdfcpu/pdfcpu.go
+  s_5cd1b28ed520c1::t_96262d9ae6f799 1-16,18-32,38,40-44,47-87,114,116-332,334-441
+  s_5cd1b28ed520c1::t_c6c758b88552b0 33-37,39,45-46
+  s_5cd1b28ed520c1::t_6b5aefbedf9626 88-113,115
+  s_5cd1b28ed520c1::t_13b589b6fa49ec 333
+  s_5cd1b28ed520c1::t_46d2315552f5a9 17
+objects/objects_test.go
+  s_5cd1b28ed520c1::t_b28003af764856 1-134
+.gitattributes
+  s_5cd1b28ed520c1::t_95d5289338473b 1-17
+go.mod
+  s_7f3b2c6417a713::t_192d6f0b75ffad 1-18
+go.sum
+  s_7f3b2c6417a713::t_a6dea44e2d6521 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "1ee5a5914ce5dc365f35b902f5885e31e7634350",
+  "prompts": {},
+  "sessions": {
+    "s_3f706e3f4b4643": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d91ced6-3b3b-46d0-b2cb-8b38a3429c2a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_7f3b2c6417a713": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fceefb9-142c-49cd-bb48-036dd8fce1cf",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
