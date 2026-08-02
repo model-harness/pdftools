@@ -62,23 +62,40 @@ be built from.**
 
 ## 3. The finding that shaped the architecture
 
-Every ISO spec PDF in `docs/` is **tagged**:
+Every ISO spec PDF in `docs/` is **tagged**. Measured with `pdfspec probe`:
 
 ```
-                                     MB   Ver  Encrypt  StructTreeRoot  Marked  ObjStm  Pages
-ISO_32000-2_sponsored_EC3.pdf     18.31   1.7    false            true    true    true   1023
-ISO_TS_32001-2022_sponsored.pdf    0.35   1.7    false            true    true    true     14
-ISO_TS_32002-2022_sponsored.pdf    0.34   1.7    false            true    true    true     14
-ISO_TS_32003-2023_sponsored.pdf    0.91   1.7    false            true    true    true     13
-ISO-TS-32004-2024_sponsored.pdf    1.24   1.7    false            true    true    true     25
-ISO-TS-32005-2023-sponsored.pdf    1.92   1.7    false            true    true    true     98
-PDF-Declarations.pdf               0.17   1.7    false            true    true    true     10
-PDF20_AN001-BPC.pdf                0.17   1.7    false            true    true    true      5
-PDF20_AN002-AF.pdf                 0.15   1.7    false            true    true    true     14
-PDF20_AN003-ObjectMetadata.pdf     0.66   1.7    false            true    true    true     10
-Well-Tagged-PDF-WTPDF-1.0.pdf      0.59   1.7    false            true    true    true     57
-LightOnOCR-2601.14251v1.pdf       12.15   1.7    false           false   false   false     17
+                                    MB  Pages  Struct  Marked  Elements  Head  Paras  Table  MCIDs  Depth  Path
+ISO_32000-2_sponsored_EC3.pdf    18.31   1023       Y       Y     78469   981  29400    745  44955     13  tagged
+ISO-TS-32005-2023-sponsored.pdf   1.92     49       Y       Y      6266    27    698      5  10102     11  tagged
+Well-Tagged-PDF-WTPDF-1.0.pdf     0.59     57       Y       Y      2061   183    789     10   2035      8  tagged
+ISO-TS-32004-2024_sponsored.pdf   1.24     25       Y       n      1149    55    368      9   1614     11  tagged
+ISO_TS_32002-2022_sponsored.pdf   0.34     14       Y       Y       645    14    171      4    608     11  tagged
+ISO_TS_32003-2023_sponsored.pdf   0.91     13       Y       n       394    11    175      4    454     11  tagged
+PDF20_AN003-ObjectMetadata.pdf    0.66     10       Y       Y       333    22     98      5    416      9  tagged
+ISO_TS_32001-2022_sponsored.pdf   0.35     14       Y       Y       322    14    112      1    329     11  tagged
+PDF-Declarations.pdf              0.17     10       Y       Y       311    22     91      3    232      9  tagged
+PDF20_AN002-AF.pdf                0.15     14       Y       Y       259    32    101      0    242      4  tagged
+PDF20_AN001-BPC.pdf               0.17      5       Y       Y        83     8     35      0     84      4  tagged
+LightOnOCR-2601.14251v1.pdf      12.15     17       n       n         -     -      -      -      -      -  layout
 ```
+
+All are PDF 1.7 and unencrypted. Every tagged file uses object streams and xref
+streams; the untagged preprint uses a plain xref table, which is a fair proxy for its age
+and producer.
+
+Two corrections to an earlier byte-level estimate of this corpus, both found by running the
+real parser:
+
+- **`/Marked` is not universal.** ISO-TS-32004 and ISO-TS-32003 have a `/StructTreeRoot`
+  but no `/MarkInfo << /Marked true >>`. Per ISO 32000-2 §14.7.1 that combination is
+  technically non-conformant, yet the structure trees are substantive (1,149 and 394
+  elements). So **the tagged path must key off `/StructTreeRoot` and tree contents, never
+  off `/Marked`** — gating on the conformance flag would push two spec documents onto the
+  wrong path.
+- **ISO 32000-2 is 1,023 pages and ISO-TS-32005 is 49, not 98.** Counting `/Type /Page`
+  occurrences in raw bytes double-counts, because object streams hold page objects that
+  the xref table supersedes. Only a real page-tree walk gives the true count.
 
 A `/StructTreeRoot` is a document-level tree of logical elements — `H1`…`H6`, `P`,
 `Table`, `L`/`LI`, `Figure`, `Code` — in reading order. Three consequences, all of which
@@ -86,14 +103,54 @@ remove work rather than add it:
 
 1. **Heading hierarchy is declared, not inferred.** No font-size clustering heuristics.
 2. **Reading order is declared.** No column-detection heuristics, no x/y sorting.
-3. **Cross-page sections are already contiguous.** The struct tree is not page-scoped, so
-   a clause spanning pages 412–414 is one contiguous subtree. The hardest-sounding
-   requirement — stitching sections across pages — is a tree walk on tagged input.
+3. **Sections are not page-scoped.** The tree spans the whole document, so page boundaries
+   simply do not appear in it. Stitching a clause across pages 412–414 is not a step in the
+   pipeline; there is nothing to stitch.
 
 So the primary path for the target corpus is: **parse the structure tree, not the page
 geometry.** Geometry-based layout analysis is the *fallback* for untagged input (like the
 LightOnOCR paper above), and VLM/OCR is the fallback for that. This inverts the usual
 build order, and it is why the first deliverable is achievable without a rasterizer.
+
+### Sections come from the heading sequence, not from containers
+
+An earlier draft of this document said a clause is "one contiguous subtree," which would
+have made `sectionize` a tree walk collecting `Sect` containers. Measuring ISO 32000-2
+disproves it:
+
+```
+Sect   total=7      spanning=0     widest=0 pages
+Part   total=10     spanning=6     widest=985 pages
+Table  total=745    spanning=2     widest=4 pages
+L      total=531    spanning=10    widest=7 pages
+P      total=29400  spanning=0     widest=0 pages
+anchored 76976 of 78469 elements across 1023 pages
+
+heading parents: map[Document:17 Part:964]
+headings with element children: 15, without: 966
+widest element: Part with 13442 direct kids
+  first kids: H1 P P P P P P P P P
+```
+
+Seven `Sect` elements against **981 headings**, and one `Part` holding 13,442 direct
+children in a flat `H1 P P P P …` stream. The document declares hierarchy through *heading
+levels*, not through nesting: 966 of 981 headings have no element children at all, so a
+clause's body is its heading's **following siblings**, not its descendants.
+
+Two consequences for `sectionize`:
+
+- **Boundaries are derived from the heading sequence in logical order.** Each heading opens
+  a section that runs until the next heading of equal-or-higher level. Container elements
+  (`Part`, `Div`, `Sect`) are traversed for reading order and used as the `H`-depth basis,
+  never as section delimiters. A container-driven implementation would emit 7 sections from
+  a 1,023-page standard.
+- **Heading text comes from content, not from `/T`.** Every heading in ISO 32000-2 has an
+  empty `/T`, so titles must be resolved by joining the heading's MCIDs to page text. The
+  `Title` attribute is an optimization when present, not the source of truth.
+
+This does not weaken the tagged path — reading order and heading level are still declared,
+which is the expensive part. It changes only where the boundary comes from, and it is
+better measured now than after `sink/okf` is written against the wrong shape.
 
 The design must not over-fit to this. All three paths ship; tagged is just first and
 cheapest.
@@ -162,8 +219,10 @@ extract/              Text extraction use case. Consumes objects + content +
                         font + geom. Produces doc.Page
 layout/               Geometry-based fallback: column detection, line grouping,
                         heading inference from font-size clusters
-sectionize/           Section reconstruction. Tagged path walks tag/;
-                        untagged path uses layout/. Emits doc.Section
+sectionize/           Section reconstruction by heading sequence: each heading
+                        runs to the next of equal-or-higher level. Levels come
+                        from tag/ when tagged, layout/ when not. Emits
+                        doc.Section
 render/               Interface: Rasterizer — page → image.Image at DPI
 render/pdfium/          Adapter: go-pdfium on wazero WASM. No CGO
 ocr/                  Interface: Engine — image → markdown or DocTags
@@ -330,9 +389,11 @@ LZW, ASCIIHex, ASCII85, RunLength), `content`, `font` + `cmap` + `encoding`, `ge
 `extract`, `sink/markdown`, `cmd/pdfspec` with `md`, `probe`. Success: beats every column
 of the §1 table on the same arXiv paper.
 
-**Phase 2 — structure and sections.** `tag`, `sectionize` tagged path, `sink/okf`. Success:
-ISO 32000-2's 1,023 pages emit a clause-per-file OKF bundle with correct hierarchy and
-resolved cross-references.
+**Phase 2 — structure and sections.** `tag` (done), `sectionize` tagged path, `sink/okf`.
+Success: ISO 32000-2's 1,023 pages emit a clause-per-file OKF bundle with correct hierarchy
+and resolved cross-references. The measurement above sets the acceptance bar: a
+heading-driven implementation should yield on the order of 981 sections, so any run
+producing single digits has reverted to container-driven segmentation.
 
 **Phase 3 — images.** `bits`, DCT and CCITT wiring, `images` verb. Embedded images
 extracted with their original codec preserved where possible. Later: native JBIG2.
