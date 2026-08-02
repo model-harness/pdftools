@@ -1,0 +1,73 @@
+# ---------------------------------------------------------------------------
+# ISO / PDF Association specification PDFs
+#
+# These are sponsored copies of paid ISO documents. They are the golden corpus
+# for this repo but must NOT be redistributed. Obtain your own copies and drop
+# them in docs/ — see docs/DESIGN.md §10.
+# ---------------------------------------------------------------------------
+docs/ISO_32000-2_sponsored_EC3.pdf
+docs/ISO_TS_32001-2022_sponsored_EC3.pdf
+docs/ISO_TS_32002-2022_sponsored_EC3.pdf
+docs/ISO_TS_32003-2023_sponsored.pdf
+docs/ISO-TS-32004-2024_sponsored.pdf
+docs/ISO-TS-32005-2023-sponsored.pdf
+docs/PDF-Declarations.pdf
+docs/PDF20_AN001-BPC.pdf
+docs/PDF20_AN002-AF.pdf
+docs/PDF20_AN003-ObjectMetadataLocations.pdf
+docs/Well-Tagged-PDF-WTPDF-1.0.pdf
+
+# Belt and braces: any ISO or PDF20 application note added later.
+docs/ISO_*.pdf
+docs/ISO-*.pdf
+docs/PDF20_*.pdf
+
+# Not part of the spec corpus and intentionally tracked:
+#   docs/LightOnOCR-2601.14251v1.pdf
+#   docs/LightOnOCR_*.mhtml
+
+# --- Go ---
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+vendor/
+go.work
+go.work.sum
+
+# --- Rust ---
+/target/
+**/*.rs.bk
+*.pdb
+
+# --- Model weights and caches (VLM/OCR path) ---
+*.gguf
+*.safetensors
+*.onnx
+/models/
+.cache/
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+
+# --- Tooling / OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+coverage.out
+coverage.html

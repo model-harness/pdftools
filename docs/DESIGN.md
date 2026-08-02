@@ -1,0 +1,393 @@
+# pdf-spec — Design
+
+Status: draft · 2026-08-02 · License: MIT
+
+High-quality, efficient PDF tooling for Go and Rust — libraries and CLIs you can consume
+without banging your head on the wall.
+
+---
+
+## 1. Why this repo exists
+
+The PDF library space is bimodal. Python has breadth but poor quality and poor speed —
+pdfplumber emits 6.39% of words longer than 25 characters, which is the signature of
+missing inter-word spaces. Everything decent outside Python is Apache-with-strings,
+AGPL, or a commercial EULA. The genuinely permissive Go options each solve a slice and
+stop: `pdfcpu` has an excellent object layer and no rasterizer; `ledongthuc/pdf` extracts
+text at 0.01% spaces with a longest "word" of 4,069 characters; `gopdf` is fast but does
+text only, and not all of it.
+
+Baseline to beat, measured on a 6.89 MB arXiv paper in a sibling project:
+
+| | Python (pdfplumber) | gopdf v0.9.5 | ledongthuc |
+|---|---|---|---|
+| time | 2.29 s | 14.6 ms (156×) | 1.09 s |
+| chars | 87,623 | 95,801 | 76,278 |
+| spaces | — | 19.15% | 0.01% |
+| words >25 ch | 500 (6.39%) | 13 (0.11%) | — |
+| longest word | 89 | 47 | 4,069 |
+| binary cost | — | +0.95 MB | +1.6 MB |
+
+The 14.6 ms figure proves the ceiling: deterministic extraction is three orders of
+magnitude cheaper than the Python path and two orders cheaper than an LLM call. The
+quality gap is not a speed/quality tradeoff — it is unfinished work in font and layout
+handling.
+
+### Non-AI-first
+
+Tokens are the most expensive way to read a PDF that already contains its own text.
+Deterministic extraction is the default path and handles the overwhelming majority of
+real documents. LLM/VLM inference is reserved for the one case where determinism
+genuinely fails: raster-only pages with no text layer. That is a routing decision made
+per page, not a whole-document mode.
+
+---
+
+## 2. First deliverable
+
+A processor that converts a PDF to Markdown:
+
+- Default: one `.md` for the document.
+- `--split`: one `.md` per page.
+- `--frontmatter`: YAML frontmatter, off by default.
+- `okf` verb: section-aware output as an Open Knowledge Format bundle, where sections are
+  the unit and are stitched across page boundaries.
+
+The forcing function is converting the PDF 2.0 spec corpus already sitting in `docs/`
+into OKF, so a model can query the spec to build the native libraries that come later.
+That is deliberate: **the toolkit's first job is to read the specification it will then
+be built from.**
+
+---
+
+## 3. The finding that shaped the architecture
+
+Every ISO spec PDF in `docs/` is **tagged**:
+
+```
+                                     MB   Ver  Encrypt  StructTreeRoot  Marked  ObjStm  Pages
+ISO_32000-2_sponsored_EC3.pdf     18.31   1.7    false            true    true    true   1023
+ISO_TS_32001-2022_sponsored.pdf    0.35   1.7    false            true    true    true     14
+ISO_TS_32002-2022_sponsored.pdf    0.34   1.7    false            true    true    true     14
+ISO_TS_32003-2023_sponsored.pdf    0.91   1.7    false            true    true    true     13
+ISO-TS-32004-2024_sponsored.pdf    1.24   1.7    false            true    true    true     25
+ISO-TS-32005-2023-sponsored.pdf    1.92   1.7    false            true    true    true     98
+PDF-Declarations.pdf               0.17   1.7    false            true    true    true     10
+PDF20_AN001-BPC.pdf                0.17   1.7    false            true    true    true      5
+PDF20_AN002-AF.pdf                 0.15   1.7    false            true    true    true     14
+PDF20_AN003-ObjectMetadata.pdf     0.66   1.7    false            true    true    true     10
+Well-Tagged-PDF-WTPDF-1.0.pdf      0.59   1.7    false            true    true    true     57
+LightOnOCR-2601.14251v1.pdf       12.15   1.7    false           false   false   false     17
+```
+
+A `/StructTreeRoot` is a document-level tree of logical elements — `H1`…`H6`, `P`,
+`Table`, `L`/`LI`, `Figure`, `Code` — in reading order. Three consequences, all of which
+remove work rather than add it:
+
+1. **Heading hierarchy is declared, not inferred.** No font-size clustering heuristics.
+2. **Reading order is declared.** No column-detection heuristics, no x/y sorting.
+3. **Cross-page sections are already contiguous.** The struct tree is not page-scoped, so
+   a clause spanning pages 412–414 is one contiguous subtree. The hardest-sounding
+   requirement — stitching sections across pages — is a tree walk on tagged input.
+
+So the primary path for the target corpus is: **parse the structure tree, not the page
+geometry.** Geometry-based layout analysis is the *fallback* for untagged input (like the
+LightOnOCR paper above), and VLM/OCR is the fallback for that. This inverts the usual
+build order, and it is why the first deliverable is achievable without a rasterizer.
+
+The design must not over-fit to this. All three paths ship; tagged is just first and
+cheapest.
+
+### Corpus availability
+
+The 11 spec PDFs above are **sponsored copies of paid ISO documents and are gitignored** —
+they are not redistributable, so they are not in this repository. Obtain your own copies
+and place them in `docs/` to run the golden corpus. The ISO 32000-2 sponsored copies are
+published for download by the PDF Association; the TS documents and PDF 2.0 application
+notes come from the same source.
+
+`docs/LightOnOCR-2601.14251v1.pdf` **is** tracked, deliberately: it is a public arXiv
+preprint, and its untagged 17 pages are the fixture for the untagged and OCR paths. Every
+other row in the table above is tagged, so without it the fallback paths would have no test
+input at all.
+
+---
+
+## 4. Architecture
+
+Clean architecture with Go-idiomatic dependency inversion: **interfaces are declared by
+the package that consumes them**, adapters live in subpackages beneath. No `ports/`
+directory, no interface-per-struct ceremony. Dependencies point inward only; the domain
+model imports nothing outside the standard library.
+
+```
+                    ┌──────────────────────────────────────┐
+   cmd/pdfspec ───► │  usecase: convert · sectionize       │
+                    └──────────────┬───────────────────────┘
+                                   │ depends on interfaces only
+      ┌────────────────┬───────────┼────────────┬──────────────────┐
+      ▼                ▼           ▼            ▼                  ▼
+  objects.Store   render.Raster  ocr.Engine  sink.Writer      doc (domain)
+      │                │           │            │             zero deps
+  ┌───┴────┐      ┌────┴────┐  ┌───┴────┐  ┌────┴─────┐
+  │ pdfcpu │      │ pdfium  │  │llamacpp│  │ markdown │
+  │        │      │ (wasm)  │  │        │  │   okf    │
+  └────────┘      └─────────┘  └────────┘  └──────────┘
+   borrowed        borrowed     borrowed       native
+```
+
+### Package layout
+
+```
+github.com/3rg0n/pdf-spec
+
+doc/                  Domain model. Zero dependencies outside stdlib.
+                        Document, Page, Block, Span, Style, Rect, Matrix,
+                        Section, Role, ReadingOrder
+objects/              Interface: Store — resolve indirect refs, walk page tree,
+                        read content streams and the structure tree
+objects/pdfcpu/         Adapter over pdfcpu's XRefTable (Apache-2.0, pure Go)
+content/              Content-stream tokenizer and operator interpreter.
+                        Owns the graphics + text state machine
+font/                 Font dictionaries, /Widths, embedded programs, glyph advances
+font/cmap/              CMap and /ToUnicode parsing — CID → Unicode
+font/encoding/          Simple-font encodings, /Differences, Adobe Glyph List
+filter/               Stream filter chain: Flate, LZW, ASCIIHex, ASCII85,
+                        RunLength, DCT, CCITT, JBIG2, JPX, Crypt
+bits/                 MSB/LSB bit reader. Foundation for CCITT and JBIG2
+geom/                 Matrix math, CTM composition, one tolerance policy
+tag/                  Structure tree: StructElem, role map, standard-role
+                        normalization, logical-order traversal
+extract/              Text extraction use case. Consumes objects + content +
+                        font + geom. Produces doc.Page
+layout/               Geometry-based fallback: column detection, line grouping,
+                        heading inference from font-size clusters
+sectionize/           Section reconstruction. Tagged path walks tag/;
+                        untagged path uses layout/. Emits doc.Section
+render/               Interface: Rasterizer — page → image.Image at DPI
+render/pdfium/          Adapter: go-pdfium on wazero WASM. No CGO
+ocr/                  Interface: Engine — image → markdown or DocTags
+ocr/llamacpp/           Adapter: llama.cpp multimodal, model download + cache
+ocr/doctags/            DocTags → doc.Section parser (granite-docling output)
+sink/markdown/        doc.Document → one .md or per-page .md
+sink/okf/             doc.Section tree → OKF bundle
+cmd/pdfspec/          CLI
+```
+
+Each package is one sub-problem from the specification, which is why the list is long.
+The alternative — a `pdf` package that does everything — is how the existing libraries
+got to the state described in §1. The split is not speculative abstraction; every
+directory above corresponds to a distinct chapter of ISO 32000-2 that independently
+breaks text quality when handled badly.
+
+Two boundaries deserve emphasis:
+
+- **`font/cmap` is separate from `font`, and both are separate from `extract`.** The
+  0.01%-spaces and 4,069-character-word failures are CMap and glyph-advance bugs
+  surfacing as extraction bugs. Keeping decode separate from layout is what makes them
+  independently testable.
+- **`bits` sits below `filter`.** CCITT and JBIG2 are bit-stream codecs, not byte-stream.
+  Building the bit reader as a shared primitive first is a precondition, not a
+  refactoring opportunity.
+
+### Pipeline
+
+```
+                    ┌─ tagged?  ─── yes ──► tag/ walk ──────────┐
+PDF ─► objects ─┬──►│                                            ├─► sectionize
+                │   └─ no ───────────────► layout/ heuristics ──┘        │
+                │                                                        ▼
+                └─► content ─► font ─► extract ─► doc.Page ──────►  doc.Section
+                                                      │                  │
+                          text coverage too low?      │                  ▼
+                                    ▼                 │            sink/{markdown,okf}
+                          render ─► ocr ──────────────┘
+```
+
+The router is per page and its rule is measurable: if a page's extracted text covers less
+than a threshold of the page area, or yields no text at all, that page goes to
+`render → ocr`. A mixed document — a born-digital spec with three scanned appendix pages
+— produces a mixed pipeline in one pass. This is why `ocr` returns `doc.Section` and not
+a string: OCR output rejoins the same domain model and the same sinks.
+
+### Solving the spaces problem properly
+
+The 19.15%-vs-0.01% divergence has one root cause. PDF content streams frequently emit no
+space glyph at all; inter-word space is implied by the displacement between glyph
+positions. Correct handling requires, per glyph:
+
+1. The advance width from `/Widths` or the embedded font program.
+2. The active `Tc` (char spacing), `Tw` (word spacing), `Tz` (horizontal scale), and
+   `TL`/`Td`/`TD`/`T*` displacements.
+3. The composed text rendering matrix (`Tm` × CTM × font size).
+
+A space is inferred when actual displacement exceeds expected advance by more than a
+fraction of the font's space width. That threshold is **one policy in `geom`**, not
+fifteen inline epsilons — because it is the single knob that trades "no spaces" against
+"too many spaces", and it must be tunable and benchmarked, not scattered.
+
+Line breaks follow the same logic on the vertical axis. Together these are the entire
+difference between a 4,069-character word and readable Markdown.
+
+---
+
+## 5. Borrow now, replace later
+
+Native implementation is a **goal of the repo, not a precondition for shipping**. Every
+borrowed dependency sits behind an interface this repo owns, so replacement is a new
+adapter and a one-line wiring change — never a rewrite of callers. Nothing borrowed is
+copyleft; nothing borrowed is EULA-encumbered.
+
+| Sub-problem | Start with | License | Replacement outlook |
+|---|---|---|---|
+| Object graph, xref, object streams | `pdfcpu/pkg/pdfcpu` | Apache-2.0 | Low priority — it is already good and pure Go |
+| Flate, LZW | Go stdlib | BSD-3 | Never; PDF's LZW `EarlyChange` variant is a thin wrapper |
+| DCT (JPEG) | `image/jpeg` | BSD-3 | Medium — stdlib rejects some CMYK/Adobe-transform and progressive streams found in the wild |
+| CCITT G3/G4 | `golang.org/x/image/ccitt` | BSD-3 | Low — decode and encode both present, `Group3`/`Group4`, MSB/LSB, byte-align option |
+| Rasterization | `klippa-app/go-pdfium` on wazero WASM | MIT over Apache-2.0/BSD-3 | **High — the flagship native target.** No CGO, cross-compiles, so it is a clean starting point |
+| Glyph rasterization | via the raster adapter | — | Follows the rasterizer |
+| JBIG2 decode | none initially | — | **High.** Port from Apache PDFBox's decoder (Apache-2.0, ITU T.88 / ISO 14492) |
+| JPX (JPEG 2000) | none initially | — | Lowest priority, highest cost. Rare in practice |
+| VLM inference | `llama.cpp` multimodal | MIT | Never native |
+| Structure tree, extraction, sectionize, sinks | **native from day one** | MIT | n/a — this is the repo's own contribution |
+
+The last row is the point. The borrowed layers are the commodity ones. The layers that
+actually determine output quality — structure-tree semantics, glyph advance and space
+inference, section reconstruction, OKF emission — are native from the first commit,
+because that is where every existing library falls down.
+
+### Prior art worth studying
+
+- **pdf.js** (Apache-2.0) — the reference implementation for text extraction and
+  bidirectional text. Readable, and hardened against a decade of real-world web PDFs.
+  UniDoc credits it for exactly this.
+- **Apache PDFBox JBIG2** (Apache-2.0) — the canonical JBIG2 decoder to port.
+- **Adobe Glyph List** (BSD-3) and **core-14 AFM metrics** — required data, not code.
+- **UniPDF** — read for *package decomposition only*. It is EULA-licensed and ships
+  bundled single-file releases, so its implementation is neither readable nor safe to
+  study. Its value was confirming that a pure-Go rasterizer is achievable and that the
+  sub-problem boundaries above match what a mature implementation converges on.
+
+---
+
+## 6. CLI
+
+```
+pdfspec md <file.pdf> [-o out]        one .md (default)
+pdfspec md --split <file.pdf> -o dir/  one .md per page
+pdfspec md --frontmatter …             emit YAML frontmatter
+pdfspec okf <file.pdf> -o bundle/      section-aware OKF bundle
+pdfspec probe <file.pdf>               tagged? encrypted? filters? fonts? per-page text coverage
+pdfspec images <file.pdf> -o dir/      extract embedded images, original codec preserved
+pdfspec render <file.pdf> -o dir/      pages → PNG at --dpi
+pdfspec ocr <file.pdf>                 force the VLM path
+```
+
+Flags that matter: `--dpi` (default 200), `--ocr auto|never|always` (default `auto` — the
+per-page router), `--model` (granite-docling | lightonocr), `--jobs` (page-level
+parallelism).
+
+`probe` exists because the first question about any PDF is "which path will this take, and
+why", and the answer must be inspectable without reading source. It is also the harness
+for the golden corpus in §9.
+
+---
+
+## 7. OKF output
+
+Per the OKF v0.2 specification: markdown files with YAML frontmatter, in a directory
+tree. Only `type` is required. `index.md` and `log.md` are reserved filenames; every other
+`.md` is a concept document. Consumers must not reject a bundle for missing optional
+fields, so emit conservatively and add fields as they become trustworthy.
+
+One clause of the spec becomes one concept document. Mapping:
+
+| OKF field | Source |
+|---|---|
+| `type` | `PDF Spec Clause` (required) |
+| `title` | Clause heading text from the structure tree |
+| `description` | First sentence of the clause body |
+| `resource` | Stable clause URI, e.g. `iso32000-2:2020#7.5.8` |
+| `tags` | Clause ancestry plus detected topics |
+| `sources[]` | `{author: ISO, last_modified: <spec date>}` |
+| `generated` | `{by: pdfspec vX.Y.Z, at: <run time>}` |
+| `status` | `draft` until a verification pass runs |
+
+Cross-references between clauses become ordinary markdown links, which is how OKF
+represents graph structure rather than a pure tree. The spec's own internal
+cross-references are recoverable from the PDF's link annotations and destinations, so the
+resulting bundle is a genuine graph and not a flattened outline. Directory hierarchy
+follows clause numbering.
+
+---
+
+## 8. Roadmap
+
+Each phase is independently useful. Nothing later is required for anything earlier.
+
+**Phase 1 — deterministic Markdown.** `doc`, `objects` + pdfcpu adapter, `filter` (Flate,
+LZW, ASCIIHex, ASCII85, RunLength), `content`, `font` + `cmap` + `encoding`, `geom`,
+`extract`, `sink/markdown`, `cmd/pdfspec` with `md`, `probe`. Success: beats every column
+of the §1 table on the same arXiv paper.
+
+**Phase 2 — structure and sections.** `tag`, `sectionize` tagged path, `sink/okf`. Success:
+ISO 32000-2's 1,023 pages emit a clause-per-file OKF bundle with correct hierarchy and
+resolved cross-references.
+
+**Phase 3 — images.** `bits`, DCT and CCITT wiring, `images` verb. Embedded images
+extracted with their original codec preserved where possible. Later: native JBIG2.
+
+**Phase 4 — raster and OCR.** `render` + pdfium WASM adapter, `ocr` + llama.cpp adapter,
+`ocr/doctags`, the per-page router, `render`/`ocr` verbs. Model handling: download to a
+cache directory, verify checksum, load via llama.cpp. Both candidate models are
+Apache-2.0 — granite-docling-258M (Idefics3; siglip2-base-patch16-512 + Granite 165M;
+emits DocTags; official GGUF published by ibm-granite, plus a ggml-org build) and
+LightOnOCR-2-1B (1B, emits markdown directly, wants 200 DPI at 1540 px longest edge,
+community GGUFs). Ship granite-docling first: an eighth the size, official GGUF, and
+DocTags is structured output rather than prose that must be re-parsed.
+
+**Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
+sections without paying for inference.
+
+**Phase 6 — native replacement.** Rasterizer first, then JBIG2. Driven by the interfaces
+already in place.
+
+**Phase 7 — Rust.** Same architecture, same CLI surface, shared golden corpus. Deferred
+until the Go boundaries have been proven by use, so the Rust port inherits a validated
+design instead of re-litigating one.
+
+Generation (creating PDFs) and filters come after extraction is solid, informed by the
+OKF-ified spec.
+
+---
+
+## 9. Quality gates
+
+- **Golden corpus with committed expectations.** The `docs/` PDFs plus the arXiv paper.
+  Every extraction change reports the §1 metrics — char count, space ratio, words over 25
+  characters, longest word, wall time, binary delta. A regression in any column fails.
+- **Metrics are the test, not a benchmark afterthought.** "Extraction improved" is not a
+  claim without those numbers, because every library in §1 would have claimed it.
+- **Fuzz the parsers.** `objects`, `content`, and `filter` take hostile input by
+  definition. Malformed PDFs are the norm, not the exception — 30 years of bad producer
+  engines is the actual problem this repo exists to absorb.
+- **No panics on malformed input, ever.** A PDF tool that crashes on a broken file is
+  useless for the corpora that need it most.
+- **Pure Go, no CGO, single binary, cross-compiles.** The WASM rasterizer is chosen
+  specifically to preserve this.
+- Full lint, test, and security scan across the codebase before any commit.
+
+---
+
+## 10. Open questions
+
+- **Table extraction.** Tagged PDFs declare `Table`/`TR`/`TD`, so the tagged path can emit
+  real Markdown tables. Untagged table detection is a research problem and is explicitly
+  out of scope for Phase 1–5; the VLM path covers it in the interim.
+- **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
+  a registered ISO identifier scheme exists before baking it into `resource` values.
+- **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`
+  alongside this document and are gitignored (below). Relocating them to `testdata/spec/`
+  or `corpus/` would separate input from documentation and make the golden corpus
+  explicit. Deferred until Phase 1 needs a fixture path, since moving them is cheap and
+  the layout should follow the test harness rather than precede it.
