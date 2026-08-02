@@ -34,6 +34,9 @@ docs/PDF20_*.pdf
 *.dylib
 *.test
 *.out
+# go test -cpuprofile / -memprofile drop these in the package directory.
+*.prof
+*.pprof
 /bin/
 /dist/
 vendor/

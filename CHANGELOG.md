@@ -28,6 +28,19 @@ All notable changes to this project are documented here, following
   why, which is what makes the corpus measurable.
 - Corpus tests that skip when the gitignored spec PDFs are absent, so a clone without them
   still passes the suite.
+- `content` — content-stream reader: a lexer over the §7.8.2 token syntax, a scanner that
+  assembles operands into operators with an explicit stack rather than recursion, and the
+  graphics and text state machine of §8 and §9. Deliberately tolerant, because content
+  streams are the part of a PDF most often malformed and a reader that stops at the first
+  oddity loses the rest of the page. Inline images (`BI`/`ID`/`EI`) are scanned specially:
+  the bytes between `ID` and `EI` are raw data that routinely lex as operators.
+- `filter` — stream decoders: Flate, LZW, ASCIIHex, ASCII85, RunLength, and the PNG and
+  TIFF predictors of §7.4.4.4. Image filters (DCT, CCITT, JPX) are passed through as encoded
+  data rather than half-decoded, so the image path can own them later.
+- Test coverage for `content` (97.7%) and `filter` (93.8%), including corpus tests over 11
+  real documents, five fuzz targets, and benchmarks. The corpus pass found zero unrecognized
+  operators across 2.76M operators of ISO 32000-2, and MCID coverage splits exactly as the
+  design predicts: 90–98% on tagged files against 0 on the untagged paper.
 
 ### Changed — 2026-08-02
 
@@ -44,8 +57,25 @@ All notable changes to this project are documented here, following
   advisories reachable through PDF parsing. GO-2026-5970 is an infinite loop on invalid
   input, and invalid input is this toolkit's normal case.
 
+- `content`: operator names are interned against ISO 32000-2 Annex A, so a recognized
+  operator no longer allocates a string for its name. Cut 2,200 allocations per benchmark
+  iteration from both the lexer and the scanner and took lexer throughput from 214 MB/s to
+  236 MB/s. What remains is boxing operand scalars into `objects.Object` plus one buffer per
+  literal string and name, which is structural; `Op` and `Scanner.operands` now say so
+  instead of claiming steady-state scanning does not allocate.
+
 ### Fixed — 2026-08-02
 
+- `filter`: LZW decoded to silent garbage past 511 codes. The code-width thresholds
+  conflated two offsets that stack. A decoder cannot define a table entry until it has read
+  one code past the one that produced it, so it always trails the encoder by exactly one
+  entry — that is an unconditional `+1`. PDF's default `EarlyChange=1` then widens one code
+  earlier still, which is a *second* `+1`, not a substitute for the first. Reading one code
+  at the wrong width desynchronizes everything after it, and because the stream stays
+  syntactically valid the symptom was corrupt text with no error. Found by writing an
+  independent PDF-flavored encoder for the tests: `compress/lzw` implements only the
+  `EarlyChange=0` behavior, so round-tripping through this package's own decoder would have
+  passed with both sides wrong the same way.
 - `objects/pdfcpu`: indirect references never resolved. pdfcpu's `Dereference` type-asserts
   `types.IndirectRef` by value while `NewIndirectRef` returns a pointer, so every lookup
   fell through its type switch and returned the reference unchanged. Everything reachable as
