@@ -305,9 +305,9 @@ func (s *store) convStream(sd *pctypes.StreamDict) (*objects.Stream, error) {
 	return st, nil
 }
 
-// Decode decodes a stream's filter chain, populating Decoded. It is exposed
-// here rather than on objects.Stream because decoding is an adapter capability
-// until the native filter package lands.
+// Decode decodes a stream's filter chain, populating Decoded. It implements
+// objects.Store.Decode; the work is the adapter's because the borrowed parser
+// owns the filter implementations until the native filter package takes over.
 //
 // Image streams are left alone: their final filter is an image codec whose
 // output is pixels, not bytes, and callers wanting the original JPEG or CCITT

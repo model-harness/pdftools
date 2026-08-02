@@ -33,6 +33,7 @@ func (s *store) Catalog() (objects.Dict, error)  { return s.cat, nil }
 func (s *store) PageCount() int                  { return 1 }
 func (s *store) Page(int) (objects.Dict, error)  { return objects.Dict{}, nil }
 func (s *store) PageContent(int) ([]byte, error) { return nil, nil }
+func (s *store) Decode(*objects.Stream) error    { return nil }
 func (s *store) Version() string                 { return "2.0" }
 func (s *store) Encrypted() bool                 { return false }
 func (s *store) Close() error                    { return nil }

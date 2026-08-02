@@ -22,6 +22,7 @@ func (nilStore) Catalog() (objects.Dict, error)                   { return nil, 
 func (nilStore) PageCount() int                                   { return 0 }
 func (nilStore) Page(int) (objects.Dict, error)                   { return nil, nil }
 func (nilStore) PageContent(int) ([]byte, error)                  { return nil, nil }
+func (nilStore) Decode(*objects.Stream) error                     { return nil }
 func (nilStore) Version() string                                  { return "" }
 func (nilStore) Encrypted() bool                                  { return false }
 func (nilStore) Close() error                                     { return nil }

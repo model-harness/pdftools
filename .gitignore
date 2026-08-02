@@ -37,6 +37,8 @@ docs/PDF20_*.pdf
 # go test -cpuprofile / -memprofile drop these in the package directory.
 *.prof
 *.pprof
+# go test -coverprofile, when given a name without an extension.
+cov
 /bin/
 /dist/
 vendor/

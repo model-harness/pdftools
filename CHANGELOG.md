@@ -41,6 +41,43 @@ All notable changes to this project are documented here, following
   real documents, five fuzz targets, and benchmarks. The corpus pass found zero unrecognized
   operators across 2.76M operators of ISO 32000-2, and MCID coverage splits exactly as the
   design predicts: 90–98% on tagged files against 0 on the untagged paper.
+- `font/encoding` — the base encodings of Annex D as code-to-glyph-name tables, plus a
+  reduced Adobe Glyph List. Validated against `golang.org/x/text/encoding/charmap`, which
+  derives its tables from the Unicode Consortium's files rather than from these: two
+  independent sources agreeing is evidence, one source restating itself is not. That
+  validation is also what identified the three places PDF deliberately departs from the
+  platform encodings, each now asserted individually so a fourth cannot appear quietly.
+  Resolution returns a *string* rather than a rune, because a glyph is not always one
+  character — `f_t` has no precomposed code point, and returning one rune per glyph is how
+  "efficient" becomes "ecient".
+- `font/cmap` — CMap reader for both roles: the code-to-CID mappings of composite fonts and
+  the code-to-Unicode mappings of `/ToUnicode`. One parser, because they share a syntax.
+  Reuses `content`'s lexer rather than carrying a second tokenizer for the same tokens.
+  Byte-splitting per §9.7.6.2 is the part that matters most: a reader that assumes two-byte
+  codes because Identity-H is common mis-splits every mixed-width CMap and, because the
+  result is still a sequence of plausible codes, emits confident wrong text rather than an
+  error.
+- `font` — the loader that answers the two questions extraction asks of a font: what a
+  character code means, and how far it advances. Both from one `Font`, because separating
+  them is how extractors end up with correct characters in the wrong order, or with the
+  4,069-character "word" a single dropped advance produces. Includes glyph-name-keyed
+  standard-14 metrics for the Helvetica and Times faces, derived from pdfcpu's AFM data and
+  cross-checked at test time. The check is a known-answer control rather than an inspection:
+  pdfcpu returns 1000 for a glyph it cannot find, which is indistinguishable from a real
+  width of 1000 — and several real entries *are* 1000 — so all four Courier faces are
+  asserted to return exactly 600 for all 216 WinAnsi glyph names, which no lookup miss could
+  satisfy.
+- `objects.Store.Decode` and the `GetStreamData` helper. Decoding belongs on the interface
+  because most streams worth reading are not page content — a `/ToUnicode` CMap, an embedded
+  CMap, a font program — and `Resolve` returns those with `Decoded` nil. Reading one without
+  decoding yields nothing and looks like an empty stream rather than an un-decoded one, which
+  is exactly how every `/ToUnicode` CMap in the corpus first read as empty.
+- Corpus tests for the three font packages, every count measured before it was pinned. 262
+  font dictionaries across the 11 documents: 166 simple, 96 composite, all 96 carrying
+  `/ToUnicode`, and 29,952 of 29,952 encoded codes resolving to text. Reaching all 262
+  required descending into Form XObject resources and the AcroForm `/DR` — 36 fonts live
+  only there, and a traversal stopping at the page dictionary omits them silently, which in
+  an extractor means the text inside every form comes out undecoded.
 
 ### Changed — 2026-08-02
 

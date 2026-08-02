@@ -1,11 +1,16 @@
 package objects
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 // fakeStore resolves refs from a fixed table, so the getters can be tested
 // without a PDF file.
 type fakeStore struct {
-	objs map[Ref]Object
+	objs      map[Ref]Object
+	decodeErr error
 }
 
 func (f *fakeStore) Resolve(o Object) (Object, error) {
@@ -27,9 +32,21 @@ func (f *fakeStore) Catalog() (Dict, error)          { return Dict{}, nil }
 func (f *fakeStore) PageCount() int                  { return 0 }
 func (f *fakeStore) Page(int) (Dict, error)          { return nil, ErrNotFound }
 func (f *fakeStore) PageContent(int) ([]byte, error) { return nil, nil }
-func (f *fakeStore) Version() string                 { return "1.7" }
-func (f *fakeStore) Encrypted() bool                 { return false }
-func (f *fakeStore) Close() error                    { return nil }
+
+// Decode stands in for a filter chain by uppercasing Raw, so a test can tell
+// decoded bytes from raw ones. decodeErr makes it fail, for the path where a
+// stream cannot be decoded at all.
+func (f *fakeStore) Decode(s *Stream) error {
+	if f.decodeErr != nil {
+		return f.decodeErr
+	}
+	s.Decoded = []byte(strings.ToUpper(string(s.Raw)))
+	return nil
+}
+
+func (f *fakeStore) Version() string { return "1.7" }
+func (f *fakeStore) Encrypted() bool { return false }
+func (f *fakeStore) Close() error    { return nil }
 
 func TestGetFollowsRefs(t *testing.T) {
 	ref := Ref{Num: 5}
@@ -77,6 +94,43 @@ func TestGetWrongTypeReportsAbsent(t *testing.T) {
 	s := &fakeStore{}
 	if _, ok := GetArray(s, Dict{"A": Name("notAnArray")}, "A"); ok {
 		t.Fatal("wrong type should report absent")
+	}
+}
+
+func TestGetStreamDataDecodesOnDemand(t *testing.T) {
+	// The reason this helper exists: a stream from Resolve has Decoded nil, so
+	// reading it without decoding looks like an empty stream rather than an
+	// un-decoded one. Every /ToUnicode CMap in the corpus read as empty before
+	// this existed.
+	s := &fakeStore{}
+	st := &Stream{Dict: Dict{}, Raw: []byte("cmap")}
+
+	if got := string(st.Decoded); got != "" {
+		t.Fatalf("a fresh stream should not be decoded, got %q", got)
+	}
+	data, ok := GetStreamData(s, Dict{"ToUnicode": st}, "ToUnicode")
+	if !ok || string(data) != "CMAP" {
+		t.Fatalf("got %q %v, want \"CMAP\" true", data, ok)
+	}
+}
+
+func TestGetStreamDataReportsUndecodableAsAbsent(t *testing.T) {
+	// An image codec is the usual reason a stream will not decode, which is
+	// routine rather than an error the caller should distinguish here.
+	s := &fakeStore{decodeErr: errors.New("unsupported filter")}
+	if data, ok := GetStreamData(s, Dict{"S": &Stream{Dict: Dict{}, Raw: []byte("x")}}, "S"); ok {
+		t.Fatalf("undecodable stream reported present with %q", data)
+	}
+}
+
+func TestGetStreamDataKeepsAlreadyDecodedBytes(t *testing.T) {
+	// Decoded already populated means the adapter had the bytes; decoding again
+	// would be wasted work, and with a real filter chain it would fail.
+	s := &fakeStore{decodeErr: errors.New("must not be called")}
+	st := &Stream{Dict: Dict{}, Raw: []byte("raw"), Decoded: []byte("plain")}
+	data, ok := GetStreamData(s, Dict{"S": st}, "S")
+	if !ok || string(data) != "plain" {
+		t.Fatalf("got %q %v, want \"plain\" true", data, ok)
 	}
 }
 

@@ -121,6 +121,20 @@ type Store interface {
 	// with intervening whitespace before tokenizing, which this handles.
 	PageContent(n int) ([]byte, error)
 
+	// Decode applies a stream's filter chain, populating its Decoded field.
+	//
+	// Required on the interface rather than left to the adapter because most
+	// streams worth reading are not page content: a /ToUnicode CMap, an embedded
+	// CMap, a font program, an embedded file. Resolve returns those with Decoded
+	// nil, since decoding every stream a caller merely looked at would decompress
+	// the whole document.
+	//
+	// A stream whose final filter is an image codec is left alone and reports no
+	// error: its output is pixels rather than bytes, and callers that want the
+	// original JPEG or CCITT data want Raw. Decoded staying nil is the signal to
+	// use Raw.
+	Decode(*Stream) error
+
 	// Version reports the PDF version, preferring the catalog's /Version over
 	// the header when both are present, per ISO 32000-2 §7.5.5.
 	Version() string
@@ -192,6 +206,9 @@ func GetName(s Store, d Dict, key Name) (Name, bool) {
 }
 
 // GetStream resolves d[key] as a stream.
+//
+// The stream's Decoded field is nil unless something already decoded it. Use
+// GetStreamData when the bytes are what you want.
 func GetStream(s Store, d Dict, key Name) (*Stream, bool) {
 	v, ok := Get(s, d, key)
 	if !ok {
@@ -199,6 +216,29 @@ func GetStream(s Store, d Dict, key Name) (*Stream, bool) {
 	}
 	st, ok := v.(*Stream)
 	return st, ok
+}
+
+// GetStreamData resolves d[key] as a stream and returns its decoded bytes.
+//
+// This is the form nearly every caller wants, and it exists because the
+// two-step version has a silent failure mode: a stream fetched with GetStream
+// has Decoded nil until someone calls Decode, so reading it directly yields
+// nothing and looks like an empty stream rather than an un-decoded one.
+//
+// A decode failure reports false rather than an error, matching the other
+// getters: a stream this package cannot decode is usually an image codec, which
+// is a routine outcome and not the caller's problem to distinguish here.
+func GetStreamData(s Store, d Dict, key Name) ([]byte, bool) {
+	st, ok := GetStream(s, d, key)
+	if !ok {
+		return nil, false
+	}
+	if st.Decoded == nil {
+		if err := s.Decode(st); err != nil {
+			return nil, false
+		}
+	}
+	return st.Decoded, st.Decoded != nil
 }
 
 // GetInt resolves d[key] as an integer. A Real is accepted and truncated:
