@@ -339,7 +339,18 @@ func (s *store) Decode(st *objects.Stream) error {
 	return nil
 }
 
+// filterPipeline translates a filter chain for pdfcpu.
+//
+// Nil for an empty chain, not an empty slice. pdfcpu distinguishes the two: a nil
+// pipeline takes the path that returns the raw bytes unchanged, while an empty
+// non-nil one reaches the decoding loop, whose body never runs, and pdfcpu then
+// reads from a nil reader and panics. An unfiltered content stream — a form
+// XObject written without compression — is exactly that case, and page 269 of ISO
+// 32000-2 has one.
 func filterPipeline(names []objects.Name) ([]pctypes.PDFFilter, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
 	out := make([]pctypes.PDFFilter, 0, len(names))
 	for _, n := range names {
 		out = append(out, pctypes.PDFFilter{Name: string(n)})

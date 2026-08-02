@@ -98,6 +98,76 @@ type Font struct {
 	// spaceWidth caches the advance of the space glyph, which extract needs for
 	// every inter-word gap decision on the page.
 	spaceWidth float64
+
+	// bold, italic, and mono are the typographic identity a consumer needs to emit
+	// emphasis or recognize a code span. They are derived at load time from the
+	// descriptor and the name together, because the two disagree often enough that
+	// either alone loses cases: see traits.
+	bold   bool
+	italic bool
+	mono   bool
+}
+
+// Name returns the /BaseFont name with any subset prefix stripped.
+//
+// The prefix is stripped because it identifies the subset, not the typeface: the
+// same font subset twice in one document gets two different prefixes, and a
+// consumer grouping runs by font name would treat them as unrelated and break a
+// paragraph at every subset boundary. BaseFont keeps the prefix for callers that
+// want the name exactly as written.
+func (f *Font) Name() string { return stripSubsetPrefix(f.BaseFont) }
+
+// Bold, Italic, and Monospaced report the font's typographic traits.
+func (f *Font) Bold() bool       { return f.bold }
+func (f *Font) Italic() bool     { return f.italic }
+func (f *Font) Monospaced() bool { return f.mono }
+
+// traits derives bold, italic, and monospaced from the descriptor and the name.
+//
+// Both sources are consulted because each misses cases the other catches. The
+// descriptor is authoritative when correct — /Flags bit 1 for fixed pitch, bit 7
+// for italic, and /StemV or /FontWeight for weight — but producers routinely omit
+// the weight and set no italic flag on a font whose name says "BoldItalic". Taking
+// the name as corroborating evidence recovers those; taking it alone would fail on
+// every subset font named by its foundry rather than its style.
+//
+// A composite font's traits live on the CIDFont's descriptor, not the Type0
+// dictionary, which is why the descriptor is passed in rather than read here.
+func (f *Font) traits(s objects.Store, fd objects.Dict) {
+	name := strings.ToLower(stripSubsetPrefix(f.BaseFont))
+
+	if fd != nil {
+		flags, _ := objects.GetInt(s, fd, "Flags")
+		f.mono = flags&(1<<0) != 0
+		f.italic = flags&(1<<6) != 0
+
+		// /FontWeight is the direct statement; 600 is the conventional threshold, and
+		// semibold at 600 is bold enough for emphasis. /StemV is the fallback that
+		// many producers write instead: a stem above 120 thousandths of an em is a
+		// bold weight at text sizes.
+		if w, ok := objects.GetNum(s, fd, "FontWeight"); ok && w >= 600 {
+			f.bold = true
+		} else if v, ok := objects.GetNum(s, fd, "StemV"); ok && v > 120 {
+			f.bold = true
+		}
+		// /ItalicAngle is nonzero for an oblique face whose flag is unset, which is
+		// the common producer omission.
+		if a, ok := objects.GetNum(s, fd, "ItalicAngle"); ok && a != 0 {
+			f.italic = true
+		}
+	}
+
+	if strings.Contains(name, "bold") || strings.Contains(name, "black") ||
+		strings.Contains(name, "heavy") || strings.Contains(name, "semibold") {
+		f.bold = true
+	}
+	if strings.Contains(name, "italic") || strings.Contains(name, "oblique") {
+		f.italic = true
+	}
+	if strings.Contains(name, "mono") || strings.Contains(name, "courier") ||
+		strings.Contains(name, "consolas") {
+		f.mono = true
+	}
 }
 
 // Load reads a font dictionary.
@@ -162,9 +232,11 @@ func (f *Font) loadSimple(s objects.Store, d objects.Dict) {
 	// /MissingWidth defaults to 0 per Table 122, which means a code outside
 	// /Widths does not advance at all. That is the specification's answer and it
 	// is usually right: the codes outside the range are typically unused.
-	if fd, ok := objects.GetDict(s, d, "FontDescriptor"); ok {
+	fd, _ := objects.GetDict(s, d, "FontDescriptor")
+	if fd != nil {
 		f.defaultWidth, _ = objects.GetNum(s, fd, "MissingWidth")
 	}
+	f.traits(s, fd)
 }
 
 // baseEncoding decides which base encoding a simple font's codes start from,
@@ -282,16 +354,24 @@ func (f *Font) loadComposite(s objects.Store, d objects.Dict) {
 
 	desc, ok := objects.GetArray(s, d, "DescendantFonts")
 	if !ok || len(desc) == 0 {
+		// No CIDFont: nothing declares traits, and the name is the only evidence
+		// left. Calling traits with a nil descriptor is what makes the name-based
+		// half apply on its own.
+		f.traits(s, nil)
 		return
 	}
 	dv, err := s.Resolve(desc[0])
 	if err != nil {
+		f.traits(s, nil)
 		return
 	}
 	dd, ok := dv.(objects.Dict)
 	if !ok {
+		f.traits(s, nil)
 		return
 	}
+	fd, _ := objects.GetDict(s, dd, "FontDescriptor")
+	f.traits(s, fd)
 	if dw, ok := objects.GetNum(s, dd, "DW"); ok {
 		f.defaultWidth = dw
 	}

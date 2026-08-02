@@ -72,6 +72,39 @@ All notable changes to this project are documented here, following
   CMap, a font program — and `Resolve` returns those with `Decoded` nil. Reading one without
   decoding yields nothing and looks like an empty stream rather than an un-decoded one, which
   is exactly how every `/ToUnicode` CMap in the corpus first read as empty.
+- `doc` — the extracted-document model, and the convergence point of the whole design. The
+  extractor, the layout heuristics, the OCR engine, and the structure-tree walker all
+  *produce* a `doc.Page`; the Markdown and OKF sinks all *consume* one. Neither side knows
+  the other exists, which is what lets the OCR path arrive later without touching a sink.
+- `extract` — text extraction: the package where the spaces problem is actually solved. PDF
+  records glyphs and positions, not words, so reconstructing a word needs the advance width
+  (`font`), the composed text rendering matrix (`content`), and one threshold policy
+  (`geom.Tolerance`) at the same moment. Positions project onto the baseline so rotated and
+  skewed text reads correctly, orientation is bucketed to 15° so a fitted-curve label does
+  not fragment per glyph, fragments split on style change and marked-content boundary, and
+  `/Artifact` content — the running header repeated on 1,023 pages — is dropped by default.
+  Stream order is preserved as reading order: sorting lines would interleave the two columns
+  of a spec page.
+- `font.Font.Name`, `Bold`, `Italic`, and `Monospaced` — the typographic identity a Markdown
+  sink needs to emit emphasis or recognize a code span. Derived from the descriptor and the
+  `/BaseFont` name together, because producers routinely omit `/FontWeight` and set no italic
+  flag on a font whose own name says "BoldItalic", while name-only detection fails on every
+  subset font named by its foundry. `Name` strips the subset prefix, since the same typeface
+  subset twice gets two prefixes and a consumer grouping by name would break a paragraph at
+  every subset boundary.
+- `extract` unit tests over hand-written content streams, one operator sequence per test.
+  A fixture PDF cannot be edited to isolate "does a TJ adjustment of -400 produce a space,"
+  which is the only question several of these tests ask. The standard-14 fonts are used with
+  no `/Widths`, so every advance comes from `font/metrics.go` rather than from numbers
+  written into the test.
+- `cmd/pdfspec` extraction metrics tests — the `docs/DESIGN.md` §1 table, measured rather
+  than asserted, over the whole corpus. ISO 32000-2: 1,023 pages, 1.96M non-space characters,
+  383,956 words, 18.46% spaces, 0.06% of words past 25 characters, longest genuine word 73,
+  in 1.6s. The arXiv paper's bars come from running two other extractors over the same file:
+  we find 39,257 non-space characters to pdftotext's 39,035 and pdfplumber's 39,089 — the
+  three agree on the characters to within 0.6% — but 6,343 words against pdfplumber's 2,392
+  from those same glyphs, with 0.30% of words past 25 characters against its 15.8%. That is
+  the §1 spaces problem measured on a document rather than quoted from a table.
 - Corpus tests for the three font packages, every count measured before it was pinned. 262
   font dictionaries across the 11 documents: 166 simple, 96 composite, all 96 carrying
   `/ToUnicode`, and 29,952 of 29,952 encoded codes resolving to text. Reaching all 262
@@ -135,3 +168,18 @@ All notable changes to this project are documented here, following
   stops a tree looping back on itself but not a long chain of distinct references, so a
   crafted deeply-nested document could exhaust the stack on untrusted input. Bounded at 512
   (corpus maximum is 13), which bounds `Walk` and `Stats` transitively. Found in review.
+- `objects/pdfcpu`: `Decode` panicked with a nil dereference on an unfiltered stream. pdfcpu
+  distinguishes a nil filter pipeline from an empty non-nil one — nil returns the raw bytes,
+  while an empty slice reaches the decode loop, whose body never runs, and pdfcpu then reads
+  from a nil reader. The adapter built an empty slice for a stream with no `/Filter`, which is
+  exactly what a form XObject written without compression is. Page 269 of ISO 32000-2 has one,
+  so this aborted extraction of the target document. Found by running the corpus, not by a
+  unit test: no hand-written stream in `extract`'s tests is uncompressed.
+- `extract`: a space was inferred between every pair of glyphs on five corpus documents —
+  56% whitespace, longest "word" of two characters, the exact inverse of the §1 baselines'
+  failure. The pen advance scaled displacements by the CTM alone, but a displacement passes
+  through the text matrix *and* the CTM, and a producer setting 12-point type as a `/F1 1 Tf`
+  with a `Tm` scaling by 12 — which many do — puts the whole font size in `Tm`. Every advance
+  was then undercounted by that factor, the shortfall accumulated, and it read as an
+  unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
+  unchanged afterwards, which is what confirms it removed only the spurious spaces.
