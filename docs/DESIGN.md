@@ -367,16 +367,35 @@ One clause of the spec becomes one concept document. Mapping:
 | `title` | Clause heading text from the structure tree |
 | `description` | First sentence of the clause body |
 | `resource` | Stable clause URI, e.g. `iso32000-2:2020#7.5.8` |
-| `tags` | Clause ancestry plus detected topics |
-| `sources[]` | `{author: ISO, last_modified: <spec date>}` |
-| `generated` | `{by: pdfspec vX.Y.Z, at: <run time>}` |
+| `tags` | Clause ancestry |
+| `sources[]` | `{resource: <source path>, title: <document title>, last_modified: <spec date>}` |
+| `generated` | `{by: pdfspec/<version>, at: <run time>}` |
 | `status` | `draft` until a verification pass runs |
 
+Two fields deviate from an earlier draft of this table, both because of OKF §7's actor
+convention — `<producer>/<version>` for agents, `human:<id>` for people, `process:<id>` for
+processes, which is what lets a consumer classify trust by detecting the `human:` prefix:
+
+- `generated.by` is `pdfspec/<version>`, not `pdfspec vX.Y.Z`. A space-and-`v` form does
+  not parse as an actor and so is not classifiable.
+- `sources[].author` is an actor field, and the author of ISO 32000-2 is an organization
+  with no actor form — a bare `ISO` is neither `human:` nor `<producer>/<version>`. It is
+  omitted rather than filled with something a consumer would misclassify. The document's
+  own title carries the same information in a field that admits prose.
+
 Cross-references between clauses become ordinary markdown links, which is how OKF
-represents graph structure rather than a pure tree. The spec's own internal
-cross-references are recoverable from the PDF's link annotations and destinations, so the
-resulting bundle is a genuine graph and not a flattened outline. Directory hierarchy
-follows clause numbering.
+represents graph structure rather than a pure tree. Directory hierarchy follows clause
+numbering.
+
+The links are currently resolved **textually** — a cue word (`clause`, `annex`, `see`, `§ `)
+followed by a dotted clause number the document actually contains. Resolving them from the
+PDF's `/Annots` and `/Dests` instead is strictly better and remains the target: it would
+catch references the prose does not cue and would never produce a wrong edge. It is not
+available yet because `doc.Outline` carries text and structure, and annotations are neither;
+it lands when a field for them is threaded through `extract` and `sectionize`. Measured on
+ISO 32000-2 the textual pass resolves 1,328 references. On WTPDF it resolves none, which is
+correct: that file's reading order draws the clause number after a closing parenthesis
+(`see ).8.2.6`), so there is no number adjacent to the cue to match.
 
 ---
 

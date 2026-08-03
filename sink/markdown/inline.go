@@ -137,6 +137,8 @@ func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart bool) {
 // Nothing inside is escaped — a code span is literal by definition, and escaping it
 // would emit the backslashes.
 func writeCode(sb *strings.Builder, s string) {
+	// The one substitution a verbatim context still makes — see sanitize.
+	s = sanitize(s)
 	lead := s[:len(s)-len(strings.TrimLeft(s, " \t"))]
 	trail := s[len(strings.TrimRight(s, " \t")):]
 	body := s[len(lead) : len(s)-len(trail)]
@@ -188,6 +190,10 @@ func escapeInto(sb *strings.Builder, s string, atStart bool) {
 
 	for i := 0; i < len(s); i++ {
 		c := s[i]
+		if isControl(c) {
+			sb.WriteString(replacement)
+			continue
+		}
 		switch c {
 		case '\\', '`', '*', '|':
 			sb.WriteByte('\\')
@@ -273,6 +279,63 @@ func escapeInto(sb *strings.Builder, s string, atStart bool) {
 		}
 		sb.WriteByte(c)
 	}
+}
+
+// replacement is U+FFFD, which CommonMark §2.3 requires U+0000 be replaced with
+// before parsing. Applied to the whole C0 set and to DEL rather than to NUL alone —
+// see isControl.
+const replacement = "�"
+
+// isControl reports whether c is a control byte that must not reach the output.
+//
+// Tab, newline, and carriage return are excluded because they are structural: a tab
+// is legal inline whitespace and the two line breaks are how the writer separates
+// blocks. Everything else in C0, and DEL, is a byte with no textual meaning that a
+// PDF should not have produced, and three of them do exist in this repo's corpus —
+// PDF20_AN001-BPC.pdf draws a NUL between two sentences, from a /ToUnicode entry
+// mapping a code to U+0000.
+//
+// Substituted rather than dropped, which is the difference between a reader seeing
+// that something was there and the text silently closing over it. Substituted rather
+// than escaped as "\x00", because that is a five-character lie about what the page
+// says. The one place this must not run is inside a fenced code block, where the
+// bytes are the content — and escapeInto is not called there.
+func isControl(c byte) bool {
+	return c < 0x20 && c != '\t' && c != '\n' && c != '\r' || c == 0x7F
+}
+
+// sanitize is isControl's substitution for the two paths escapeInto does not reach:
+// a code span and a fenced code block, both of which are verbatim.
+//
+// Verbatim means no backslashes, and this adds none — a control byte has no escape in
+// a code span anyway, since the whole point of one is that "\x00" inside it would
+// render as those four characters. So the invariant the output holds is the same
+// everywhere: no byte outside tab, newline, and carriage return that a Markdown parser
+// is required to replace before it starts.
+//
+// Returns s unchanged and allocates nothing in the ordinary case, which is every code
+// block in the corpus.
+func sanitize(s string) string {
+	i := 0
+	for ; i < len(s); i++ {
+		if isControl(s[i]) {
+			break
+		}
+	}
+	if i == len(s) {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	sb.WriteString(s[:i])
+	for ; i < len(s); i++ {
+		if isControl(s[i]) {
+			sb.WriteString(replacement)
+			continue
+		}
+		sb.WriteByte(s[i])
+	}
+	return sb.String()
 }
 
 // linkOpen reports whether the "[" at s[i] could open a link, image, or reference

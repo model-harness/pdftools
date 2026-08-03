@@ -14,6 +14,7 @@ usage: pdfspec <command> [flags] <file.pdf>
 
 commands:
   md       convert a PDF to Markdown
+  okf      convert a PDF to an Open Knowledge Format bundle, one file per clause
   probe    report what a PDF contains and which extraction path it will take
   version  print version
 
@@ -33,6 +34,8 @@ func main() {
 	switch cmd {
 	case "md":
 		err = runMD(args)
+	case "okf":
+		err = runOKF(args)
 	case "probe":
 		err = runProbe(args)
 	case "version", "-v", "--version":

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
@@ -21,6 +22,23 @@ func corpusFile(t *testing.T, name string) string {
 		t.Skipf("corpus file absent: %s (see docs/DESIGN.md section 3)", name)
 	}
 	return p
+}
+
+// corpusFiles lists the PDFs present, for the tests that assert something of every
+// file rather than of a named one. Empty when the corpus is absent, which leaves such
+// a test with nothing to run rather than failing it.
+func corpusFiles() []string {
+	entries, err := os.ReadDir(corpusDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if strings.HasSuffix(strings.ToLower(e.Name()), ".pdf") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
 }
 
 // want captures the expectations that must not regress. These numbers came from

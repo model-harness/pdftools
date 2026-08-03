@@ -85,6 +85,73 @@ func WritePage(w io.Writer, meta doc.Metadata, p doc.Page, total int, opt Option
 	return bw.Flush()
 }
 
+// WriteBlocks emits a run of blocks and nothing else: no frontmatter, no page
+// structure, no headings the caller did not put in the slice.
+//
+// It exists for sink/okf, which writes one file per clause and needs the body of that
+// clause rendered with the same escaping policy as everything else. The alternative was
+// a second implementation of escapeInto in that package, and two escaping policies
+// diverge — the first document containing "<</Type /Page>>" would be escaped one way in
+// the Markdown output and another in the bundle, from the same extraction.
+func WriteBlocks(w io.Writer, blocks []doc.Block, opt Options) error {
+	bw := bufio.NewWriter(w)
+	mw := &writer{w: bw}
+	for i := range blocks {
+		b := blocks[i]
+		if b.Role == doc.RoleArtifact && !opt.Artifacts {
+			continue
+		}
+		if b.IsEmpty() {
+			continue
+		}
+		mw.block(b)
+	}
+	if err := mw.err; err != nil {
+		return err
+	}
+	return bw.Flush()
+}
+
+// YAMLString quotes a value for use as a YAML scalar, quoting only when the value needs
+// it. Exported for sink/okf, whose frontmatter is nested where this package's is flat —
+// so it cannot reuse the writer, but must not reimplement the quoting rule. See
+// yamlString for what the rule is and why it is conservative.
+func YAMLString(s string) string { return yamlString(s) }
+
+// InlineText escapes a plain string as Markdown inline content — a heading a sink composed
+// itself, a value that was a struct field rather than a span.
+//
+// Not treated as beginning a block, because the callers all prefix something: "# " before a
+// heading, "* " before a list item. A "-" that follows either of those is a hyphen, and
+// escaping it there would put a backslash in the middle of a rendered line.
+func InlineText(s string) string {
+	var sb strings.Builder
+	escapeInto(&sb, s, false)
+	return sb.String()
+}
+
+// LinkLabel escapes a plain string for use between the brackets of a Markdown link.
+//
+// Both brackets are escaped unconditionally here, where escapeInto escapes "[" only when it
+// could open a link and "]" never — correct for prose, wrong inside a label, where the
+// first unescaped "]" ends the label and turns the rest of the title into text followed by
+// a bare URL. ISO 32000-2 has clause titles containing brackets, so this is a real case and
+// not a defensive one.
+func LinkLabel(s string) string {
+	var sb strings.Builder
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == '[' || c == ']' {
+			escapeInto(&sb, s[start:i], false)
+			sb.WriteByte('\\')
+			sb.WriteByte(c)
+			start = i + 1
+		}
+	}
+	escapeInto(&sb, s[start:], false)
+	return sb.String()
+}
+
 // String renders the document to a string, for callers that want the text rather
 // than a stream — tests, and any future in-process consumer.
 func String(d *doc.Document, opt Options) string {
@@ -189,12 +256,14 @@ func (w *writer) block(b doc.Block) {
 		// without being absorbed into it, and preformatted text in a specification is
 		// usually inside one. No language tag — nothing in the model knows the
 		// language, and guessing it would put syntax highlighting on prose.
-		fence := codeFence(b.Text())
+		text := sanitize(b.Text())
+		fence := codeFence(text)
 		w.str(fence)
 		w.nl()
 		// Verbatim. Escaping inside a fence would emit the backslashes literally,
-		// which is the one place the escaping policy must not run.
-		w.str(strings.TrimRight(b.Text(), "\n"))
+		// which is the one place the escaping policy must not run — sanitize adds no
+		// backslashes and so is the one substitution that still applies here.
+		w.str(strings.TrimRight(text, "\n"))
 		w.nl()
 		w.str(fence)
 		w.nl()

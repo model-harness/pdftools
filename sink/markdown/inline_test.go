@@ -60,6 +60,40 @@ func TestUnderscoreIntrawordNotEscaped(t *testing.T) {
 	}
 }
 
+// CommonMark §2.3 requires U+0000 be replaced with U+FFFD before parsing, and a
+// control byte written raw is a byte no consumer of the output can do anything with:
+// YAML rejects most of them outright, and a NUL in a filename or a path terminates it
+// in every C API downstream. PDF20_AN001-BPC.pdf really does draw one, from a
+// /ToUnicode entry mapping a code to U+0000 — three across the whole corpus.
+func TestControlBytesReplaced(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"tone progression.\x00*", "tone progression.�\\*"},
+		{"a\x01b", "a�b"},
+		{"a\x1fb", "a�b"},
+		{"a\x7fb", "a�b"},
+		// Structural whitespace is not a control byte for this purpose: a tab is legal
+		// inline whitespace and the two line breaks are how blocks are separated.
+		{"a\tb", "a\tb"},
+		{"a\nb", "a\nb"},
+		{"a\rb", "a\rb"},
+	} {
+		if got := escaped(t, tc.in); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	// Verbatim contexts substitute too. A code span cannot escape a control byte —
+	// "\x00" inside backticks renders as those four characters — so replacement is the
+	// only option that leaves the output parseable, and it adds no backslash.
+	if got := render(t, para(span("x\x00y", mono))); strings.ContainsRune(got, 0) {
+		t.Errorf("code span kept a control byte: %q", got)
+	}
+	code := doc.Block{Role: doc.RoleCode, Spans: []doc.Span{span("line\x00one")}}
+	if got := render(t, code); strings.ContainsRune(got, 0) {
+		t.Errorf("fenced block kept a control byte: %q", got)
+	}
+}
+
 func TestTildeIntrawordNotEscaped(t *testing.T) {
 	if got := escaped(t, "a~b"); got != "a~b" {
 		t.Errorf("got %q", got)

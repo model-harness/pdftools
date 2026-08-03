@@ -99,6 +99,43 @@ func TestMDPreservesExtractedText(t *testing.T) {
 	}
 }
 
+// No control byte reaches the output, across every file in the corpus.
+//
+// This is a whole-corpus assertion rather than a unit test because the unit tests are
+// built from hand-written spans and would never contain one: the byte arrives from a
+// /ToUnicode entry mapping a code to U+0000, which only a real file has. Three exist —
+// all in PDF20_AN001-BPC.pdf — and before the substitution landed they were written
+// raw into the Markdown and into every OKF bundle built from it.
+//
+// The consequence is not cosmetic. YAML rejects a raw control byte in a plain scalar,
+// a NUL terminates a path in every C API the output later passes through, and a
+// consumer that reads a bundle byte-for-byte gets a value it cannot round-trip. There
+// is no correct escape for one either, since a code span renders "\x00" as those four
+// characters — so replacement with U+FFFD, which is what CommonMark §2.3 requires of a
+// parser reading U+0000, is the only option that keeps the output parseable and still
+// tells a reader something was there.
+func TestMDEmitsNoControlBytes(t *testing.T) {
+	for _, name := range corpusFiles() {
+		t.Run(name, func(t *testing.T) {
+			md := mdOut(t, corpusFile(t, name))
+			for i := 0; i < len(md); i++ {
+				c := md[i]
+				if c == '\n' || c == '\r' || c == '\t' || c >= 0x20 && c != 0x7f {
+					continue
+				}
+				t.Fatalf("control byte 0x%02x at offset %d, in %q", c, i, context(md, i))
+			}
+		})
+	}
+}
+
+// context is the text around an offset, for a failure message that names the sentence
+// rather than the byte.
+func context(s string, i int) string {
+	lo, hi := max(0, i-40), min(len(s), i+40)
+	return s[lo:hi]
+}
+
 // The target document, which is what Phase 2 has to section. 1,023 pages of
 // two-column standards prose, and the corpus's whole population of PDF dictionaries,
 // clause numbers, and hex strings — every construct the escaping policy is narrow for.

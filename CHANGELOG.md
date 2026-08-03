@@ -225,6 +225,61 @@ All notable changes to this project are documented here, following
   sections. The exact counts are load-bearing in one direction — a run that returns single
   digits from a 1,023-page standard has reverted to container-driven segmentation, which is a
   silent failure that produces a plausible-looking outline.
+- `sink/okf` — the Open Knowledge Format v0.2 bundle writer, and the completion of Phase 2.
+  One clause becomes one concept document; a clause with subclauses becomes a directory
+  holding an `index.md`, a concept document named for itself, and its children. `Bundle`
+  returns the files as values and `Write` is a thin wrapper over it, so the whole corpus
+  acceptance suite runs without touching the filesystem. Measured on ISO 32000-2: **996
+  concept documents, 196 indexes, 1,328 resolved cross-references, 1,193 files**, longest path
+  145 characters. On WTPDF: 186 concepts, 35 indexes, 222 files, longest path 122. Zero
+  letters or digits lost against the flat conversion on either.
+- `sink/okf` emits only fields it can support. `sources[].author` is omitted, not set to
+  `ISO`: OKF §7 makes an actor `<producer>/<version>`, `human:<id>`, or `process:<id>`, and
+  consumers classify trust by detecting the `human:` prefix, so an organization name there is
+  unclassifiable. `generated.by` is `pdfspec/<version>` for the same reason. Dates are
+  range-checked and dropped when unusable, and `log.md` is skipped entirely rather than
+  emitting a non-conformant `unknown` heading. `status: draft` is written on every document
+  *because* §11 defaults an absent `status` to `stable` — nothing has verified that a clause's
+  text matches its page, so silence would assert the opposite of the truth. See
+  `docs/adr/0003-one-clause-per-file-okf-bundle.md`.
+- `sink/okf` cross-reference resolution, textual: a cue word (`clause`, `annex`, `see`, `§ `)
+  followed by a dotted clause number the document actually contains. Deliberately narrow —
+  `in` and `of` precede more version numbers than clause numbers, and a missed link costs a
+  consumer one search where a wrong one sends it to the wrong clause and looks authoritative
+  doing it. Code spans and fenced blocks are skipped whole, since a specification quoting
+  `see 7.4` means the literal. Resolving from `/Annots` and `/Dests` is strictly better and
+  remains the target. WTPDF resolves zero, which is correct: its reading order draws the
+  clause number after a closing parenthesis, so its own references extract as `see ).8.2.6`.
+- `sink/okf` path budgeting, enforced rather than assumed. Windows caps an absolute path at
+  260 characters, so `MaxPath = 150` leaves room for a destination directory, and `fit` picks
+  the first of three candidate names that fits: the full `7-4-1-general`, then `1-general` with
+  the parent's number dropped, then the bare clause number. The failure this prevents is not a
+  long filename, it is a write that dies partway through a 1,193-file bundle with an error
+  naming the path and not the cause.
+- `sink/okf` unattributed content as concept documents that say so — `/front-matter.md` and
+  `/unplaced/page-NNNN.md`, both carrying `pdf_unattributed: true`. Both on by default: a
+  bundle that drops content by default is one whose omissions nothing reports.
+- `sink/markdown` exports `WriteBlocks`, `YAMLString`, `InlineText`, and `LinkLabel` for
+  `sink/okf`, which composes markdown that is neither a whole document nor a page. Exported
+  rather than reimplemented because two escaping policies diverge, and the first clause
+  containing a PDF dictionary would then come out one way in the flat conversion and another
+  in the bundle from the same extraction. `LinkLabel` escapes both brackets unconditionally
+  where the prose policy escapes `[` only when it could open a link — correct for prose, wrong
+  inside a label, and ISO 32000-2 has clause titles containing brackets.
+- `cmd/pdfspec okf` — the bundle verb. `-o` is required; `-id` overrides the document
+  identifier in resource URIs, which matters because the sponsored ISO PDFs carry no `/Title`
+  and the filename fallback yields `iso-32000-2-sponsored-ec3#7.4.8` rather than
+  `iso32000-2:2020#7.4.8`. Untagged files are refused with the reason rather than emitting a
+  bundle of one clause. The timestamp is injected by the command, not read inside the sink, so
+  rendering is deterministic and testable.
+- `docs/adr/0003-one-clause-per-file-okf-bundle.md` — the bundle layout, the resource URI
+  form, and the emit-only-what-is-true policy. A public contract: a consumer citing
+  `iso32000-2:2020#7.5.8` or linking a bundle path breaks if either changes.
+- Tests for `sink/okf` (unit, over hand-built outlines), `sink/markdown` exports — including
+  one asserting `WriteBlocks` and `Write` produce byte-identical output for the same block —
+  and `cmd/pdfspec` corpus acceptance: every file is something OKF describes, every `/`-rooted
+  link resolves to a file that exists, no path contains a character Windows rejects, and the
+  bundle conserves the flat conversion's text.
 
 ### Changed — 2026-08-03
 
@@ -239,6 +294,13 @@ All notable changes to this project are documented here, following
   than their element's, likewise 5 of 329 in ISO/TS 32001 — and those 5-and-5 were exactly
   the unplaced text, which fell from 0.352% to 0.004% and from 1.222% to 0 when the join
   started reading them.
+- `docs/DESIGN.md` §7: two corrections found by reading the OKF spec closely against the
+  implementation. `generated.by` is `pdfspec/<version>`, not `pdfspec vX.Y.Z` — the latter does
+  not parse as an actor under §7's convention and so cannot be classified. `sources[].author`
+  is an actor field, and ISO has no actor form, so the field is dropped from the mapping rather
+  than filled with a value a consumer would misclassify. The section also now records that
+  cross-reference resolution is textual for now, with the annotation-based form as the target,
+  and why WTPDF resolves none.
 - `doc.Span` carries an `MCID`, and `extract` requires it to match before merging two spans
   into one. The `(page, MCID)` join has to be span-level because the paragraph heuristic
   merges a heading line with the body line after it when they share style and spacing, so a
@@ -257,6 +319,18 @@ All notable changes to this project are documented here, following
   stripped continuation bytes but not a dangling lead byte, so a cut landing immediately after
   one left a partial rune — which both a YAML value and a filename reject. Found by a unit
   test rather than by a corpus run: no title in the corpus is long enough to truncate.
+- `sink/markdown` wrote control bytes into its output. A C0 byte or DEL in extracted text
+  passed through `escapeInto` unchanged, and there are three in this corpus — all in
+  `PDF20_AN001-BPC.pdf`, whose `/ToUnicode` maps a code to U+0000, drawn between two
+  sentences. Replaced with U+FFFD, which is what CommonMark §2.3 requires of a parser reading
+  U+0000, in the verbatim contexts too: a code span cannot escape one, since `\x00` inside
+  backticks renders as those four characters, so replacement is the only substitution that
+  keeps the output parseable and adds no backslash. YAML values were already safe —
+  `yamlString` escapes them as `\xNN` — and filenames were, since `kebab` drops them. The
+  consequence was not cosmetic: a NUL terminates a path in every C API downstream, and a
+  consumer reading a bundle byte-for-byte got a value it could not round-trip. Pinned by
+  `TestMDEmitsNoControlBytes` over every file in the corpus, which is where it had to go — a
+  test built from hand-written spans would never contain the byte.
 
 ### Changed — 2026-08-02
 
