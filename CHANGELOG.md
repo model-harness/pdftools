@@ -280,6 +280,43 @@ All notable changes to this project are documented here, following
   and `cmd/pdfspec` corpus acceptance: every file is something OKF describes, every `/`-rooted
   link resolves to a file that exists, no path contains a character Windows rejects, and the
   bundle conserves the flat conversion's text.
+- `bits` — MSB/LSB bit reader over a byte slice, stdlib-only and with no knowledge of PDF.
+  `Align` is the call that matters: sample data below 8 bits per component packs several
+  samples to a byte and re-pads at every row boundary (§8.9.5.1), so a reader that treats the
+  stream as one continuous bit sequence decodes row 1 correctly and skews every row after it.
+  That diagonal skew presents as a decoder bug rather than an alignment one, which is why it
+  has a test of its own. The aligned-byte fast path is deliberately MSB-only — see Fixed.
+- `image` — image XObjects as a domain type plus an encoder. Codec classification (Raw, JPEG,
+  CCITT, JBIG2, JPX) is read off the filter chain `filter` stopped at, so a Flate-then-DCT
+  stream arrives already decompressed and needs no further decode to be written as a `.jpg`.
+  Colour spaces: DeviceRGB, DeviceGray, DeviceCMYK, ICCBased (for `/N` only), Indexed with
+  palette expansion and `/HiVal` clamping, CalRGB, CalGray, and Lab. Soft masks become an
+  alpha channel and remain available as their own image; `/Matte` is reported through
+  `Premultiplied` rather than silently applied. Stencil masks render black-on-transparent
+  because the colour they paint is graphics state the extractor never sees. `/Decode` is
+  applied, and ignored when its length disagrees with the component count — a producer error
+  that, applied partially, recolours some channels and not others.
+- `cmd/pdfspec images` — extracts every image XObject, deduplicated by indirect reference,
+  including the 7 that sit inside a Form XObject. `-list` reports without writing, `-masks`
+  (default on) writes soft masks as separate `-mask` files, `-min` filters by pixel count. A
+  write that fails removes its partial file: a truncated image looks like a successful
+  extraction and fails only when something tries to open it.
+- `docs/adr/0004-extract-images-without-compositing.md` — the phase's cross-cutting decision
+  and the corpus measurement that forced it. 143 of 245 images carry an `/SMask` and 136 of
+  those carry `/Matte [0 0 0]`, so the base samples are premultiplied against black and are
+  not the colours they appear to be. An extractor cannot resolve that; it can only emit both
+  layers and say which is premultiplied.
+- Tests for `bits` (8 unit tests plus `FuzzReader`, 1.39M executions clean) and `image` (29
+  tests). The image tests assert against the bytes `Encode` writes by reading the PNG back,
+  not against an intermediate. CCITT fixtures are derived by hand from the ITU T.6 code
+  tables, since no corpus file is CCITT — the test comment states that this checks the
+  parameters reach the decoder rather than that the decoder is right, which is a weaker
+  guarantee than the rest of the package has and the reason CCITT stays borrowed.
+- `cmd/pdfspec` corpus baselines for images: 224 / 49 JPEG / 175 raw on ISO 32000-2, 143 soft
+  masks with 136 premultiplied across the corpus, all 245 images encoding to a file that
+  decodes, and zero JBIG2 or JPX. The last is an alarm, not a fact: a file that introduces one
+  fails that test by name, which is the notice that the JBIG2 port has moved from Phase 6 to
+  now.
 
 ### Changed — 2026-08-03
 
@@ -308,6 +345,17 @@ All notable changes to this project are documented here, following
   heading-plus-definition, 3.7% of ISO/TS 32005's, and produced a 518-character "title" on the
   specification. Span-level took the title length p90 from 101 to 45 characters, and the
   longest title on ISO 32000-2 is now a real clause name.
+- `filter`'s package doc states the passthrough as a contract rather than a design note: the
+  `image` package reads the codec off the chain this package stopped at, and the stopping point
+  is what makes a Flate-then-DCT stream arrive as a decompressed JPEG.
+- `docs/DESIGN.md` §4 and §8: `bits` is documented with the consumer it actually has. It was
+  described as the "foundation for CCITT and JBIG2," and neither codec appears anywhere in the
+  12-file corpus — but sub-byte sample unpacking does, in 4 images at 1 bit per component, and
+  that is a nearer consumer than either. §8's Phase 3 entry now records the three measurements
+  that moved the design: no CCITT/JBIG2/JPX at all, `/SMask` at 143 of 245 with `/Matte` at
+  136, and 7 images reachable only through a Form XObject.
+- `golang.org/x/image` and `golang.org/x/text` are direct dependencies now rather than indirect
+  — `image/ccitt` for the CCITT decoder, per the DESIGN.md §5 borrow table.
 
 ### Fixed — 2026-08-03
 
@@ -331,6 +379,30 @@ All notable changes to this project are documented here, following
   consumer reading a bundle byte-for-byte got a value it could not round-trip. Pinned by
   `TestMDEmitsNoControlBytes` over every file in the corpus, which is where it had to go — a
   test built from hand-written spans would never contain the byte.
+- `bits`: the aligned-byte fast path returned the raw byte in both bit orders, but LSB order
+  consumes a byte's bits in the opposite sequence, so composing them most-significant-first
+  reverses it — `0x7F` read as `0xFE`. The fast path is now MSB-only. Caught by a test that
+  pins the fast and slow paths against each other rather than assuming they agree, which is the
+  only way this surfaces: the wrong answer is a valid byte value and every read succeeds.
+- `image`: CCITT polarity was wired inverted, on the assumption that `x/image/ccitt` and PDF
+  used opposite conventions. They agree — `Invert=false` means black is the 0 byte, and
+  `/BlackIs1=false` (§7.4.6) means 0 bits are black — so the negation decoded every fax image
+  as a photographic negative. A test that only checked the decode succeeded would have passed.
+- `image`: a truncated CCITT stream lost its `/BlackIs1` polarity. `x/image/ccitt` applies
+  `Invert` only after its row loop completes, so the rows this package deliberately keeps from
+  a damaged stream came back uninverted — a photographic negative reached through the error
+  path, which the polarity test could not see because it decodes only clean fixtures. Found by
+  reading the decoder's source to verify the polarity mapping rather than by trusting its
+  documentation, and pinned by `TestCCITTTruncatedStreamKeepsPolarity`, which was confirmed to
+  fail without the fix.
+- `image`: the ICCBased branch indexed `cs[1]` before checking the array's length, so a
+  truncated `[/ICCBased]` panicked. Self-caught on review, pinned by a test.
+- `image`: `decodeCCITT`'s comment said "/Width wins" while the code decodes at `/Columns` and
+  crops back to `/Width`. The code was right — a CCITT stream is coded at `/Columns` and
+  decoding at any other width misreads every row's codes — but the comment invited a future
+  change that would break it.
+- `image`: an aligned-loop exit assigned a loop variable whose value was never read
+  (`staticcheck` SA4006), now a labeled `break`.
 
 ### Changed — 2026-08-02
 

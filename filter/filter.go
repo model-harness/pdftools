@@ -6,6 +6,10 @@
 // still encoded so it can be written out in its original form without a lossy
 // re-encode, which is what an image extractor wants.
 //
+// That passthrough is the contract the image package is built on: it reads the
+// codec off the chain this package stopped at, so a Flate-then-DCT stream reaches
+// it as a decompressed JPEG that needs no further decoding to become a .jpg.
+//
 // Decoding is owned rather than borrowed because it is small, entirely covered by
 // the standard library, and sits on the hot path for every page.
 package filter

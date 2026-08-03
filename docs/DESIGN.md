@@ -210,8 +210,13 @@ font/                 Font dictionaries, /Widths, embedded programs, glyph advan
 font/cmap/              CMap and /ToUnicode parsing — CID → Unicode
 font/encoding/          Simple-font encodings, /Differences, Adobe Glyph List
 filter/               Stream filter chain: Flate, LZW, ASCIIHex, ASCII85,
-                        RunLength, DCT, CCITT, JBIG2, JPX, Crypt
-bits/                 MSB/LSB bit reader. Foundation for CCITT and JBIG2
+                        RunLength, Crypt. Stops at an image codec by design,
+                        leaving it for image/
+bits/                 MSB/LSB bit reader. Unpacks sub-byte image samples;
+                        foundation for CCITT and JBIG2
+image/                Image XObjects: codec classification, colour spaces,
+                        soft masks, sample unpacking. Original codec preserved
+                        where it has a container of its own
 geom/                 Matrix math, CTM composition, one tolerance policy
 tag/                  Structure tree: StructElem, role map, standard-role
                         normalization, logical-order traversal
@@ -247,7 +252,11 @@ Two boundaries deserve emphasis:
   independently testable.
 - **`bits` sits below `filter`.** CCITT and JBIG2 are bit-stream codecs, not byte-stream.
   Building the bit reader as a shared primitive first is a precondition, not a
-  refactoring opportunity.
+  refactoring opportunity. It turned out to have a nearer consumer than either: image
+  samples below 8 bits per component are packed several to a byte with each row
+  re-padded to a byte boundary (§8.9.5.1), so `image` needs the same reader, and a
+  1-bit image read with byte arithmetic decodes its first row correctly and skews
+  every one after it.
 
 ### Pipeline
 
@@ -338,6 +347,7 @@ pdfspec md --frontmatter …             emit YAML frontmatter
 pdfspec okf <file.pdf> -o bundle/      section-aware OKF bundle
 pdfspec probe <file.pdf>               tagged? encrypted? filters? fonts? per-page text coverage
 pdfspec images <file.pdf> -o dir/      extract embedded images, original codec preserved
+pdfspec images --list <file.pdf>       report codecs, sizes, and masks; write nothing
 pdfspec render <file.pdf> -o dir/      pages → PNG at --dpi
 pdfspec ocr <file.pdf>                 force the VLM path
 ```
@@ -414,8 +424,32 @@ and resolved cross-references. The measurement above sets the acceptance bar: a
 heading-driven implementation should yield on the order of 981 sections, so any run
 producing single digits has reverted to container-driven segmentation.
 
-**Phase 3 — images.** `bits`, DCT and CCITT wiring, `images` verb. Embedded images
-extracted with their original codec preserved where possible. Later: native JBIG2.
+**Phase 3 — images.** `bits`, `image`, DCT and CCITT wiring, `images` verb. Embedded
+images extracted with their original codec preserved where possible. Later: native
+JBIG2.
+
+Scoping this phase against the corpus moved two of its premises. **There is no CCITT,
+no JBIG2, and no JPX anywhere in the 12 files** — 185 of 245 images are Flate, 56 are
+DCT, and 4 carry no filter at all — so the CCITT half of this phase cannot be validated
+against a real file here. It is wired anyway, with fixtures derived by hand from the ITU
+T.4/T.6 code tables, and the test that covers it says in its own comment that this is a
+weaker guarantee than the rest of the package has. JBIG2 and JPX are recognized and
+named so a report can state what a file holds, and refused on write, because handing
+back a `.jbig2` this build cannot produce would be worse than declining.
+
+The premise that moved the design, though, is **`/SMask`: 143 of 245 images carry one,
+and 136 of those carry `/Matte [0 0 0]`.** Soft masks are the common case, not an edge
+case, and `/Matte` means the base image's samples are premultiplied against black —
+they are not the colours they appear to be. An extractor cannot resolve that: the honest
+output is both layers plus the statement that one is premultiplied, which is what
+`Image.Premultiplied` reports and what the verb writes as a separate `-mask` file.
+Compositing stays in Phase 4, where a rasterizer owns it.
+
+Two smaller measurements shaped the code: 7 images sit inside a Form XObject, so the
+form recursion is load-bearing rather than defensive — the same defect cost the font
+subsystem 21 of its 247 fonts — and deduplication by indirect reference is what makes
+the count 245 instead of many thousands, because ISO 32000-2 draws shared images across
+1,023 pages.
 
 **Phase 4 — raster and OCR.** `render` + pdfium WASM adapter, `ocr` + llama.cpp adapter,
 `ocr/doctags`, the per-page router, `render`/`ocr` verbs. Model handling: download to a

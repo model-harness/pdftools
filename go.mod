@@ -2,7 +2,11 @@ module github.com/3rg0n/pdf-spec
 
 go 1.26.5
 
-require github.com/pdfcpu/pdfcpu v0.13.0
+require (
+	github.com/pdfcpu/pdfcpu v0.13.0
+	golang.org/x/image v0.43.0
+	golang.org/x/text v0.39.0
+)
 
 require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -12,7 +16,5 @@ require (
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/image v0.43.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
