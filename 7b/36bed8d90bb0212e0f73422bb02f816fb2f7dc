@@ -1,0 +1,96 @@
+sink/markdown/export_test.go
+  s_5cd1b28ed520c1::t_815f201a9da29e 1-87,95-131
+  s_5cd1b28ed520c1::t_43ec82bfc69dda 88-94
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_112b7275aa7ebd 297-303
+  s_5cd1b28ed520c1::t_b3dc89ea71a7ea 228-282
+  s_5cd1b28ed520c1::t_40317b8e3afba5 322-333
+sink/markdown/inline_test.go
+  s_5cd1b28ed520c1::t_beb1415076104e 63-96
+sink/okf/xref_test.go
+  s_5cd1b28ed520c1::t_e7cd8964f52dfc 1-156
+cmd/pdfspec/corpus_test.go
+  s_5cd1b28ed520c1::t_6b468d540a98e6 6
+  s_5cd1b28ed520c1::t_f5ae15cedfa0e8 27-43
+sink/okf/frontmatter.go
+  s_5cd1b28ed520c1::t_93cc39197f2d38 1-145
+sink/okf/xref.go
+  s_5cd1b28ed520c1::t_4a9ebf58b35374 1-253
+sink/okf/okf_test.go
+  s_5cd1b28ed520c1::t_ad8720f58549df 1-77,88-98,100,108-134,136-161,163-377
+  s_5cd1b28ed520c1::t_46184e8c95579c 162
+  s_5cd1b28ed520c1::t_3d5a9ff244adab 78-87,99,101-107
+  s_5cd1b28ed520c1::t_5c239154fd31d2 135
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_02be09d5976008 17
+  s_5cd1b28ed520c1::t_ba4cfbc9712ced 37-38
+sink/okf/path.go
+  s_5cd1b28ed520c1::t_20c62c2b0f8921 85-86,89-102,104,107-129,131
+  s_5cd1b28ed520c1::t_d9304d23935445 144,158-166
+  s_5cd1b28ed520c1::t_7d9a9b581d72ae 43
+  s_5cd1b28ed520c1::t_3af3e16fc1d54d 304-308,311-313
+  s_5cd1b28ed520c1::t_74f501f38959ec 47,68,71-72,74-79,84,87-88,103,105-106,130
+  s_5cd1b28ed520c1::t_acb8f54787066f 1-42,44-46,48-52,54-67,69-70,132-143,145-157,167-303,309-310,314-359
+  s_5cd1b28ed520c1::t_7215e46f16ac37 53
+  s_5cd1b28ed520c1::t_cf211eb88be082 73,80-83
+sink/okf/path_test.go
+  s_5cd1b28ed520c1::t_03c0014319bc68 1-24,27-122
+  s_5cd1b28ed520c1::t_13b08cadf38f46 25-26
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_273a45a9f04fe5 370-372,375-385,387-398
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_5488c17ae3f05d 1-19,21-22,24-83
+  s_5cd1b28ed520c1::t_a69d9dc8c8e346 20,23
+cmd/pdfspec/md_test.go
+  s_5cd1b28ed520c1::t_a03f9d63e44fab 102-138
+docs/adr/0003-one-clause-per-file-okf-bundle.md
+  s_5cd1b28ed520c1::t_61e73eb0f2f135 1-118
+cmd/pdfspec/okf_test.go
+  s_5cd1b28ed520c1::t_febde9d8994426 1-193,200-265
+  s_5cd1b28ed520c1::t_369fcf20def083 194-199
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_bf938c89157b33 88-120
+  s_5cd1b28ed520c1::t_38892bfc3af73b 121-154
+  s_5cd1b28ed520c1::t_7acf52b756fcc4 259-260,264-266
+sink/markdown/inline.go
+  s_5cd1b28ed520c1::t_f40ce24fa2df30 140-141
+  s_5cd1b28ed520c1::t_e8f3f3c658a797 193-196
+  s_5cd1b28ed520c1::t_1dc7ddb4f6dca0 307-340
+  s_5cd1b28ed520c1::t_fa97c49f56b71b 284-306
+sink/okf/okf.go
+  s_5cd1b28ed520c1::t_c607d2059a0134 267,269-271,291
+  s_5cd1b28ed520c1::t_0e157c7b61a178 246
+  s_5cd1b28ed520c1::t_94cf730a8f907a 1-59,65-74,77-79,81-147,149-150,152-161,168-169,177-180,185-187,190-205,209,215,217,221-223,225-230,232-245,247-261,263-265,268,301,306-350,418-425,433,436,447-448,454-456,469-470,473,480,482,484,486,488-518,520-522,524-539,543-585,589-591,593,596-689
+  s_5cd1b28ed520c1::t_2f9edf41b2530a 262,266,293-300,302-305
+  s_5cd1b28ed520c1::t_d20c15fba4f13a 272-278,281-290
+  s_5cd1b28ed520c1::t_ffea32c0f5a15f 586-588,592,594-595
+  s_5cd1b28ed520c1::t_09e3859011fdd0 60-64,75-76,80
+  s_5cd1b28ed520c1::t_a255e536d2308b 426-432,434-435,437-446,449-453,457-468,471-472,474-479,483,485,487
+  s_5cd1b28ed520c1::t_d3c73eba6470ef 351-406,412-417
+  s_5cd1b28ed520c1::t_eabeebf69b16f4 519,523
+  s_5cd1b28ed520c1::t_8de6c12d996a8a 206,208,210-211,213
+  s_5cd1b28ed520c1::t_a62b67dac395ac 162-167,170-176,181-184,188-189,216,218-220,224,231
+  s_5cd1b28ed520c1::t_04607aa9b4e420 207,214
+  s_5cd1b28ed520c1::t_c8a1296ffa7c95 279-280,292
+  s_5cd1b28ed520c1::t_c818bae0a04209 212
+  s_5cd1b28ed520c1::t_fb96d0f10cee4d 481
+  s_5cd1b28ed520c1::t_48ffe81d97f696 540-542
+  s_5cd1b28ed520c1::t_23434a275a7df7 148,151
+  s_5cd1b28ed520c1::t_47ddf211e8a721 407-411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7b36bed8d90bb0212e0f73422bb02f816fb2f7dc",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
