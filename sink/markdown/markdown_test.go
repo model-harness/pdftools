@@ -25,6 +25,7 @@ func span(text string, opts ...func(*doc.Span)) doc.Span {
 func bold(s *doc.Span)   { s.Style.Bold = true }
 func italic(s *doc.Span) { s.Style.Italic = true }
 func mono(s *doc.Span)   { s.Style.Mono = true }
+func hidden(s *doc.Span) { s.Style.Hidden = true }
 
 func para(spans ...doc.Span) doc.Block {
 	return doc.Block{Role: doc.RoleParagraph, Spans: spans, Box: geom.NewRect(0, 0, 100, 10)}
@@ -107,6 +108,11 @@ func TestEmphasis(t *testing.T) {
 		// render as asterisks. The identifier is the half that carries meaning.
 		{"mono", span("x", mono), "`x`\n"},
 		{"mono bold", span("x", mono, bold), "`x`\n"},
+		// An OCR text layer is drawn invisibly in a fixed-pitch font that exists only
+		// to hold glyph codes, so its monospacing says nothing about the text. Left
+		// in, every scanned document converts to one long code span.
+		{"mono hidden", span("x", mono, hidden), "x\n"},
+		{"hidden alone", span("x", hidden), "x\n"},
 	} {
 		if got := render(t, para(tc.in)); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)

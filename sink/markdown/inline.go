@@ -55,11 +55,20 @@ const (
 // everything inside backticks is literal, so "`**x**`" is four asterisks on screen.
 // A bold monospaced identifier loses its weight and keeps being an identifier,
 // which is the half that carries meaning.
+//
+// Invisible text is the exception, and it is not a rare one: a scanned page's OCR
+// layer is drawn in rendering mode 3, and the fonts OCR engines use for it are
+// fixed-pitch by declaration — Tesseract's GlyphLessFont sets the descriptor's
+// FixedPitch flag. That flag is a true statement about a font nobody ever sees, not
+// a typographic choice about the text, so honouring it wraps an entire scanned
+// document in backticks. Measured on the OCR fixtures: every monospaced span in
+// them is hidden, and no visible span in a 285-page manual full of real code
+// samples is monospaced — so suppressing this costs no genuine code span.
 func style(s doc.Span, plain bool) mark {
 	if plain {
 		return markNone
 	}
-	if s.Style.Mono {
+	if s.Style.Mono && !s.Style.Hidden {
 		return markCode
 	}
 	switch {

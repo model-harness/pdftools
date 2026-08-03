@@ -317,6 +317,38 @@ All notable changes to this project are documented here, following
   decodes, and zero JBIG2 or JPX. The last is an alarm, not a fact: a file that introduces one
   fails that test by name, which is the notice that the JBIG2 port has moved from Phase 6 to
   now.
+- `testdata/` — 30 reference PDFs from PyMuPDF, PyMuPDF-Utilities, and Adobe's PDF Services
+  samples, committed with `manifest.json` recording each file's upstream repo, pinned commit
+  SHA, path, SHA-256, and the reason it is here, and `fetch.ps1` to re-fetch and verify.
+  Selection rule is reference-intent: a file is included only if upstream authored it *as* a
+  test fixture. PyMuPDF's `test_NNNN.pdf` bug-report attachments are excluded, because a file
+  a third party uploaded to a tracker is not upstream's to license, and the ISO specification
+  copies both Adobe repos redistribute are excluded for the reason the sponsored ones in
+  `docs/` are gitignored. 22 of the 30 are AGPL-3.0 upstream: data in a marked directory with
+  attribution is mere aggregation and does not reach the MIT Go source, and no PyMuPDF or
+  MuPDF code is used or read for copying.
+- `testdata/pymupdf-utilities/ocr-ed.txt` — the only statement in this repository of what a
+  right answer is that this project did not write. Upstream ships it beside `ocr-ed.pdf` as
+  the text that page's OCR layer holds. Every other assertion in the suite is a baseline
+  measured from our own output, which catches a regression but cannot catch a mistake that
+  was already there when the baseline was taken; this one can, and did on its first run — see
+  the `sink/markdown` OCR entry under Fixed.
+- `cmd/pdfspec/testdata_test.go` — 20 tests over the reference fixtures, which never skip.
+  They cover what the corpus structurally cannot: the corpus is eleven documents from one
+  family of producers, ten of them tagged standards prose, so it exercises the tagged path
+  almost exclusively and has no CJK, no ligature case, no deliberately broken font, no
+  zero-byte file, and only one producer's `/SMask` habit. New cases pinned here — space
+  inference staying silent between Han characters, a broken font costing its glyphs and not
+  its page, `/SMask` with no `/Matte` reporting not-premultiplied, a cyclic outline
+  terminating, a Type3 font with no recoverable text producing empty output rather than an
+  error, a zero-byte file rejected with a reason by every verb, and probe's routing decision
+  on 17 files across all four paths.
+- `docs/test.docs.md` — where the fixtures came from, what each covers that the corpus does
+  not, the ground-truth comparison and the defect it found, the producer-stub heuristic and
+  its independent witness, and Adobe's PDF-to-Markdown element taxonomy as a coverage
+  checklist for the sink. Four elements are unmapped and two positions differ deliberately
+  from Adobe's: hidden text is extracted, since an OCR layer is invisible and is the entire
+  content of a scanned page.
 
 ### Changed — 2026-08-03
 
@@ -403,6 +435,62 @@ All notable changes to this project are documented here, following
   change that would break it.
 - `image`: an aligned-loop exit assigned a loop variable whose value was never read
   (`staticcheck` SA4006), now a labeled `break`.
+- `sink/markdown` wrapped every scanned document in backticks. A span was emitted as code on
+  `Style.Mono` alone, and an OCR text layer is fixed-pitch by declaration — Tesseract's
+  `GlyphLessFont` sets the descriptor's `FixedPitch` flag — so a page whose only text is an
+  invisible OCR layer converted to one long code span. The flag is a true statement about a
+  font nobody ever sees rather than a typographic claim about the text, so `Style.Hidden` now
+  suppresses the code mark. `Mono` remains sufficient on its own for visible text.
+  Deliberately not scoped to a font name: `PDF_XChange-OCRed.pdf` shows the same layer from a
+  different engine, and the discriminator that generalizes is the rendering mode, not the
+  font. Measured before changing it — `mono && !hidden` is 0 across every fixture, and a
+  285-page C API manual full of real code listings has no monospaced span at all, so the
+  suppression costs no genuine code span anywhere available to test. No metric in the suite
+  could have caught this: character counts, space ratios, and word-length distributions are
+  identical either way, which is why it took an outside statement of the right answer. Pinned
+  by `TestFixtureOCRMatchesGroundTruth` against upstream's `ocr-ed.txt`, confirmed to fail
+  without the fix.
+- `extract` inserted a space at every wrapped-line join, which broke words in every script
+  written without inter-word spaces. The rule is right for Latin — a line break is the only
+  thing marking the boundary there — and wrong for CJK, where a line fills and wraps
+  wherever it runs out of measure, so the break carries no information and a space at the
+  join is a claim the page does not make. `appendLine` now consults the characters actually
+  adjacent to the join: a space is added unless both sides are Han, kana (full or half
+  width), or CJK punctuation. Hangul is deliberately excluded despite being CJK by every
+  other classification — modern Korean *is* written with spaces between words, so a Korean
+  line wrap is an ordinary boundary and suppressing the space there would run two words
+  together, which is this same defect in the other direction. The criterion is the script's
+  use of spaces, not its residence in the CJK blocks; Thai and Khmer qualify and are absent
+  only because no fixture exercises them.
+  Decided per join rather than per document on purpose, because a document is
+  routinely mixed — the fixture sets its prose in Chinese and its rating codes and amounts
+  in Latin — and a line wrapping from one script into the other is a real boundary.
+  Measured on `chinese-tables.pdf`, a Chinese bond prospectus: the company name
+  中诚信国际信用评级有限责任公司 wraps across three lines and was emitted with two spaces in
+  it, and Han-to-Han spaces fell from 22 to 7. The 7 that remain are correct — a clause
+  number before its title, and table header cells. Found because the fixture corpus has CJK
+  and the `docs/` corpus does not: eleven English-language documents cannot exercise this,
+  and no Latin measurement in the suite moved when it was fixed. Pinned at both levels, by
+  `TestWrapNeedsSpace` on the predicate (including the mixed-script joins the fixture cannot
+  express) and by `TestFixtureCJKNeedsNoSpaceInference` naming the four words the wraps fall
+  inside — asserted as words rather than as a ratio, since a ratio cannot tell a broken word
+  from a table column, which is the entire question.
+- `cmd/pdfspec probe` scanned only page-level `/Resources`, so it undercounted fonts and
+  images and — because probe's entire output is a routing decision — answered the question
+  wrongly for the files it missed. A Form XObject carries its own resources, and one with no
+  `/Resources` inherits the invoking dictionary's (§8.10.1); `extract` and `image` both
+  recurse, and probe did not. `text-find-ligatures.pdf` reported `Type1` while the font
+  actually setting its ligature sits two forms deep, and `test_delete_image.pdf` reported 0
+  images with its only image in the same position, which put probe and the `images` verb into
+  disagreement about one file. The scan now recurses to the same `maxFormDepth = 8` as the
+  other two packages, with a `seen` set on indirect references that both stops cycles and
+  deduplicates — one XObject drawn on 1,023 pages is one image, which is the rule
+  `image.Reader` applies and is what makes probe's ISO 32000-2 count land on the same 224 the
+  images tests assert. Per-page columns still report each page's own dictionary, since
+  summing nested forms into them would make the column mean something different per row.
+  probe had no test coverage at all before this; `TestFixtureRouting` now asserts path, page
+  count, and image count on 17 files and cross-checks every image count against
+  `image.Reader`, and both halves were confirmed to fail without the recursion.
 
 ### Changed — 2026-08-02
 

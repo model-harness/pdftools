@@ -1,0 +1,71 @@
+{
+  "$comment": [
+    "Reference test PDFs vendored from upstream projects, with provenance.",
+    "Every file is pinned to the upstream commit it was taken from and carries a",
+    "SHA-256, so `pwsh testdata/fetch.ps1` can prove the committed bytes are the",
+    "bytes upstream published rather than something that drifted or was rewritten.",
+    "Selection rule: a file is here only if upstream authored it AS a reference",
+    "fixture. Bug-report attachments (pymupdf's test_NNNN.pdf, named for the issue",
+    "that produced them) are excluded — upstream cannot grant rights to a file a",
+    "third party uploaded to a tracker. Copies of the ISO 32000 specifications are",
+    "excluded for the same reason the sponsored PDFs in docs/ are gitignored: they",
+    "are ISO's copyright regardless of which repo redistributes them.",
+    "See docs/test.docs.md for what each file is for and why it was chosen."
+  ],
+  "sources": [
+    {
+      "repo": "pymupdf/pymupdf",
+      "commit": "8a6297723c5c4115a064c79966d41465f7644402",
+      "license": "AGPL-3.0",
+      "license_note": "Data fixtures, aggregated not linked: vendoring them does not affect this repo's MIT licensing of its own code. Kept in their own directory with attribution so the boundary is visible.",
+      "files": [
+        { "path": "pymupdf/symbol-list.pdf", "upstream": "tests/resources/symbol-list.pdf", "sha256": "fffa7a46b1789647cd797be308766e16ec117f6d67e15843d987a29897863b47", "size": 1982, "why": "Symbol font glyph set — the encoding case with no Unicode round-trip" },
+        { "path": "pymupdf/type3font.pdf", "upstream": "tests/resources/type3font.pdf", "sha256": "497fd306c3a711e189aaa8ce597e2b67fd2bd73b221b841d56b641ac08b5e9b8", "size": 6812, "why": "Type3 font: glyphs are content streams, widths in glyph space" },
+        { "path": "pymupdf/has-bad-fonts.pdf", "upstream": "tests/resources/has-bad-fonts.pdf", "sha256": "758cec2d32cc7d6e37ff30391932cdd097a512ed9d961145d040b28551916e5c", "size": 24352, "why": "Defective font dictionaries — must lose glyphs, not the page" },
+        { "path": "pymupdf/text-find-ligatures.pdf", "upstream": "tests/resources/text-find-ligatures.pdf", "sha256": "e3d5f3d8b768d92e8bfb06ffbbb5fa46d3a331c6fe410ef7a51ecf7657d568bf", "size": 13536, "why": "Ligatures: one glyph to many characters, the 'ecient' failure" },
+        { "path": "pymupdf/test-linebreaks.pdf", "upstream": "tests/resources/test-linebreaks.pdf", "sha256": "ab595de17cbecb84d8110568039392747b29888d15c68545fd786c4823f064ad", "size": 16052, "why": "Line-break joining and inter-word spacing" },
+        { "path": "pymupdf/small-table.pdf", "upstream": "tests/resources/small-table.pdf", "sha256": "6ea5c612c354e79e31961d42e13e8ef9180be5a51d7f8a2a212bde39ea3dabcb", "size": 4886, "why": "Minimal table, ruled — layout-path table detection" },
+        { "path": "pymupdf/test-styled-table.pdf", "upstream": "tests/resources/test-styled-table.pdf", "sha256": "571e66e891a1d096031c70d0ced98fd612178d1db2f66185417a6d995e2fb8d3", "size": 74725, "why": "Tagged table with styling — the tagged-path counterpart" },
+        { "path": "pymupdf/dotted-gridlines.pdf", "upstream": "tests/resources/dotted-gridlines.pdf", "sha256": "69346c830df8d5d23fa89c72be83ec6a8d1425d9a74ad70c506c6b5ff434a0f6", "size": 93541, "why": "Dashed rules: table borders that are not solid strokes" },
+        { "path": "pymupdf/chinese-tables.pdf", "upstream": "tests/resources/chinese-tables.pdf", "sha256": "a4fc0ee8f0493ac8deb936e40777663c6e4cfa368244f640822971bccd84cf90", "size": 381164, "why": "CJK in tables: CID fonts, no inter-word spaces to infer" },
+        { "path": "pymupdf/img-regular.pdf", "upstream": "tests/resources/img-regular.pdf", "sha256": "427014add55eb6d826c46c3b3d11555cca1b37623fc36b14a778380f5c161e7f", "size": 21158, "why": "Baseline opaque image" },
+        { "path": "pymupdf/img-transparent.pdf", "upstream": "tests/resources/img-transparent.pdf", "sha256": "77ea091f2e6ec05ff7c818acd6750d853bbb56f2548e27290784deb625233956", "size": 23372, "why": "Transparent image — an /SMask from a producer other than the ISO corpus" },
+        { "path": "pymupdf/test_delete_image.pdf", "upstream": "tests/resources/test_delete_image.pdf", "sha256": "47f70c73393cf5a100f1895b31ba7a53c30a85fcc5719d2b1198b1f8d2f26bc2", "size": 52227, "why": "Page with neither fonts nor images: the empty-of-everything routing case" },
+        { "path": "pymupdf/test-rewrite-images.pdf", "upstream": "tests/resources/test-rewrite-images.pdf", "sha256": "81fd755c5189f37a2104b1c94cae11b0232d676ab7dc17e40d5e9da351bd6736", "size": 660663, "why": "Several image codecs in one file" },
+        { "path": "pymupdf/circular-toc.pdf", "upstream": "tests/resources/circular-toc.pdf", "sha256": "991b0cf1d2c5797835dbe6b9846742a9413dd5a83808548c44d539168dbad6ee", "size": 1099, "why": "Cyclic outline tree — termination, not a hang" },
+        { "path": "pymupdf/mupdf_explored.pdf", "upstream": "tests/resources/mupdf_explored.pdf", "sha256": "fe245cdc12cd42160697cd5573ef38e351480ef315417867ea0a1f51b6c6d112", "size": 1801274, "why": "285-page technical manual, Type1 + Type3, real code samples. The negative control for monospace detection" },
+        { "path": "pymupdf/2201.00069.pdf", "upstream": "tests/resources/2201.00069.pdf", "sha256": "4f36ac3ca6684b3eb07efbac62b0e37b5b8af64d42e1592b987f1ae7271a79c5", "size": 246374, "why": "arXiv paper: LaTeX-produced Type1, two-column" },
+        { "path": "pymupdf/v110-changes.pdf", "upstream": "tests/resources/v110-changes.pdf", "sha256": "8cab62b9631ffee58d2a1f226856db8e577277fb2e6885758a603d3e018f831f", "size": 245832, "why": "Mixed TrueType/Type0/Type1 in one document" }
+      ]
+    },
+    {
+      "repo": "pymupdf/PyMuPDF-Utilities",
+      "commit": "4247801c2e827d69783e4a0064cf141bf9fa5a67",
+      "license": "AGPL-3.0",
+      "license_note": "Same as above. The OCR directory is the reason this repo is here: it ships a scanned page, the same page OCRed, and the expected text as a .txt — a genuine ground truth.",
+      "files": [
+        { "path": "pymupdf-utilities/test.pdf", "upstream": "text-documents/test.pdf", "sha256": "43d84829a26a7b3f8cf7a204968d1b0f9dfb96b2c117f10ba6395ce691ce710d", "size": 711, "why": "Smallest useful text document — a fast smoke fixture" },
+        { "path": "pymupdf-utilities/scanned.pdf", "upstream": "OCR/scanned.pdf", "sha256": "8e4b8f216b2fbc29bf51ac09067e1c615cffb4685248e5076eb15a48aeb81b99", "size": 74976, "why": "Scanned page, no text layer at all: the OCR path's input" },
+        { "path": "pymupdf-utilities/ocr-ed.pdf", "upstream": "OCR/ocr-ed.pdf", "sha256": "daea54172d78247526f4c61ee193e4e8d5e552cd042a72eee84cc0a9182bd0ff", "size": 72605, "why": "The same page after Tesseract: invisible text layer in GlyphLessFont" },
+        { "path": "pymupdf-utilities/ocr-ed.txt", "upstream": "OCR/ocr-ed.txt", "sha256": "d4e301aa38121e89770fe10fe6590ff88e1770c77aea42dc8edec562843860bb", "size": 227, "why": "GROUND TRUTH for ocr-ed.pdf. The only file here that states what the right answer is" },
+        { "path": "pymupdf-utilities/PDF_XChange-OCRed.pdf", "upstream": "OCR/PDF_XChange-OCRed.pdf", "sha256": "a68ef67d78e45287328a54a07b2bea76fd51edde9b8538e5c08eb419d43546ec", "size": 106976, "why": "A second OCR engine's text layer, so the fix is not tuned to Tesseract" }
+      ]
+    },
+    {
+      "repo": "adobe/pdfservices-python-sdk-samples",
+      "commit": "27cf2faf87fb9a77a97e84764216b964d4cbe762",
+      "license": "MIT",
+      "license_note": "Adobe's own sample inputs, MIT, same licence as this repo. The two ISO 32000 PDFs in AdobeDocs/pdfservices-api-documentation were deliberately NOT taken: Apache-2.0 on the repo does not make ISO's specification Apache-2.0.",
+      "files": [
+        { "path": "adobe-samples/autotagPDFInput.pdf", "upstream": "src/resources/autotagPDFInput.pdf", "sha256": "2abeccd9faa672c57743d7515bc590f7f3acfd0787b930051a2a040923968f98", "size": 435159, "why": "Adobe's auto-tag sample: untagged input for the accessibility pipeline" },
+        { "path": "adobe-samples/extractPdfInput.pdf", "upstream": "src/resources/extractPdfInput.pdf", "sha256": "1ca9b7a3e3761be7ac117c191400a9432d09bd596383e971cf63637b7070f0d5", "size": 108299, "why": "Adobe's Extract sample — properly tagged, the reference for a StructTreeRoot that works" },
+        { "path": "adobe-samples/exportPDFInput.pdf", "upstream": "src/resources/exportPDFInput.pdf", "sha256": "3fc7c59491f0171faef836a59b4c91693a65f8c26b69d1118928f0f321ed80a3", "size": 192415, "why": "Multi-page with 14 images, TrueType + Type0" },
+        { "path": "adobe-samples/ocrInput.pdf", "upstream": "src/resources/ocrInput.pdf", "sha256": "a3838ce346dfc40114d7ab5cd29855b6f95854e31629a749eb4ad0af5311b2f8", "size": 583993, "why": "Adobe's OCR input: 4 scanned pages, no fonts" },
+        { "path": "adobe-samples/sampleInvoice.pdf", "upstream": "src/resources/sampleInvoice.pdf", "sha256": "e9367e2cc3b7fbf05404b9669151d39d5eb897b33ef78d9755bcc64c620a6c2f", "size": 803993, "why": "A StructTreeRoot holding only two Document elements — the producer-stub case probe.go's heuristic exists for" },
+        { "path": "adobe-samples/watermark.pdf", "upstream": "src/resources/watermark.pdf", "sha256": "ecd3133f1c238ee37021623faa903d61ed0c7003cb003c4444bface4f56d3ba6", "size": 30201, "why": "Tagged single page with a figure — small enough to reason about by hand" },
+        { "path": "adobe-samples/zeroLength.pdf", "upstream": "src/resources/invalidinputs/zeroLength.pdf", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "size": 0, "why": "Zero bytes. Upstream ships it deliberately as an invalid input: must fail with a reason, not panic" },
+        { "path": "adobe-samples/disqualifiedScannedPages.pdf", "upstream": "src/resources/invalidinputs/disqualifiedScannedPages.pdf", "sha256": "d1177e325d3eaa93edd4abe034eff5225d7565dd9f36c3e3c49b79006178ae28", "size": 26353, "why": "151 pages, zero fonts, zero images — Adobe's own disqualified-input fixture" }
+      ]
+    }
+  ]
+}

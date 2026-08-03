@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/3rg0n/pdf-spec/content"
 	"github.com/3rg0n/pdf-spec/doc"
@@ -706,7 +707,8 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 		if i == 0 && len(b.Spans) > 0 {
 			// A line break inside a paragraph is a word boundary. The space goes on the
 			// incoming line so the previous span's own text is unchanged.
-			if !endsWithSpace(b.Spans[len(b.Spans)-1].Text) && !strings.HasPrefix(txt, " ") {
+			prev := b.Spans[len(b.Spans)-1].Text
+			if !endsWithSpace(prev) && !strings.HasPrefix(txt, " ") && wrapNeedsSpace(prev, txt) {
 				txt = " " + txt
 			}
 		}
@@ -738,6 +740,74 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 
 func endsWithSpace(s string) bool {
 	return s != "" && (s[len(s)-1] == ' ' || s[len(s)-1] == '\n' || s[len(s)-1] == '\t')
+}
+
+// wrapNeedsSpace reports whether joining two wrapped lines needs a space between them.
+//
+// It does for Latin, where a line break falls between words and the break is the only
+// thing marking the boundary. It does not for Chinese or Japanese, which are set without
+// inter-word spaces: a line simply fills and wraps mid-word, so inserting a space there
+// splits a word that was never divided. Measured on chinese-tables.pdf, a Chinese bond
+// prospectus — the company name 中诚信国际信用评级有限责任公司 wraps across three lines
+// and came out as three fragments with spaces in it, which is not a rendering choice but
+// a wrong answer about what the page says.
+//
+// The test is on the characters actually adjacent to the join rather than on a script
+// detected for the document, because a document is routinely mixed — this one sets its
+// numbers and its rating codes in Latin — and the only thing that decides whether this
+// particular break was a word boundary is what sits on either side of it. A space is
+// added unless both sides are scripts written without them, which keeps a CJK line
+// wrapping into a Latin one (and the reverse) joined as the two words they are.
+//
+// One rune on each side is enough because that is where the break falls. prev is the
+// previous span's text rather than the previous line's, and the two differ when a line
+// ends in its own style run — but the last rune is the same either way, since a span
+// boundary inside a line does not move the line's end.
+//
+// Invalid UTF-8 decodes to U+FFFD, which is not spaceless, so a space is added: the same
+// answer this function gave everywhere before, which is the right way for a decode failure
+// to fail.
+func wrapNeedsSpace(prev, next string) bool {
+	last, _ := utf8.DecodeLastRuneInString(prev)
+	first, _ := utf8.DecodeRuneInString(next)
+	return !(spaceless(last) && spaceless(first))
+}
+
+// spaceless reports whether r belongs to a script written without spaces between words.
+//
+// Chinese and Japanese: Han, the two syllabaries, and the CJK punctuation block, since a
+// line ending in "，" or "。" is as much a mid-sentence wrap as one ending in a character.
+//
+// Hangul is deliberately **not** here even though it is CJK by every other classification.
+// Modern Korean *is* written with spaces between words, so a Korean line wrap is an
+// ordinary word boundary and suppressing the space would run two words together — the
+// exact defect this function exists to prevent, in the other direction. The criterion is
+// the script's use of spaces, not its residence in the CJK blocks.
+//
+// Thai, Lao, Khmer, and Burmese do qualify and are absent for a different reason: no
+// fixture exercises them, and a rule this file cannot measure is a guess. A Thai document
+// arriving in the corpus is the notice to extend this, and the Han ranges are what say
+// what such an extension has to look like.
+func spaceless(r rune) bool {
+	switch {
+	case r >= 0x3000 && r <= 0x303F: // CJK symbols and punctuation
+		return true
+	case r >= 0x3040 && r <= 0x30FF: // hiragana, katakana
+		return true
+	case r >= 0x3400 && r <= 0x4DBF: // CJK extension A
+		return true
+	case r >= 0x4E00 && r <= 0x9FFF: // CJK unified ideographs
+		return true
+	case r >= 0xF900 && r <= 0xFAFF: // CJK compatibility ideographs
+		return true
+	// Fullwidth forms through halfwidth katakana. The upper bound is U+FF9F rather than
+	// the U+FF60 that "fullwidth forms" alone suggests, because U+FF61–FF9F is halfwidth
+	// katakana and its voicing marks — kana either way, and a script does not acquire word
+	// spaces by being set at half width.
+	case r >= 0xFF00 && r <= 0xFF9F:
+		return true
+	}
+	return false
 }
 
 func hasMCID(ids []int, id int) bool {

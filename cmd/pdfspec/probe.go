@@ -184,8 +184,12 @@ func probeOne(path string, wantPages bool) report {
 // which filters must be implemented, which font types must be handled, and
 // whether there is any text at all.
 func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images int, detail []pageInfo) {
-	filterSet := map[string]bool{}
-	fontSet := map[string]bool{}
+	sc := &scanner{
+		s:       s,
+		filters: map[string]bool{},
+		fonts:   map[string]bool{},
+		seen:    map[objects.Ref]bool{},
+	}
 
 	for n := 1; n <= s.PageCount(); n++ {
 		page, err := s.Page(n)
@@ -209,41 +213,8 @@ func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images
 			pi.ContentLen = len(bb)
 		}
 
-		res, hasRes := objects.GetDict(s, page, "Resources")
-		if hasRes {
-			if fd, ok := objects.GetDict(s, res, "Font"); ok {
-				pi.Fonts = len(fd)
-				for _, v := range fd {
-					f, err := s.Resolve(v)
-					if err != nil {
-						continue
-					}
-					if fdict, isDict := f.(objects.Dict); isDict {
-						if sub, ok := objects.GetName(s, fdict, "Subtype"); ok {
-							fontSet[string(sub)] = true
-						}
-					}
-				}
-			}
-			if xo, ok := objects.GetDict(s, res, "XObject"); ok {
-				pi.XObjects = len(xo)
-				for _, v := range xo {
-					x, err := s.Resolve(v)
-					if err != nil {
-						continue
-					}
-					st, isStream := x.(*objects.Stream)
-					if !isStream {
-						continue
-					}
-					if sub, ok := objects.GetName(s, st.Dict, "Subtype"); ok && sub == "Image" {
-						images++
-					}
-					for _, f := range st.Filters {
-						filterSet[string(f)] = true
-					}
-				}
-			}
+		if res, ok := objects.GetDict(s, page, "Resources"); ok {
+			sc.walk(res, &pi, 0)
 		}
 
 		if wantPages {
@@ -251,7 +222,105 @@ func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images
 		}
 	}
 
-	return sortedKeys(filterSet), sortedKeys(fontSet), images, detail
+	return sortedKeys(sc.filters), sortedKeys(sc.fonts), sc.images, detail
+}
+
+// scanner accumulates the resource facts across a document.
+//
+// It carries state across pages for one reason: images are deduplicated by indirect
+// reference, so one XObject drawn on 1,023 pages counts once. That is the rule
+// image.Reader applies, and without it probe would report thousands of images for
+// the specification and disagree with the images verb about the same file.
+type scanner struct {
+	s       objects.Store
+	filters map[string]bool
+	fonts   map[string]bool
+	seen    map[objects.Ref]bool
+	images  int
+}
+
+// maxFormDepth bounds recursion into Form XObjects. Same value and same reason as in
+// image and extract: the seen set stops any cycle reached by reference, and this is
+// the backstop for a chain of direct objects, which no producer emits but a hostile
+// file may.
+const maxFormDepth = 8
+
+// walk records a resource dictionary's fonts and XObjects, recursing into Form
+// XObjects.
+//
+// The recursion is load-bearing rather than defensive. A form's resources are not the
+// page's: 39 of ISO 32000-2's fonts and 7 of its images are reachable only through
+// one, text-find-ligatures.pdf keeps its real font two forms deep, and
+// test_delete_image.pdf keeps its only image there. A page-level scan reports those
+// files as having no fonts at all, which routes them to the OCR path — and probe's
+// entire output is that routing decision, so a shallow scan does not merely
+// undercount, it answers the question wrongly.
+//
+// pi is only filled at depth 0: the per-page counts are "what this page's own
+// resource dictionary names", which is what a reader comparing them against the file
+// expects, and summing nested forms into them would make the column mean something
+// different per row.
+func (sc *scanner) walk(res objects.Dict, pi *pageInfo, depth int) {
+	if res == nil || depth >= maxFormDepth {
+		return
+	}
+	if fd, ok := objects.GetDict(sc.s, res, "Font"); ok {
+		if depth == 0 {
+			pi.Fonts = len(fd)
+		}
+		for _, v := range fd {
+			f, err := sc.s.Resolve(v)
+			if err != nil {
+				continue
+			}
+			fdict, isDict := f.(objects.Dict)
+			if !isDict {
+				continue
+			}
+			if sub, ok := objects.GetName(sc.s, fdict, "Subtype"); ok {
+				sc.fonts[string(sub)] = true
+			}
+		}
+	}
+	xo, ok := objects.GetDict(sc.s, res, "XObject")
+	if !ok {
+		return
+	}
+	if depth == 0 {
+		pi.XObjects = len(xo)
+	}
+	for _, v := range xo {
+		ref, isRef := v.(objects.Ref)
+		if isRef {
+			if sc.seen[ref] {
+				continue
+			}
+			sc.seen[ref] = true
+		}
+		x, err := sc.s.Resolve(v)
+		if err != nil {
+			continue
+		}
+		st, isStream := x.(*objects.Stream)
+		if !isStream {
+			continue
+		}
+		for _, f := range st.Filters {
+			sc.filters[string(f)] = true
+		}
+		switch sub, _ := objects.GetName(sc.s, st.Dict, "Subtype"); sub {
+		case "Image":
+			sc.images++
+		case "Form":
+			// A form with no /Resources inherits the invoking dictionary's
+			// (§8.10.1), which is how anything inside such a form is reached at all.
+			inner := res
+			if d, ok := objects.GetDict(sc.s, st.Dict, "Resources"); ok {
+				inner = d
+			}
+			sc.walk(inner, pi, depth+1)
+		}
+	}
 }
 
 func abs(f float64) float64 {

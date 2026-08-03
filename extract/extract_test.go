@@ -223,6 +223,55 @@ func TestLineBreakJoinsWithSpace(t *testing.T) {
 	}
 }
 
+// TestWrapNeedsSpace: the line-break space above is a Latin rule, and applying it to a
+// script written without inter-word spaces splits words that were never divided.
+//
+// A CJK line has no word boundaries to break at — it fills and wraps wherever it runs out
+// of measure — so the break carries no information and a space at the join is a claim the
+// page does not make. Measured on chinese-tables.pdf: the company name
+// 中诚信国际信用评级有限责任公司 wraps across three lines and was emitted with two spaces in
+// it.
+//
+// Tested here as well as against that fixture because the fixture cannot express the
+// mixed-script cases, and those are where a rule like this goes wrong: a document that
+// sets its numbers in Latin and its prose in Chinese wraps from one into the other, and
+// that join is a real boundary.
+func TestWrapNeedsSpace(t *testing.T) {
+	for _, tc := range []struct {
+		name, prev, next string
+		want             bool
+	}{
+		{"latin", "first", "second", true},
+		{"han", "中诚信国际信", "用评级有限责", false},
+		{"han after cjk comma", "很低，", "中诚信", false},
+		{"kana", "こんにち", "は世界", false},
+		{"halfwidth kana", "ｱｲｳ", "ｴｵ", false},
+		{"fullwidth", "２０２３", "年度", false},
+		// Hangul is CJK by every classification except the one that matters here: modern
+		// Korean is written with spaces between words, so a Korean line wrap is an ordinary
+		// word boundary and suppressing the space would run two words together.
+		{"hangul", "안녕하세요", "세계", true},
+		// Mixed: the break really is a boundary, because one side is a word in a script
+		// that has them. Dropping the space here would run "AA+" into the next word.
+		{"latin into han", "AA+", "偿还债务", true},
+		{"han into latin", "评级", "AA+", true},
+		{"digit into han", "2023", "年份", true},
+		// Neither side has a character to inspect. A space is the safe answer: it is what
+		// the Latin path did before, and every empty fragment is skipped upstream anyway.
+		{"empty prev", "", "second", true},
+		{"empty next", "first", "", true},
+		// A broken /ToUnicode can produce either of these. U+FFFD is not spaceless, so the
+		// join gets a space — the answer this function gave everywhere before it existed,
+		// which is how a decode failure should fail.
+		{"invalid utf8 prev", "\xff\xfe", "中诚信", true},
+		{"invalid utf8 next", "中诚信", "\xff\xfe", true},
+	} {
+		if got := wrapNeedsSpace(tc.prev, tc.next); got != tc.want {
+			t.Errorf("%s: wrapNeedsSpace(%q, %q) = %v, want %v", tc.name, tc.prev, tc.next, got, tc.want)
+		}
+	}
+}
+
 // TestParagraphBreakSplitsBlocks: a step much larger than the line height is a
 // paragraph break, and the two blocks must not be joined by a space as though they
 // were one paragraph.
