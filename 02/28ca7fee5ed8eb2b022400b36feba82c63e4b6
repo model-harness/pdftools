@@ -1,0 +1,71 @@
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_2e4e64aa2518a8 40-41
+  s_5cd1b28ed520c1::t_7aeb1c2c7d23b3 18
+image/image.go
+  s_5cd1b28ed520c1::t_bfa7886a08ed41 134-139
+  s_5cd1b28ed520c1::t_b6ccb46e4b14ed 1-133,140-165
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_f56543130b1ea4 427-452
+  s_5cd1b28ed520c1::t_3eabc057071f11 255-259
+  s_5cd1b28ed520c1::t_d9efa65acc2529 350
+  s_5cd1b28ed520c1::t_05191334c39a10 213-219
+bits/bits_test.go
+  s_5cd1b28ed520c1::t_0a8cdc04c0cd78 1-185,187-199
+  s_5cd1b28ed520c1::t_0ab33fe9847112 186
+image/encode_test.go
+  s_5cd1b28ed520c1::t_e1a27c91d394dc 445-468
+  s_5cd1b28ed520c1::t_0ab33fe9847112 380-381,429-430
+  s_5cd1b28ed520c1::t_81539c37664a38 1-379,382-428,431-444,469-480
+go.mod
+  s_5cd1b28ed520c1::t_91eae6b9ffe569 5-9
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_3a77a137b267a3 382-390,398-399
+  s_5cd1b28ed520c1::t_8d4fe79c7a629c 348-358
+  s_5cd1b28ed520c1::t_67c63d6ac26ba1 391-397,400-405
+  s_5cd1b28ed520c1::t_9b9d58f2abf404 283-319
+bits/bits.go
+  s_5cd1b28ed520c1::t_bf2ffc8e86724c 99-105
+  s_5cd1b28ed520c1::t_1d71f9f792ad94 1-98,106-151
+image/encode.go
+  s_5cd1b28ed520c1::t_fc527cce74d217 135-140
+  s_5cd1b28ed520c1::t_653868bff56899 10
+  s_5cd1b28ed520c1::t_0bd2e60ecb3b09 89-94
+  s_5cd1b28ed520c1::t_19f518c895625d 373,383
+  s_5cd1b28ed520c1::t_51c8a7fa1ed058 348
+  s_5cd1b28ed520c1::t_b24435f6f61651 1-9,11-76,84-88,95-103,114-134,141-179,186-347,349-372,374-382,384-501
+  s_5cd1b28ed520c1::t_fc7f2745b306dc 77-83
+  s_5cd1b28ed520c1::t_5c26dfe1bcd1f1 104-113
+  s_5cd1b28ed520c1::t_00a750107fc92a 180-185
+cmd/pdfspec/images_test.go
+  s_5cd1b28ed520c1::t_9cde5735a7d4e8 1-45,47-292
+  s_5cd1b28ed520c1::t_c2a4ddf4e6c208 46
+filter/filter.go
+  s_5cd1b28ed520c1::t_35902f188e4e5d 9-12
+image/read_test.go
+  s_5cd1b28ed520c1::t_9d166fd4f29c9b 1-3,6-9,20-581
+  s_5cd1b28ed520c1::t_9dd27d802c0227 4-5,10-19
+cmd/pdfspec/images.go
+  s_5cd1b28ed520c1::t_bd3e0ccd462bc7 1-200
+docs/adr/0004-extract-images-without-compositing.md
+  s_5cd1b28ed520c1::t_fee19c81140c47 1-142
+image/read.go
+  s_5cd1b28ed520c1::t_96a99d28f85c46 277-282
+  s_5cd1b28ed520c1::t_5cf380babf428b 178-180
+  s_5cd1b28ed520c1::t_79f8b1c1f8a600 1-177,181-276,283-414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "0228ca7fee5ed8eb2b022400b36feba82c63e4b6",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
