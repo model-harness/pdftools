@@ -171,7 +171,7 @@ func TestHeadingTitlesAreEmptyOnTarget(t *testing.T) {
 		if e.Title != "" {
 			titled++
 		}
-		if len(e.MCIDs) > 0 {
+		if len(e.Content) > 0 {
 			withMCIDs++
 		}
 		return true

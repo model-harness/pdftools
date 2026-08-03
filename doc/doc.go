@@ -15,9 +15,8 @@
 // two rectangles that must be kept in agreement, so the layout in DESIGN.md §4
 // listing them under doc is satisfied by using geom's.
 //
-// Section and the OKF-facing types are not here yet. Their shape depends on what
-// sectionize actually needs to stitch a clause across pages, and inventing it
-// before that measurement is how a model acquires fields nothing sets.
+// Section is in section.go, and its shape came from measuring ISO 32000-2 rather
+// than from anticipating it — see that file for what the measurement changed.
 package doc
 
 import (

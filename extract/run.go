@@ -712,11 +712,22 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 		}
 
 		box := fragBox(fr)
-		if n := len(b.Spans); n > 0 && b.Spans[n-1].Style.SameRun(fr.style, t) {
+		// The MCID has to match as well as the style, or a span would straddle a
+		// marked-content boundary and stop being a usable join key. A heading and the
+		// paragraph after it are frequently set in the same face at the same size — the
+		// style says one run, the structure tree says two elements — and merging them
+		// resolves the heading's title to the heading plus the paragraph.
+		if n := len(b.Spans); n > 0 && b.Spans[n-1].MCID == fr.mcid &&
+			b.Spans[n-1].Style.SameRun(fr.style, t) {
 			b.Spans[n-1].Text += txt
 			b.Spans[n-1].Box = b.Spans[n-1].Box.Union(box)
 		} else {
-			b.Spans = append(b.Spans, doc.Span{Text: txt, Style: fr.style, Box: box})
+			b.Spans = append(b.Spans, doc.Span{
+				Text:  txt,
+				Style: fr.style,
+				Box:   box,
+				MCID:  fr.mcid,
+			})
 		}
 		b.Box = b.Box.Union(box)
 		if fr.mcid >= 0 && !hasMCID(b.MCIDs, fr.mcid) {

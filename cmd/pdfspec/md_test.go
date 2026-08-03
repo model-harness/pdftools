@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
+
+	"github.com/3rg0n/pdf-spec/doc"
 )
 
 // These tests run the md verb end to end — open, extract, render, write — and check
@@ -138,44 +141,196 @@ func TestMDOnSpec(t *testing.T) {
 	}
 }
 
-// TestMDEmitsNoHeadingsYet records a Phase 1 limitation rather than a defect, and it
-// is written as a test because the alternative is that nobody notices which of the two
-// it is.
+// TestMDEmitsOutlineHeadings is the inverted form of a Phase 1 test that asserted the
+// opposite. It recorded that ISO 32000-2 converted to flat prose — correct text, no
+// document outline — because extract.roleOf marks every non-artifact block
+// RoleParagraph on purpose and nothing gave the sink a heading. sectionize now does.
 //
-// extract.roleOf assigns doc.RoleParagraph to every non-artifact block on purpose:
-// heading level is declared by the structure tree, and reading it is sectionize's job
-// in Phase 2. So the Markdown of ISO 32000-2 today is flat prose — correct text, no
-// document outline — even though tag.Read finds 981 headings in the same file
-// (TestCorpusStructure). The sink renders headings correctly when it is given them;
-// nothing gives it any yet.
-//
-// This test inverts when sectionize lands. A failure here means headings started being
-// emitted, which is the Phase 2 goal, and the assertion below should then become the
-// 981-heading bar from docs/DESIGN.md §Phases.
-func TestMDEmitsNoHeadingsYet(t *testing.T) {
+// The count is 981 sections but not 981 ATX headings, and the gap is Markdown's:
+// docs/DESIGN.md §Phases puts the specification at ~981 clauses over five levels, and
+// counting only "#" and "##" reaches the 193 roots and their immediate children. The
+// bar below is on the total across all six depths, which is the number the outline
+// actually carries.
+func TestMDEmitsOutlineHeadings(t *testing.T) {
 	path := corpusFile(t, "ISO_32000-2_sponsored_EC3.pdf")
 	md := mdOut(t, path)
 
-	heads := 0
+	byLevel := map[int]int{}
 	for _, line := range strings.Split(md, "\n") {
-		if strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "## ") {
-			heads++
+		n := 0
+		for n < len(line) && line[n] == '#' {
+			n++
 		}
+		if n == 0 || n >= len(line) || line[n] != ' ' {
+			continue
+		}
+		byLevel[n]++
 	}
-	if heads != 0 {
-		t.Errorf("%d headings emitted: extract now classifies them, so this test and the "+
-			"Phase 2 bar in docs/DESIGN.md should be reconciled", heads)
+	total := 0
+	for _, n := range byLevel {
+		total += n
 	}
+	// 981 clauses from docs/DESIGN.md §Phases, all of which resolved a title, so all of
+	// which are emitted. Anything materially lower means the sink is dropping sections
+	// or sectionize stopped finding them.
+	if total != 981 {
+		t.Errorf("%d headings emitted, want 981: %v", total, byLevel)
+	}
+	if byLevel[1] == 0 {
+		t.Error("no level-1 headings: the outline has no roots")
+	}
+	// Markdown has six levels and the tree nests deeper, so headings flatten rather
+	// than emitting "#######", which renders as literal hashes.
+	if byLevel[7] != 0 {
+		t.Errorf("%d headings past level 6", byLevel[7])
+	}
+	t.Logf("headings by level: %v (total %d)", byLevel, total)
 
-	// The corollary is that a paragraph whose text happens to begin with "#" must be
-	// escaped, or the flat output would sprout a heading the document does not have.
-	// No line may start with an unescaped one.
+	// A heading line is the only line allowed to open with "#". A paragraph whose text
+	// happens to begin with one must still be escaped, or the output would sprout a
+	// clause the document does not have.
+	for i, line := range strings.Split(md, "\n") {
+		if !strings.HasPrefix(line, "#") {
+			continue
+		}
+		n := 0
+		for n < len(line) && line[n] == '#' {
+			n++
+		}
+		if n < len(line) && line[n] == ' ' {
+			continue
+		}
+		t.Errorf("line %d opens with an unescaped %q outside a heading: %q",
+			i+1, "#", first(line, 60))
+		break
+	}
+}
+
+// TestMDFlatEmitsNoHeadings covers the escape hatch: -flat is page-ordered prose even
+// for a tagged file, which is what a reader converting one document to read it asked
+// for and what a diff against the pre-outline output needs.
+func TestMDFlatEmitsNoHeadings(t *testing.T) {
+	path := corpusFile(t, "ISO_32000-2_sponsored_EC3.pdf")
+	md := mdOut(t, "-flat", path)
+
 	for i, line := range strings.Split(md, "\n") {
 		if strings.HasPrefix(line, "#") {
-			t.Errorf("line %d opens with an unescaped %q: %q", i+1, "#", first(line, 60))
+			t.Errorf("line %d opens with %q under -flat: %q", i+1, "#", first(line, 60))
 			break
 		}
 	}
+}
+
+// TestMDOutlineConservesText is the pipeline-level form of the accounting invariant:
+// every character the flat conversion drew must still be in the outline conversion.
+//
+// The outline reorders content relative to the page — unplaced text moves to the end,
+// and a clause spanning pages is contiguous where the pages were not — so the two are
+// compared as character multisets rather than as text.
+//
+// Letters and digits only, and one-directional. Markdown syntax differs between the
+// two renderings by construction: the outline adds "#" per heading, "- " per list item
+// recovered from an L element, "*" around a figure, and an HTML comment per unplaced
+// page. Counting those would measure the sink's markup, which the other tests in this
+// file already do. What no rendering difference can excuse is a letter the flat path
+// drew and the outline did not, so that is what this asserts.
+//
+// The reverse direction is not zero and should not be: the tagged path recovers /Alt
+// from structure elements, and /Alt is text a producer supplied for content the glyphs
+// do not spell — a figure's description. Nothing draws it on the page, so the layout
+// path cannot see it at all. Measured, letters and digits: 33 on PDF20_AN002-AF, 44 on
+// WTPDF, 9,524 on ISO 32000-2, each equal to the outline's own /Alt total to the
+// character. That equality is the assertion — an outline gaining letters from anywhere
+// but /Alt would be inventing text.
+func TestMDOutlineConservesText(t *testing.T) {
+	for _, file := range []string{
+		"PDF20_AN002-AF.pdf",
+		"Well-Tagged-PDF-WTPDF-1.0.pdf",
+		"ISO_32000-2_sponsored_EC3.pdf",
+	} {
+		t.Run(file, func(t *testing.T) {
+			path := corpusFile(t, file)
+			flat := alnumCounts(mdOut(t, "-flat", path))
+
+			md := mdOut(t, path)
+			// The sink's own notes are the one thing in the output that is neither the
+			// document's text nor its markup, so they come off before counting. Matched
+			// by their prefix rather than as any HTML comment: WTPDF prints XMP examples
+			// that contain real comments, and stripping those would take 322 letters of
+			// document content off one side of the comparison only.
+			out := alnumCounts(sinkNote.ReplaceAllString(md, ""))
+
+			missing := 0
+			for r, n := range flat {
+				if d := n - out[r]; d > 0 {
+					missing += d
+				}
+			}
+			if missing != 0 {
+				t.Errorf("outline dropped %d letters and digits the flat conversion drew", missing)
+			}
+
+			gained := 0
+			for r, n := range out {
+				if d := n - flat[r]; d > 0 {
+					gained += d
+				}
+			}
+			_, o, _ := outlineOf(t, file)
+			alt := 0
+			forEachBlock(o, func(b doc.Block) {
+				alt += alnumLen(b.Alt)
+			})
+			if gained != alt {
+				t.Errorf("outline gained %d letters and digits but carries %d of /Alt: the difference is invented",
+					gained, alt)
+			}
+			t.Logf("no letter lost, %d gained, all of it /Alt", gained)
+		})
+	}
+}
+
+// sinkNote matches the comment WriteOutline emits above unplaced text. Anchored on the
+// "pdfspec:" prefix on purpose — see TestMDOutlineConservesText.
+var sinkNote = regexp.MustCompile(`<!-- pdfspec:[^>]*-->`)
+
+// forEachBlock visits every block an outline holds, wherever it sits.
+func forEachBlock(o *doc.Outline, fn func(doc.Block)) {
+	for _, b := range o.Preamble {
+		fn(b)
+	}
+	o.Walk(func(s *doc.Section) bool {
+		for _, b := range s.Blocks {
+			fn(b)
+		}
+		return true
+	})
+	for i := range o.Unplaced {
+		for _, b := range o.Unplaced[i].Blocks {
+			fn(b)
+		}
+	}
+}
+
+// alnumCounts counts letters and digits, which is text in any script and never markup.
+func alnumCounts(s string) map[rune]int {
+	m := make(map[rune]int, 128)
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			m[r]++
+		}
+	}
+	return m
+}
+
+func alnumLen(s string) int {
+	n := 0
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			n++
+		}
+	}
+	return n
 }
 
 var pageFile = regexp.MustCompile(`^page-(\d+)\.md$`)
@@ -242,10 +397,15 @@ func TestMDSplitOnePerPage(t *testing.T) {
 
 // Splitting must not change the text. The pages concatenated are the whole document,
 // and if they are not then one of the two paths is wrong.
+//
+// Compared against -flat, because -split is page-scoped by definition and the outline
+// is not: a clause running across three pages cannot be a heading in three files, so
+// split output stays page-ordered and the whole-document comparison has to be too.
+// Character conservation between flat and outline output is TestMDOutlineConservesText.
 func TestMDSplitTextMatchesWhole(t *testing.T) {
 	path := corpusFile(t, "PDF20_AN002-AF.pdf")
 
-	whole := mdOut(t, path)
+	whole := mdOut(t, "-flat", path)
 
 	dir := filepath.Join(t.TempDir(), "pages")
 	if err := runMD([]string{"-split", "-o", dir, path}); err != nil {

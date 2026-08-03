@@ -165,6 +165,98 @@ All notable changes to this project are documented here, following
   `sectionize`'s job — so ISO 32000-2's Markdown is currently flat prose despite `tag.Read`
   finding 981 headings in the same file. The sink renders headings correctly when given
   them; nothing gives it any yet. The test inverts when `sectionize` lands.
+- `docs/adr/0002-derive-sections-from-the-heading-sequence.md` — why sections come from the
+  heading sequence rather than from container nesting, with the measurements that forced it and
+  the `tag.MCRef` API change that followed. Recorded as an ADR because it is a long-lived
+  convention both the tagged and the untagged path are built on, and because it changed a
+  public type.
+- `doc.Section` and `doc.Outline` — the clause hierarchy, and the second thing every sink
+  consumes. A `Section` carries its title, clause number, level, page range, own blocks, and
+  children; an `Outline` carries the roots plus a `Preamble` for content before the first
+  heading and `Unplaced` for content no section claimed. `Unplaced` exists because dropping
+  text is never the right default for an extractor and a wrong attribution is worse than an
+  absent one — ISO 32000-2 draws the whole of clause 1 outside any marked-content sequence,
+  so no structure element names it, and filing it under the preceding clause would put the
+  standard's Scope inside "0.4 Changes introduced in ISO 32000-2:2020".
+- `sectionize` — the package that turns a structure tree into a clause hierarchy, and the
+  one whose algorithm `docs/DESIGN.md` §3 had to be corrected for. Sections come from the
+  **heading sequence**, not from container nesting: ISO 32000-2 has 7 `Sect` elements against
+  981 headings, 966 of those 981 headings have no element children at all, and one `Part`
+  holds 13,442 direct children as a flat `H1 P P P …` stream. A clause's body is therefore
+  its heading's *following siblings*, and the hierarchy is a level stack over a linear
+  sequence — which is also why the same builder will serve the untagged path, where headings
+  are recognized rather than declared. Measured, tagged path:
+
+  | file | sections | titled | numbered | max level | blocks | roots | unplaced |
+  |---|---|---|---|---|---|---|---|
+  | WTPDF 1.0 | 183 | 183 | 173 | 6 | 943 | 13 | 6 chars (0.004%) |
+  | ISO/TS 32001 | 14 | 14 | 10 | 3 | 115 | 9 | 0 |
+  | ISO/TS 32005 | 27 | 27 | 23 | 4 | 692 | 11 | 0 |
+  | ISO 32000-2 | 981 | 981 | 851 | 5 | 29,218 | 48 | 5,734 chars (0.231%) |
+
+  Zero characters lost on all four, and placed plus unplaced equals the document's own total
+  exactly — the accounting is an equality, not a bound, so a block partly claimed by a
+  section is rebuilt from its unclaimed spans rather than repeated whole.
+- `sectionize` title resolution from **content**, not from `/T`. Not one of ISO 32000-2's 981
+  headings carries a non-empty `/T`, nor one of WTPDF's 183, so a reader trusting the
+  attribute produces an outline of untitled sections. Titles are joined to the heading's own
+  marked content on `(page, MCID)`, with `/ActualText` last rather than first: it is a
+  substitution for what the glyphs spell, and where both exist the glyphs are what a reader
+  checking the conversion against the page will see.
+- `sink/markdown.WriteOutline` — the outline renderer. The same sink as `Write` with the
+  headings added, and the page boundaries gone: a paragraph continuing across a page break is
+  one paragraph, which is the whole reason the tagged path exists. Unplaced text is emitted
+  last, each page behind an HTML comment naming it, rather than interleaved by page — a
+  comment renders as nothing and greps as something, where a heading would put a clause in the
+  outline that no heading in the document corresponds to.
+- `cmd/pdfspec md -flat` — page-ordered prose even for a tagged file. The outline is now the
+  default when a structure tree resolves, and `-flat` is both the escape hatch for a reader
+  who wants the document as it was laid out and the reference output the conservation tests
+  compare against.
+- `sectionize` unit tests built from hand-written `tag.Tree` and `doc.Document` values, one
+  behaviour per test: the level stack, transparent containers, inline elements not splitting a
+  paragraph, the span-level join, cross-page content, list depth, table cells, figure `/Alt`,
+  unknown roles staying transparent. Fixtures put one block per page rather than one per run,
+  deliberately — that is the shape the extractor actually produces, and a fixture with one
+  block per run would pass under a block-level join too and prove nothing.
+- `cmd/pdfspec` corpus acceptance tests for the outline: exact section counts, the
+  heading-sized-title bound that guards the span-level join from the inside, hierarchy
+  well-formedness, page ordering, character conservation, and an untagged file yielding no
+  sections. The exact counts are load-bearing in one direction — a run that returns single
+  digits from a 1,023-page standard has reverted to container-driven segmentation, which is a
+  silent failure that produces a plausible-looking outline.
+
+### Changed — 2026-08-03
+
+- `TestMDEmitsNoHeadingsYet` became `TestMDEmitsOutlineHeadings`, which is the inversion its
+  own comment promised. ISO 32000-2 now converts to 981 ATX headings across five levels
+  (`map[1:48 2:145 3:351 4:330 5:107]`).
+- `tag.Elem.MCIDs []int` became `Content []MCRef`, where an `MCRef` carries its own page.
+  This is a public-contract change to a core type and it is not cosmetic: an MCR's own `/Pg`
+  is *authoritative over its element's*, and that is precisely the mechanism by which one
+  paragraph continues across a page break. Flattening the references to a bare ID list
+  discarded it. Measured: 5 of WTPDF's 2,035 references are MCRs and all 5 name a page other
+  than their element's, likewise 5 of 329 in ISO/TS 32001 — and those 5-and-5 were exactly
+  the unplaced text, which fell from 0.352% to 0.004% and from 1.222% to 0 when the join
+  started reading them.
+- `doc.Span` carries an `MCID`, and `extract` requires it to match before merging two spans
+  into one. The `(page, MCID)` join has to be span-level because the paragraph heuristic
+  merges a heading line with the body line after it when they share style and spacing, so a
+  block-level join over-captures: it turned 12.0% of WTPDF's headings into
+  heading-plus-definition, 3.7% of ISO/TS 32005's, and produced a 518-character "title" on the
+  specification. Span-level took the title length p90 from 101 to 45 characters, and the
+  longest title on ISO 32000-2 is now a real clause name.
+
+### Fixed — 2026-08-03
+
+- `tag`: `ResolvePages` discarded the `/Pg` of a marked-content reference, keeping only its
+  element's. See the `MCRef` entry above — the cross-page continuation this loses is the one
+  case the tagged path exists to handle, and it read as unattributable text rather than as an
+  error.
+- `sectionize`: `truncate` could emit invalid UTF-8. The backoff after a byte-offset cut
+  stripped continuation bytes but not a dangling lead byte, so a cut landing immediately after
+  one left a partial rune — which both a YAML value and a filename reject. Found by a unit
+  test rather than by a corpus run: no title in the corpus is long enough to truncate.
 
 ### Changed — 2026-08-02
 

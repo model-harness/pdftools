@@ -125,15 +125,27 @@ type Elem struct {
 	// Alt is /Alt, alternate description, typically on a Figure.
 	Alt string
 
-	// Page is the 1-based page this element is anchored to via /Pg, or 0 when
-	// it does not name one. Structure elements need not be page-scoped, which
-	// is exactly what lets a section span pages.
+	// Page is the 1-based page this element is anchored to, or 0 when neither it
+	// nor any ancestor names one. Structure elements need not be page-scoped,
+	// which is exactly what lets a section span pages.
+	//
+	// Inherited, not just read: §14.7.4.3 says an element's page is its own /Pg
+	// or, absent that, its nearest ancestor's. A producer that puts /Pg on a Sect
+	// and omits it from every P inside is conformant, and reading only the
+	// element's own entry leaves all of them anchored nowhere.
 	Page int
 
-	// MCIDs are the marked-content identifiers on Page that belong to this
-	// element. They are the join key between the structure tree and the text
-	// found in content streams.
-	MCIDs []int
+	// Content is the marked-content this element owns, in order, each identifier
+	// paired with the page it was drawn on. Together they are the join key
+	// between the structure tree and the text found in content streams.
+	//
+	// The page is per reference rather than per element because a marked-content
+	// reference may carry its own /Pg, and that is precisely how one paragraph
+	// continues across a page break. Rare — 5 of 2,035 references in
+	// Well-Tagged-PDF-WTPDF-1.0.pdf, none in ISO 32000-2 — but every one of those
+	// 5 names a page other than its element's, so treating the element's page as
+	// authoritative loses exactly the content that spans pages.
+	Content []MCRef
 
 	// Kids are child elements in logical reading order.
 	Kids []*Elem
@@ -145,6 +157,30 @@ type Elem struct {
 	// Resolving during the walk would need an object-number-to-page-number map,
 	// which costs a full page-tree traversal, so it is deferred to ResolvePages.
 	pageRef *objects.Ref
+}
+
+// MCRef is one marked-content identifier together with the page it was drawn on.
+//
+// Page is 0 until ResolvePages has run, and stays 0 for a reference whose element
+// chain never names a page — that content cannot be joined to page text, because an
+// MCID is unique only within a page.
+type MCRef struct {
+	MCID int
+	Page int
+
+	// pageRef is an MCR's own /Pg, unresolved. Nil when the reference inherits its
+	// element's page, which is the common case.
+	pageRef *objects.Ref
+}
+
+// MCIDs returns the identifiers in Content, for a caller that only needs to know
+// which marked content an element owns and not where it sits.
+func (e *Elem) MCIDs() []int {
+	out := make([]int, 0, len(e.Content))
+	for _, c := range e.Content {
+		out = append(out, c.MCID)
+	}
+	return out
 }
 
 // Tree is a document's structure tree.
@@ -259,7 +295,7 @@ func (t *Tree) readKids(s objects.Store, d objects.Dict, parent *Elem, seen map[
 		switch v := res.(type) {
 		case objects.Int:
 			// A bare integer is an MCID on the parent's own page.
-			parent.MCIDs = append(parent.MCIDs, int(v))
+			parent.Content = append(parent.Content, MCRef{MCID: int(v)})
 		case objects.Dict:
 			kid, err := t.readKidDict(s, v, parent, seen, depth)
 			if err != nil {
@@ -278,11 +314,23 @@ func (t *Tree) readKids(s objects.Store, d objects.Dict, parent *Elem, seen map[
 func (t *Tree) readKidDict(s objects.Store, d objects.Dict, parent *Elem, seen map[objects.Ref]bool, depth int) (*Elem, error) {
 	switch typ, _ := objects.GetName(s, d, "Type"); typ {
 	case "MCR":
-		// Marked-content reference: an MCID plus the page it sits on. The page
-		// may differ from the parent's, which is how one element spans pages.
-		if mcid, ok := objects.GetInt(s, d, "MCID"); ok {
-			parent.MCIDs = append(parent.MCIDs, int(mcid))
+		// Marked-content reference: an MCID plus, optionally, the page it sits on.
+		// That page may differ from the parent's, and where it does it is the whole
+		// reason the reference exists — a paragraph continuing past a page break is
+		// one element whose content is on two pages. Keeping the /Pg is therefore
+		// not a refinement: dropping it silently reassigns the continuation to the
+		// element's own page, where the MCID means something else entirely.
+		mcid, ok := objects.GetInt(s, d, "MCID")
+		if !ok {
+			return nil, nil
 		}
+		ref := MCRef{MCID: int(mcid)}
+		if pg, has := d["Pg"]; has {
+			if r, isRef := pg.(objects.Ref); isRef {
+				ref.pageRef = &r
+			}
+		}
+		parent.Content = append(parent.Content, ref)
 		return nil, nil
 	case "OBJR":
 		// Object reference: points at an annotation or XObject rather than text.
@@ -329,12 +377,17 @@ func (t *Tree) readKidDict(s objects.Store, d objects.Dict, parent *Elem, seen m
 	return e, nil
 }
 
-// ResolvePages fills in Elem.Page for every element carrying a /Pg reference.
+// ResolvePages fills in Elem.Page and the page of every MCRef.
 //
-// This is separate from Read because it costs a walk of the page tree to build
-// the object-number-to-page-number map, and a caller that only wants the
-// heading outline never needs page numbers. Reading a structure tree of a
-// 1000-page document should not pay for page resolution it will not use.
+// Separate from Read because it costs a walk of the page tree to build the
+// object-number-to-page-number map, and a caller that only wants the heading
+// outline never needs page numbers. Reading the structure tree of a 1000-page
+// document should not pay for page resolution it will not use.
+//
+// Pages are inherited: an element with no /Pg takes its nearest ancestor's, and a
+// marked-content reference with no /Pg takes its element's. That is §14.7.4.3, and
+// it is what lets a producer put /Pg once on a Sect instead of on all 300 paragraphs
+// inside it.
 func (t *Tree) ResolvePages(s objects.Store) error {
 	if t == nil || t.Root == nil {
 		return nil
@@ -356,15 +409,37 @@ func (t *Tree) ResolvePages(s objects.Store) error {
 		return err
 	}
 
-	t.Walk(func(e *Elem, _ int) bool {
-		if e.pageRef != nil {
-			if n, ok := byObjNum[e.pageRef.Num]; ok {
-				e.Page = n
-			}
-		}
-		return true
-	})
+	assignPages(t.Root, 0, byObjNum)
 	return nil
+}
+
+// assignPages walks the tree top-down, carrying the enclosing page so an element
+// with no /Pg of its own inherits it.
+//
+// Recursive rather than a Tree.Walk closure because inheritance needs the parent's
+// resolved value on the way down, and Walk hands out a depth rather than a path.
+func assignPages(e *Elem, inherited int, byObjNum map[int]int) {
+	page := inherited
+	if e.pageRef != nil {
+		if n, ok := byObjNum[e.pageRef.Num]; ok {
+			page = n
+		}
+	}
+	e.Page = page
+
+	for i := range e.Content {
+		c := &e.Content[i]
+		c.Page = page
+		if c.pageRef == nil {
+			continue
+		}
+		if n, ok := byObjNum[c.pageRef.Num]; ok {
+			c.Page = n
+		}
+	}
+	for _, k := range e.Kids {
+		assignPages(k, page, byObjNum)
+	}
 }
 
 // indexPages walks the page tree in order, assigning 1-based page numbers to
@@ -483,7 +558,7 @@ func (t *Tree) Stats() Stats {
 	t.Walk(func(e *Elem, depth int) bool {
 		st.Elements++
 		st.Roles[e.Role]++
-		st.MCIDs += len(e.MCIDs)
+		st.MCIDs += len(e.Content)
 		if depth > st.MaxDepth {
 			st.MaxDepth = depth
 		}

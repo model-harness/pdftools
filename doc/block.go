@@ -94,6 +94,14 @@ type Block struct {
 	// the block's page. Carried for diagnosis: when tagged text comes out in the
 	// wrong order, the question is always which MCIDs went where, and answering it
 	// without this means re-running the extraction.
+	//
+	// Not the join key for a structure element. A block is a *layout* unit and an
+	// element is a *logical* one, and the two disagree often enough to matter: on
+	// Well-Tagged-PDF-WTPDF-1.0.pdf, 12% of headings share a block with the body text
+	// that follows them, because the extractor's paragraph heuristic saw one paragraph
+	// where the tree declares a heading and a definition. Joining on this set resolves
+	// such a heading's title to the heading plus the definition. Span.MCID is the key
+	// that does not have that failure.
 	MCIDs []int
 }
 
@@ -142,6 +150,21 @@ type Span struct {
 
 	// Box is the run's bounding rectangle in page coordinates.
 	Box geom.Rect
+
+	// MCID is the marked-content identifier this run was drawn inside, or -1 when it
+	// was drawn outside any marked-content sequence. Combined with the page number it
+	// is the join key between page text and a structure element.
+	//
+	// It is on the span rather than only on the block because a span never crosses a
+	// marked-content boundary while a block routinely does — the extractor starts a
+	// new run at every MCID change, so this is exact where Block.MCIDs is a union. On
+	// Well-Tagged-PDF-WTPDF-1.0.pdf that distinction is 12% of the headings.
+	//
+	// Zero is a valid MCID, so the absent value is -1 and cannot be the zero value of
+	// the field. Constructing a Span by hand therefore leaves it claiming MCID 0; the
+	// extractor always sets it, and a consumer joining on it should treat a page with
+	// no marked content as having no join at all rather than trusting a 0.
+	MCID int
 }
 
 // Style is the typographic identity of a span.

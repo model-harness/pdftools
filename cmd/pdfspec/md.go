@@ -9,8 +9,11 @@ import (
 
 	"github.com/3rg0n/pdf-spec/doc"
 	"github.com/3rg0n/pdf-spec/extract"
+	"github.com/3rg0n/pdf-spec/objects"
 	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	"github.com/3rg0n/pdf-spec/sectionize"
 	"github.com/3rg0n/pdf-spec/sink/markdown"
+	"github.com/3rg0n/pdf-spec/tag"
 )
 
 func runMD(args []string) error {
@@ -19,8 +22,9 @@ func runMD(args []string) error {
 	split := fs.Bool("split", false, "one .md per page; -o names a directory")
 	frontmatter := fs.Bool("frontmatter", false, "emit YAML frontmatter")
 	artifacts := fs.Bool("artifacts", false, "keep running headers, folios, and watermarks")
+	flat := fs.Bool("flat", false, "page-ordered prose with no headings, even when the file is tagged")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: pdfspec md [-o out] [-split] [-frontmatter] [-artifacts] <file.pdf>\n\n")
+		fmt.Fprint(os.Stderr, "usage: pdfspec md [-o out] [-split] [-frontmatter] [-artifacts] [-flat] <file.pdf>\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -55,9 +59,53 @@ func runMD(args []string) error {
 
 	mopt := markdown.Options{Frontmatter: *frontmatter, Artifacts: *artifacts}
 	if *split {
+		// Per-page output is page-scoped by definition, so the outline does not apply:
+		// a clause running from page 412 to 414 cannot be a heading in three files.
 		return writeSplit(d, *out, mopt)
 	}
+	if !*flat {
+		o, err := readOutline(s, d)
+		if err != nil {
+			return err
+		}
+		if o != nil {
+			return writeOutline(o, *out, mopt)
+		}
+	}
 	return writeWhole(d, *out, mopt)
+}
+
+// readOutline reconstructs the clause hierarchy, or returns nil when the file has no
+// structure tree to reconstruct it from.
+//
+// nil rather than an error, and a silent fallback to page order rather than a warning:
+// most PDFs are untagged, and for those the layout path is the correct answer, not a
+// degraded one. The output still says which path ran — Metadata.Tagged is in the
+// frontmatter for exactly this reason.
+func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
+	tr, err := tag.Read(s)
+	if err != nil {
+		return nil, err
+	}
+	if tr == nil {
+		return nil, nil
+	}
+	// Titles and bodies are joined on (page, MCID), so an unresolved tree yields an
+	// outline of empty sections. This is not optional.
+	if err := tr.ResolvePages(s); err != nil {
+		return nil, err
+	}
+	o, _ := sectionize.Tagged(d, tr, sectionize.DefaultOptions)
+	return o, nil
+}
+
+func writeOutline(o *doc.Outline, out string, opt markdown.Options) error {
+	if out == "" {
+		return markdown.WriteOutline(os.Stdout, o, opt)
+	}
+	return writeFile(out, func(w io.Writer) error {
+		return markdown.WriteOutline(w, o, opt)
+	})
 }
 
 func writeWhole(d *doc.Document, out string, opt markdown.Options) error {

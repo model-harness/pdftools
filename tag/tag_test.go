@@ -97,13 +97,130 @@ func TestReadKidShapes(t *testing.T) {
 	if gotH1.Role != RoleH1 || gotH1.Title != "Scope" {
 		t.Fatalf("h1 wrong: %+v", gotH1)
 	}
-	if len(gotH1.MCIDs) != 1 || gotH1.MCIDs[0] != 0 {
-		t.Fatalf("bare int MCID not collected: %v", gotH1.MCIDs)
+	if got := gotH1.MCIDs(); len(got) != 1 || got[0] != 0 {
+		t.Fatalf("bare int MCID not collected: %v", got)
 	}
 
 	gotP := tr.Root.Kids[1]
-	if len(gotP.MCIDs) != 2 || gotP.MCIDs[0] != 1 || gotP.MCIDs[1] != 2 {
-		t.Fatalf("MCR not collected alongside bare int: %v", gotP.MCIDs)
+	if got := gotP.MCIDs(); len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("MCR not collected alongside bare int: %v", got)
+	}
+	// Order matters and is the /K order, because it is reading order: an MCR is not
+	// appended after the bare integers, it takes the position the array gave it.
+	if gotP.Content[0].MCID != 1 || gotP.Content[1].MCID != 2 {
+		t.Fatalf("content out of /K order: %+v", gotP.Content)
+	}
+}
+
+func TestMCRPageOverridesElementPage(t *testing.T) {
+	// The reason MCRef carries a page. A paragraph continuing past a page break is
+	// one element whose /Pg names the page it started on and whose MCR names the page
+	// it finished on. Reading only the element's /Pg attributes the continuation to
+	// the wrong page, where that MCID belongs to different content entirely — which
+	// is how a clause silently loses its last sentence.
+	//
+	// Measured: 5 of 2,035 marked-content references in
+	// Well-Tagged-PDF-WTPDF-1.0.pdf are MCRs, and all 5 name a page other than their
+	// element's. Rare, and precisely the cross-page cases.
+	pg1 := objects.Dict{"Type": objects.Name("Page")}
+	pg2 := objects.Dict{"Type": objects.Name("Page")}
+	para := objects.Dict{
+		"S":  objects.Name("P"),
+		"Pg": objects.Ref{Num: 20},
+		"K": objects.Array{
+			objects.Int(7),
+			objects.Dict{
+				"Type": objects.Name("MCR"),
+				"MCID": objects.Int(0),
+				"Pg":   objects.Ref{Num: 21},
+			},
+		},
+	}
+	root := objects.Dict{
+		"Type": objects.Name("StructTreeRoot"),
+		"K":    objects.Array{objects.Ref{Num: 11}},
+	}
+	s := &store{
+		cat: objects.Dict{
+			"StructTreeRoot": objects.Ref{Num: 1},
+			"Pages":          objects.Ref{Num: 2},
+		},
+		objs: map[objects.Ref]objects.Object{
+			{Num: 1}:  root,
+			{Num: 2}:  objects.Dict{"Type": objects.Name("Pages"), "Kids": objects.Array{objects.Ref{Num: 20}, objects.Ref{Num: 21}}},
+			{Num: 11}: para,
+			{Num: 20}: pg1,
+			{Num: 21}: pg2,
+		},
+	}
+
+	tr, err := Read(s)
+	if err != nil || tr == nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if err := tr.ResolvePages(s); err != nil {
+		t.Fatalf("ResolvePages: %v", err)
+	}
+
+	p := tr.Root.Kids[0]
+	if p.Page != 1 {
+		t.Errorf("element page = %d, want 1", p.Page)
+	}
+	if len(p.Content) != 2 {
+		t.Fatalf("content = %+v", p.Content)
+	}
+	if p.Content[0].Page != 1 {
+		t.Errorf("bare MCID page = %d, want 1 (the element's)", p.Content[0].Page)
+	}
+	if p.Content[1].Page != 2 {
+		t.Errorf("MCR page = %d, want 2 (its own /Pg, not the element's)", p.Content[1].Page)
+	}
+}
+
+func TestPageInheritedFromAncestor(t *testing.T) {
+	// Section 14.7.4.3: an element with no /Pg takes its nearest ancestor's. A
+	// producer that puts /Pg once on a Sect and omits it from the 300 paragraphs
+	// inside is conformant, so reading only an element's own entry leaves all of them
+	// anchored to page 0 and joinable to nothing.
+	inner := objects.Dict{"S": objects.Name("P"), "K": objects.Int(3)}
+	sect := objects.Dict{
+		"S":  objects.Name("Sect"),
+		"Pg": objects.Ref{Num: 21},
+		"K":  objects.Array{objects.Ref{Num: 12}},
+	}
+	root := objects.Dict{
+		"Type": objects.Name("StructTreeRoot"),
+		"K":    objects.Array{objects.Ref{Num: 11}},
+	}
+	s := &store{
+		cat: objects.Dict{
+			"StructTreeRoot": objects.Ref{Num: 1},
+			"Pages":          objects.Ref{Num: 2},
+		},
+		objs: map[objects.Ref]objects.Object{
+			{Num: 1}:  root,
+			{Num: 2}:  objects.Dict{"Type": objects.Name("Pages"), "Kids": objects.Array{objects.Ref{Num: 20}, objects.Ref{Num: 21}}},
+			{Num: 11}: sect,
+			{Num: 12}: inner,
+			{Num: 20}: objects.Dict{"Type": objects.Name("Page")},
+			{Num: 21}: objects.Dict{"Type": objects.Name("Page")},
+		},
+	}
+
+	tr, err := Read(s)
+	if err != nil || tr == nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if err := tr.ResolvePages(s); err != nil {
+		t.Fatalf("ResolvePages: %v", err)
+	}
+
+	p := tr.Root.Kids[0].Kids[0]
+	if p.Page != 2 {
+		t.Errorf("inherited page = %d, want 2", p.Page)
+	}
+	if len(p.Content) != 1 || p.Content[0].Page != 2 {
+		t.Errorf("content page not inherited: %+v", p.Content)
 	}
 }
 
