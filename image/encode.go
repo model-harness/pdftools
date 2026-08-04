@@ -440,14 +440,14 @@ func unblend(sample, matte []float64, alpha float64) {
 // alphaAt returns a per-pixel alpha lookup from the soft mask, or nil when there
 // is none.
 //
-// The mask may be a different size from the base image — 4 of the corpus's 143
+// The mask may be a different size from the base image — 4 of the corpus's 142
 // are — so coordinates are scaled by nearest neighbour rather than assumed to
 // match. Assuming they match reads outside the mask's buffer for a smaller mask
 // and crops it for a larger one.
 func alphaAt(im *Image) func(x, y int) uint8 {
 	sm := im.SMask
 	if sm == nil || sm.Codec != CodecRaw || sm.Width <= 0 || sm.Height <= 0 {
-		// A DCT-encoded soft mask — 2 of the corpus's 143 — would have to be run
+		// A DCT-encoded soft mask — 2 of the corpus's 142 — would have to be run
 		// through the JPEG decoder to become alpha. Left opaque instead: the base
 		// image is still written faithfully, and the mask is written as its own
 		// file, which is where its data remains available.

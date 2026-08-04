@@ -79,7 +79,7 @@ func (r *Reader) Page(n int) ([]*Image, error) {
 
 // walk collects images from a resource dictionary, recursing into Form XObjects.
 //
-// Forms matter: 7 of the corpus's 245 images are inside one, so a walker that
+// Forms matter: 7 of the corpus's 239 images are inside one, so a walker that
 // only looked at page-level resources would silently miss them. That is the same
 // defect that cost the font subsystem 21 of 247 fonts before it was fixed.
 func (r *Reader) walk(res objects.Dict, page, depth int, out *[]*Image) {
@@ -167,7 +167,7 @@ func (r *Reader) image(st *objects.Stream, ref objects.Ref, name objects.Name, p
 		im.BitsPerComponent = int(bpc)
 	default:
 		// Absent or nonsensical on a non-stencil image. 8 is the overwhelming
-		// majority — 241 of 245 here — and is the only guess that makes the stride
+		// majority — 235 of 239 here — and is the only guess that makes the stride
 		// arithmetic work at all.
 		im.BitsPerComponent = 8
 	}

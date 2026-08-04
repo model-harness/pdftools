@@ -1,10 +1,10 @@
 // Package image reads image XObjects out of a PDF (ISO 32000-2 §8.9).
 //
-// The governing rule is that the original codec survives wherever it can. 56 of
-// the 245 images in this repo's corpus are DCTDecode, and the largest is
-// 6049×4090; decoding one to pixels and re-encoding it would cost a generational
-// quality loss and several seconds for a file that was already a perfectly good
-// JPEG. So a DCT image is written as the .jpg it already is, byte for byte, and
+// The governing rule is that the original codec survives wherever it can. 51 of
+// the 239 images in this repo's corpus are DCTDecode; decoding one to pixels and
+// re-encoding it would cost a generational quality loss and CPU for a file that
+// was already a perfectly good JPEG. So a DCT image is written as the .jpg it
+// already is, byte for byte, and
 // only the codecs with no standalone container — Flate and LZW packed samples,
 // CCITT, and raw unfiltered data — are decoded and re-encoded as PNG.
 //
@@ -13,7 +13,7 @@
 // decision and this is an extractor. Compositing belongs above, in render.
 //
 // Un-premultiplying is not compositing, though, and it does happen here. 136 of the
-// corpus's 143 soft masks carry /Matte [0 0 0], meaning their base samples were
+// corpus's 142 soft masks carry /Matte [0 0 0], meaning their base samples were
 // pre-blended against black (§11.6.5.3), and writing those samples unchanged into a
 // non-premultiplied PNG mislabels them. The inversion has to be in this package
 // rather than above it because the spec orders it: "If a colour conversion is
@@ -154,7 +154,7 @@ type Image struct {
 	// Table 144 requires "valid colour components in that colour space", and the
 	// pre-blending "shall use actual colour component values, with the effects of the
 	// Filter and Decode transformations already performed". Present on 136 of this
-	// corpus's 143 soft masks, all [0 0 0].
+	// corpus's 142 soft masks, all [0 0 0].
 	Matte []float64
 }
 

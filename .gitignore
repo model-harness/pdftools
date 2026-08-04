@@ -22,9 +22,19 @@ docs/ISO_*.pdf
 docs/ISO-*.pdf
 docs/PDF20_*.pdf
 
-# Not part of the spec corpus and intentionally tracked:
-#   docs/LightOnOCR-2601.14251v1.pdf
-#   docs/LightOnOCR_*.mhtml
+# ---------------------------------------------------------------------------
+# The arXiv paper the §1 extraction baselines were measured on.
+#
+# Not part of the spec corpus and no longer redistributed here: it was tracked
+# through Phase 4, then purged from history before this repo was published,
+# because republishing a third party's paper is not this project's call to make.
+# Several tests still measure against it and skip when it is absent, exactly as
+# the corpus tests do. To run them, fetch your own copy into docs/:
+#
+#   https://arxiv.org/abs/2601.14251
+# ---------------------------------------------------------------------------
+docs/LightOnOCR-2601.14251v1.pdf
+docs/LightOnOCR_*.mhtml
 
 # --- Go ---
 *.exe

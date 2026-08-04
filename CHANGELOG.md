@@ -628,6 +628,33 @@ All notable changes to this project are documented here, following
   inversion rather than about hand-computed constants that would encode the same mistake
   twice. `TestCorpusSoftMasks` now pins 131 recoverable / 5 blocked, keyed by codec pair.
 
+### Fixed — 2026-08-04
+
+- **Every aggregate corpus figure in the repo was measured over twelve files instead of
+  eleven.** `corpusFiles` globbed `docs/*.pdf`, and `docs/` is a working directory as well as
+  the corpus, so an arXiv paper dropped there to be read joined the baselines silently from
+  Phase 3 onward. The image counts were the visible casualty — **239 images and 142 soft
+  masks, not 245 and 143** — and the "largest is 6049×4090 DCT" claim quoted in three places
+  was that paper's image, not the corpus's, whose largest is 1169×1394 raw DeviceRGB. Also
+  corrected: 51 DCT (not 56), 184 Flate (not 185), 235 at 8 bpc (not 241). The `/Matte`
+  figures are unaffected — 136 matted, 131 invertible, 5 blocked — so ADR 0007's analysis and
+  the fix above stand as measured.
+- `corpusFiles` now draws from an explicit eleven-name list rather than a directory glob, and
+  `TestCorpusStructure` fails if its own table and that list disagree. A glob cannot tell a
+  spec document from a stray download; the list can, and the drift above is what it costs
+  when nothing does.
+- ADR 0004's population table is annotated with the corrected counts rather than edited, and
+  its decision is unchanged: `/SMask` is still the dominant case at 59% rather than 58%.
+
+### Changed — 2026-08-04
+
+- `docs/LightOnOCR-2601.14251v1.pdf` is gitignored and purged from history. It is a public
+  arXiv preprint, but republishing a third party's paper is not this project's call to make,
+  and the repository is now public. Tests that measure against it use `paperFile` and skip
+  when it is absent, exactly as the corpus tests do — `testdata/` covers the untagged and OCR
+  paths with committed fixtures, which is what makes that a skip rather than a hole. History
+  rewrite: 44 MB packed to 5 MB.
+
 ### Changed — 2026-08-03
 
 - `TestMDEmitsNoHeadingsYet` became `TestMDEmitsOutlineHeadings`, which is the inversion its

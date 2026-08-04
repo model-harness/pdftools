@@ -163,10 +163,16 @@ and place them in `docs/` to run the golden corpus. The ISO 32000-2 sponsored co
 published for download by the PDF Association; the TS documents and PDF 2.0 application
 notes come from the same source.
 
-`docs/LightOnOCR-2601.14251v1.pdf` **is** tracked, deliberately: it is a public arXiv
-preprint, and its untagged 17 pages are the fixture for the untagged and OCR paths. Every
-other row in the table above is tagged, so without it the fallback paths would have no test
-input at all.
+`docs/LightOnOCR-2601.14251v1.pdf` is gitignored too, and for a different reason: it is a
+public arXiv preprint, but republishing a third party's paper inside this repository is not
+this project's call to make, so it was purged from history before publication. Its untagged
+17 pages are still where the §1 extraction figures were measured — every other row in the
+table above is tagged — so the tests that use it skip when it is absent and `paperFile`
+keeps it distinct from the corpus. `testdata/` now covers the untagged and OCR paths with
+committed fixtures, which is what makes that a skip rather than a hole.
+
+Both populations skip rather than fail when absent, which is the invariant that lets a
+fresh clone pass the suite with no PDFs at all.
 
 ---
 
@@ -444,7 +450,7 @@ images extracted with their original codec preserved where possible. Later: nati
 JBIG2.
 
 Scoping this phase against the corpus moved two of its premises. **There is no CCITT,
-no JBIG2, and no JPX anywhere in the 12 files** — 185 of 245 images are Flate, 56 are
+no JBIG2, and no JPX anywhere in the 11 files** — 184 of 239 images are Flate, 51 are
 DCT, and 4 carry no filter at all — so the CCITT half of this phase cannot be validated
 against a real file here. It is wired anyway, with fixtures derived by hand from the ITU
 T.4/T.6 code tables, and the test that covers it says in its own comment that this is a
@@ -452,7 +458,7 @@ weaker guarantee than the rest of the package has. JBIG2 and JPX are recognized 
 named so a report can state what a file holds, and refused on write, because handing
 back a `.jbig2` this build cannot produce would be worse than declining.
 
-The premise that moved the design, though, is **`/SMask`: 143 of 245 images carry one,
+The premise that moved the design, though, is **`/SMask`: 142 of 239 images carry one,
 and 136 of those carry `/Matte [0 0 0]`.** Soft masks are the common case, not an edge
 case, and `/Matte` means the base image's samples are premultiplied against black —
 they are not the colours they appear to be. The verb writes both layers, the mask as its
@@ -467,8 +473,15 @@ never decoded. See ADR 0007.
 Two smaller measurements shaped the code: 7 images sit inside a Form XObject, so the
 form recursion is load-bearing rather than defensive — the same defect cost the font
 subsystem 21 of its 247 fonts — and deduplication by indirect reference is what makes
-the count 245 instead of many thousands, because ISO 32000-2 draws shared images across
+the count 239 instead of many thousands, because ISO 32000-2 draws shared images across
 1,023 pages.
+
+The image figures above are the eleven-file corpus. ADR 0004's table was measured when
+`docs/` also held a non-spec paper that `corpusFiles` swept up with the rest, so its
+counts run six images high — 245/143 there against 239/142 here, and its "largest
+6049×4090 DCT" was that paper's, not the corpus's (the real maximum is 1169×1394, raw
+DeviceRGB). The ADR stands as written because an accepted ADR is a record of what was
+decided and on what evidence; the `/Matte` figures it rests on are unaffected.
 
 **Phase 4 — raster and OCR.** Done, in two halves. `render` + pdfium WASM adapter, `ocr` +
 `ocr/doctags` + `ocr/ipc` + `ocr/docd`, the per-page router, and the `render` and `ocr` verbs.

@@ -364,7 +364,7 @@ func TestOutlineConservesCharacters(t *testing.T) {
 // guessing. The layout path produces headings for these files; sectionize.Tagged
 // returning the document as preamble is the honest result, not an error.
 func TestUntaggedFileYieldsNoSections(t *testing.T) {
-	path := corpusFile(t, "LightOnOCR-2601.14251v1.pdf")
+	path := paperFile(t)
 	s, err := pcstore.Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)

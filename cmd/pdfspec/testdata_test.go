@@ -569,8 +569,8 @@ func TestFixtureImagesEncodeToValidFiles(t *testing.T) {
 
 // TestFixtureSoftMaskWithoutMatte is the case the corpus almost does not have.
 //
-// 136 of the corpus's 143 soft masks carry /Matte [0 0 0], so its /SMask population is
-// really one producer's habit measured 143 times, and ADR 0004's premultiplication
+// 136 of the corpus's 142 soft masks carry /Matte [0 0 0], so its /SMask population is
+// really one producer's habit measured 142 times, and ADR 0004's premultiplication
 // statement rests on it. These two files carry an /SMask with no /Matte at all — plain
 // alpha, nothing premultiplied — which is the branch that must not report a base image
 // as premultiplied when it is not. Getting that backwards now has a consequence in this

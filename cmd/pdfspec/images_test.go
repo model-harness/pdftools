@@ -148,8 +148,8 @@ func TestCorpusImagesEncodeToValidFiles(t *testing.T) {
 	}
 }
 
-// The soft-mask population, which the survey found to be the dominant case at 143
-// of 245 images rather than the edge case the roadmap implied.
+// The soft-mask population, which the survey found to be the dominant case at 142
+// of 239 images rather than the edge case the roadmap implied.
 func TestCorpusSoftMasks(t *testing.T) {
 	masks, premul, sized, dctMask := 0, 0, 0, 0
 	recoverable, blocked := 0, 0
@@ -199,8 +199,8 @@ func TestCorpusSoftMasks(t *testing.T) {
 	if masks == 0 {
 		t.Skip("corpus absent")
 	}
-	if masks != 143 {
-		t.Errorf("soft masks = %d, want 143", masks)
+	if masks != 142 {
+		t.Errorf("soft masks = %d, want 142", masks)
 	}
 	if premul != 136 {
 		t.Errorf("premultiplied (/Matte) = %d, want 136", premul)

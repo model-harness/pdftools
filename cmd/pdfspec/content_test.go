@@ -1,9 +1,7 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/3rg0n/pdf-spec/content"
@@ -122,20 +120,15 @@ func knownOperator(name string) bool {
 }
 
 func TestCorpusContentStreamsScan(t *testing.T) {
-	// Every PDF in the corpus, tagged and untagged, spec and paper. A file that
-	// hangs or panics here is a file the extractor could never process.
-	files := []string{
-		"PDF20_AN001-BPC.pdf",
-		"PDF20_AN002-AF.pdf",
-		"PDF20_AN003-ObjectMetadataLocations.pdf",
-		"PDF-Declarations.pdf",
-		"Well-Tagged-PDF-WTPDF-1.0.pdf",
-		"ISO_TS_32001-2022_sponsored_EC3.pdf",
-		"ISO_TS_32002-2022_sponsored_EC3.pdf",
-		"ISO_TS_32003-2023_sponsored.pdf",
-		"ISO-TS-32004-2024_sponsored.pdf",
-		"ISO-TS-32005-2023-sponsored.pdf",
-		"LightOnOCR-2601.14251v1.pdf",
+	// Every PDF in the corpus plus the untagged paper, since a file that hangs or panics
+	// here is a file the extractor could never process and that is worth asking of both
+	// populations. ISO 32000-2 is deliberately absent: 1,023 pages of it belongs in the
+	// tests that need the whole document, not in a per-file smoke scan.
+	files := []string{paperName}
+	for _, name := range corpus {
+		if name != "ISO_32000-2_sponsored_EC3.pdf" {
+			files = append(files, name)
+		}
 	}
 
 	for _, name := range files {
@@ -334,19 +327,21 @@ func TestGraphicsStateBalanceOnCorpus(t *testing.T) {
 	// q/Q should balance too. Reporting rather than failing: an unbalanced page is
 	// a producer bug that the machine tolerates by design, and this records how
 	// often the tolerance is actually needed.
-	entries, err := os.ReadDir(corpusDir)
-	if err != nil {
-		t.Skipf("corpus absent: %v", err)
+	//
+	// corpusFiles rather than a listing of docs/, so this reports over the same eleven
+	// documents every other aggregate does. Nothing here is asserted, so a stray file
+	// would only have muddied a log — but a second directory glob is a second way for the
+	// populations to diverge.
+	files := corpusFiles()
+	if len(files) == 0 {
+		t.Skip("corpus absent")
 	}
 
 	checked := 0
-	for _, e := range entries {
-		if !strings.HasSuffix(strings.ToLower(e.Name()), ".pdf") {
-			continue
-		}
-		s, err := pcstore.Open(filepath.Join(corpusDir, e.Name()))
+	for _, name := range files {
+		s, err := pcstore.Open(filepath.Join(corpusDir, name))
 		if err != nil {
-			t.Logf("%s: open: %v", e.Name(), err)
+			t.Logf("%s: open: %v", name, err)
 			continue
 		}
 		checked++
@@ -376,7 +371,7 @@ func TestGraphicsStateBalanceOnCorpus(t *testing.T) {
 			}
 		}
 		if unbalanced > 0 {
-			t.Logf("%s: %d of %d pages unbalanced q/Q", e.Name(), unbalanced, s.PageCount())
+			t.Logf("%s: %d of %d pages unbalanced q/Q", name, unbalanced, s.PageCount())
 		}
 		s.Close()
 	}

@@ -5,20 +5,25 @@ upstream projects publish that is worth reading.
 
 There are two populations and the distinction matters more than it looks.
 
-**`docs/` — the corpus.** Eleven documents: the ISO 32000 specifications, the PDF
-Association's technical notes, one arXiv paper. It is where every threshold in the test
-suite was measured, and it is **gitignored** — the ISO PDFs are paid documents and not
-redistributable. Corpus tests skip when the files are absent, so a fresh clone passes.
+**`docs/` — the corpus.** Eleven documents: the ISO 32000 specifications and the PDF
+Association's technical notes. It is where every threshold in the test suite was measured,
+and it is **gitignored** — the ISO PDFs are paid documents and not redistributable. Corpus
+tests skip when the files are absent, so a fresh clone passes.
+
+The eleven are named explicitly in `corpus_test.go`, not globbed from `docs/*.pdf`, and
+that is a correction rather than a style choice. `docs/` is also where a paper gets dropped
+to be read, and one that was dropped there joined every aggregate baseline silently — the
+repo carried 245 images and 143 soft masks for two phases when the corpus has 239 and 142.
+A glob cannot distinguish a spec document from a stray download.
 
 **`testdata/` — the reference fixtures.** 37 files from PyMuPDF, Adobe, and docling-core,
 committed, each one chosen upstream *as a test input*. Thirty are PDFs; the other seven are
 DocTags/Markdown pairs for the OCR parser, which needs a model's output rather than a
 model's input. See §Provenance.
 
-The corpus is a good regression baseline and a bad witness. Ten of its eleven files are
-tagged standards prose from one family of producers, so it exercises the tagged path
-almost exclusively, and a threshold tuned on it cannot be shown to generalize by running
-it again. It also contains no CJK, no ligature test, no deliberately broken font, no
+The corpus is a good regression baseline and a bad witness. All eleven files are tagged
+standards prose from one family of producers, so it exercises the tagged path exclusively,
+and a threshold tuned on it cannot be shown to generalize by running it again. It also contains no CJK, no ligature test, no deliberately broken font, no
 zero-byte file, no CCITT, and no `/SMask` without `/Matte`. Everything in `testdata/` is
 there because it covers something the corpus does not — that is the selection rule, and
 §Fixtures says which gap each file fills.
@@ -203,7 +208,7 @@ decision. All of it is asserted in `cmd/pdfspec/testdata_test.go`.
 | `dotted-gridlines.pdf` | 1 | layout | Table rules drawn as dot patterns — vector noise that must not become text |
 | `has-bad-fonts.pdf` | 1 | layout | **Deliberately broken font dictionaries.** A defective font may cost its own glyphs; it may not cost the page. This is `DESIGN.md` §1's whole argument as a test. |
 | `img-regular.pdf` | 1 | ocr | One image, no text: the minimal OCR-path file |
-| `img-transparent.pdf` | 1 | ocr | **`/SMask` with no `/Matte`** — plain alpha, nothing premultiplied. 136 of the corpus's 143 soft masks carry `/Matte [0 0 0]`, so ADR 0004's premultiplication statement rests on one producer's habit. This is also the control for the un-premultiplication of ADR 0007: an unmatted mask must pass through untouched, and only a fixture that has one can show that. |
+| `img-transparent.pdf` | 1 | ocr | **`/SMask` with no `/Matte`** — plain alpha, nothing premultiplied. 136 of the corpus's 142 soft masks carry `/Matte [0 0 0]`, so ADR 0004's premultiplication statement rests on one producer's habit. This is also the control for the un-premultiplication of ADR 0007: an unmatted mask must pass through untouched, and only a fixture that has one can show that. |
 | `mupdf_explored.pdf` | 285 | layout | The throughput case, and the **negative control** for the OCR fix: a C API manual full of code listings, where a false monospace positive would show up if anywhere. 374k non-space chars. |
 | `small-table.pdf` | 1 | layout | Bold/regular span split from the font alone — the layout path has nothing else to take emphasis from |
 | `symbol-list.pdf` | 1 | layout | Symbols drawn as vector paths, not glyphs. Only the labels are text; 136 chars is correct. |

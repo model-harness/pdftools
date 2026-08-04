@@ -175,7 +175,7 @@ func extractDoc(t *testing.T, path string) (string, time.Duration) {
 // failed at 45,615; the figure was invented, and pdftotext's higher total turned
 // out to be layout padding.
 func TestExtractionQualityOnArXiv(t *testing.T) {
-	path := corpusFile(t, "LightOnOCR-2601.14251v1.pdf")
+	path := paperFile(t)
 	text, elapsed := extractDoc(t, path)
 	m := measure(text, elapsed)
 	m.log(t, "arXiv")

@@ -114,7 +114,7 @@ func TestReadsBasicImage(t *testing.T) {
 
 // One XObject drawn on many pages is one image. Without deduplication a logo on
 // all 1,023 pages of the specification reports 1,023 images that are the same
-// bytes, and the corpus's real count of 245 becomes many thousands.
+// bytes, and the corpus's real count of 239 becomes many thousands.
 func TestDeduplicatesByIndirectReference(t *testing.T) {
 	shared := objects.Ref{Num: 1}
 	s := &memStore{
@@ -138,7 +138,7 @@ func TestDeduplicatesByIndirectReference(t *testing.T) {
 	}
 }
 
-// 7 of the corpus's 245 images sit inside a Form XObject, so a walker that only
+// 7 of the corpus's 239 images sit inside a Form XObject, so a walker that only
 // looked at page-level resources would miss them silently. That is the same defect
 // that cost the font subsystem 21 of its 247 fonts.
 func TestFindsImagesInsideFormXObjects(t *testing.T) {
@@ -360,7 +360,7 @@ func TestColorSpaceComponentCounts(t *testing.T) {
 	}
 }
 
-// ICCBased is 2 of the corpus's 245 images, and its component count lives in the
+// ICCBased is 2 of the corpus's 239 images, and its component count lives in the
 // profile stream's /N — the only place it is stated (§8.6.5.5).
 func TestICCBasedReadsComponentCountFromN(t *testing.T) {
 	profile := &objects.Stream{Dict: objects.Dict{"N": objects.Int(4)}}

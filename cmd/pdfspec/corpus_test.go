@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
@@ -24,18 +23,51 @@ func corpusFile(t *testing.T, name string) string {
 	return p
 }
 
-// corpusFiles lists the PDFs present, for the tests that assert something of every
-// file rather than of a named one. Empty when the corpus is absent, which leaves such
-// a test with nothing to run rather than failing it.
-func corpusFiles() []string {
-	entries, err := os.ReadDir(corpusDir)
-	if err != nil {
-		return nil
+// paperName is the arXiv paper the §1 extraction baselines in extract_test.go were
+// measured on. It is not a corpus document and never was — it is the one untagged,
+// non-standards file the early phases had — and it is no longer redistributed with this
+// repo, so paperFile skips the same way corpusFile does. See .gitignore for where to get
+// it. Every aggregate figure in the suite excludes it; corpus above is what those count.
+const paperName = "LightOnOCR-2601.14251v1.pdf"
+
+func paperFile(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(corpusDir, paperName)
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("arXiv paper absent: %s (see .gitignore for the source)", paperName)
 	}
+	return p
+}
+
+// corpus names the eleven documents every aggregate baseline in this file was measured
+// over. It is an explicit list rather than a glob of docs/*.pdf, and that distinction has
+// already cost a measurement: docs/ is a working directory as well as the corpus, so a
+// paper dropped there to be read joined the baseline silently, and every aggregate figure
+// in the repo — image counts, soft-mask counts, the largest image — was six images and one
+// mask high for two phases. A glob cannot tell a spec document from a stray download; this
+// can.
+var corpus = []string{
+	"PDF20_AN001-BPC.pdf",
+	"PDF20_AN002-AF.pdf",
+	"PDF20_AN003-ObjectMetadataLocations.pdf",
+	"PDF-Declarations.pdf",
+	"Well-Tagged-PDF-WTPDF-1.0.pdf",
+	"ISO_TS_32001-2022_sponsored_EC3.pdf",
+	"ISO_TS_32002-2022_sponsored_EC3.pdf",
+	"ISO_TS_32003-2023_sponsored.pdf",
+	"ISO-TS-32004-2024_sponsored.pdf",
+	"ISO-TS-32005-2023-sponsored.pdf",
+	"ISO_32000-2_sponsored_EC3.pdf",
+}
+
+// corpusFiles lists the corpus documents present on disk, for the tests that assert
+// something of every file rather than of a named one. Empty when the corpus is absent,
+// which leaves such a test with nothing to run rather than failing it.
+func corpusFiles() []string {
 	var out []string
-	for _, e := range entries {
-		if strings.HasSuffix(strings.ToLower(e.Name()), ".pdf") {
-			out = append(out, e.Name())
+	for _, name := range corpus {
+		if _, err := os.Stat(filepath.Join(corpusDir, name)); err == nil {
+			out = append(out, name)
 		}
 	}
 	return out
@@ -69,6 +101,21 @@ func TestCorpusStructure(t *testing.T) {
 		{"ISO-TS-32004-2024_sponsored.pdf", 25, true, false, 1149, 55},
 		{"ISO-TS-32005-2023-sponsored.pdf", 49, true, true, 6266, 27},
 		{"ISO_32000-2_sponsored_EC3.pdf", 1023, true, true, 78469, 981},
+	}
+
+	// The two lists must name the same files, or an aggregate baseline is being measured
+	// over a population this table does not describe — which is how the image counts drifted.
+	if len(cases) != len(corpus) {
+		t.Fatalf("%d cases against %d corpus documents", len(cases), len(corpus))
+	}
+	named := map[string]bool{}
+	for _, tc := range cases {
+		named[tc.file] = true
+	}
+	for _, name := range corpus {
+		if !named[name] {
+			t.Errorf("%s is in corpus but has no structural baseline here", name)
+		}
 	}
 
 	for _, tc := range cases {
@@ -120,9 +167,11 @@ func TestCorpusStructure(t *testing.T) {
 }
 
 func TestUntaggedCorpusTakesLayoutPath(t *testing.T) {
-	// The only untagged fixture in the repo, and the reason it stays tracked:
-	// without it the layout and OCR paths have no test input.
-	path := corpusFile(t, "LightOnOCR-2601.14251v1.pdf")
+	// All eleven corpus documents are tagged, so the layout path has no witness among
+	// them at all — this paper is the only untagged PDF the early phases had. testdata/
+	// now covers the same ground with committed files (see testdata_test.go), which is
+	// why purging this one cost coverage rather than removing it.
+	path := paperFile(t)
 	s, err := pcstore.Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)

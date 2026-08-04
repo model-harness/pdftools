@@ -55,7 +55,7 @@ func escapeRate(s string) float64 {
 }
 
 func TestMDPreservesExtractedText(t *testing.T) {
-	path := corpusFile(t, "LightOnOCR-2601.14251v1.pdf")
+	path := paperFile(t)
 	raw, _ := extractDoc(t, path)
 
 	start := time.Now()

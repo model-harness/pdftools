@@ -40,10 +40,9 @@ func rgba(t *testing.T, img stdimage.Image, x, y int) color.NRGBA {
 	}
 }
 
-// A JPEG is copied out byte for byte. This is the package's central promise: 56 of
-// the corpus's 245 images are DCT and the largest is 6049x4090, so a re-encode
-// would cost a quality generation and seconds of CPU for a file that was already
-// a JPEG.
+// A JPEG is copied out byte for byte. This is the package's central promise: 51 of
+// the corpus's 239 images are DCT, so a re-encode would cost a quality generation
+// and CPU for a file that was already a JPEG.
 func TestJPEGPassesThroughUnchanged(t *testing.T) {
 	// Not a real JPEG. That is the point: Encode must not parse it, so a stream
 	// this build cannot decode still comes out intact.
@@ -62,8 +61,8 @@ func TestJPEGPassesThroughUnchanged(t *testing.T) {
 	}
 }
 
-// 8-bit RGB is the corpus's dominant case: 233 of 245 images are DeviceRGB and
-// 241 are 8 bits per component.
+// 8-bit RGB is the corpus's dominant case: 227 of 239 images are DeviceRGB and
+// 235 are 8 bits per component.
 func TestRGB8(t *testing.T) {
 	im := &Image{
 		Codec: CodecRaw, Width: 2, Height: 2, BitsPerComponent: 8,
@@ -198,8 +197,8 @@ func TestStencilMaskIsTransparentWhereUnpainted(t *testing.T) {
 	}
 }
 
-// A soft mask supplies per-sample alpha, which is the corpus's common case at 143
-// of 245 images.
+// A soft mask supplies per-sample alpha, which is the corpus's common case at 142
+// of 239 images.
 func TestSoftMaskBecomesAlpha(t *testing.T) {
 	im := &Image{
 		Codec: CodecRaw, Width: 2, Height: 1, BitsPerComponent: 8,
@@ -223,7 +222,7 @@ func TestSoftMaskBecomesAlpha(t *testing.T) {
 	}
 }
 
-// 4 of the corpus's 143 soft masks are a different size from their base image, so
+// 4 of the corpus's 142 soft masks are a different size from their base image, so
 // the coordinates are scaled rather than assumed to match. Assuming they match
 // reads outside a smaller mask's buffer.
 func TestSoftMaskOfDifferentSizeIsScaled(t *testing.T) {
@@ -247,7 +246,7 @@ func TestSoftMaskOfDifferentSizeIsScaled(t *testing.T) {
 }
 
 // /Matte says the base samples are pre-blended against a colour, so they are not the
-// colours they appear to be. 136 of the corpus's 143 soft masks carry it, all [0 0 0].
+// colours they appear to be. 136 of the corpus's 142 soft masks carry it, all [0 0 0].
 // The condition has to be reportable whether or not Encode can act on it, because a
 // consumer that composites blended samples again gets a colour shift and no indication.
 func TestPremultipliedIsReported(t *testing.T) {

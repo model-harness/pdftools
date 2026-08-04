@@ -95,7 +95,7 @@ func (r *Reader) Bits(n uint) (uint32, error) {
 		return 0, fmt.Errorf("bits: %d bits requested, maximum is 32", n)
 	}
 	// The fast path is a whole aligned byte, which is what an 8-bit sample —
-	// 241 of the 245 images in the corpus — asks for on every read.
+	// 235 of the 239 images in the corpus — asks for on every read.
 	//
 	// MSB only. In LSB order the byte's bits arrive in the opposite sequence, so
 	// composing them most-significant-first reverses the byte: 0x7F reads as 0xFE,

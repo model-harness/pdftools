@@ -9,6 +9,16 @@ moves `/Matte` un-premultiplication into this package: the "hand over both layer
 below holds for the mask file and for the 5 images with a DCT base, but the other 131 base
 images now carry their true colours.
 
+> **Counts corrected, decision unchanged.** The population table below was measured over
+> twelve files, because `corpusFiles` globs `docs/*.pdf` and that directory then also held
+> a non-spec paper. The spec corpus is eleven files: **239 images, 142 with `/SMask`, 184
+> Flate, 51 DCT, 227 DeviceRGB, 235 at 8 bpc**, and the largest is **1169×1394 raw
+> DeviceRGB** — the 6049×4090 DCT below was the extra paper's. The table is left as it was
+> written, since it records the evidence this decision was actually taken on. Nothing the
+> decision rests on moves: `/SMask` is still the dominant case (59% rather than 58%), and
+> the `/Matte` figures — 136 masks, all `[0 0 0]`, 131 invertible — were never affected,
+> which is why ADR 0007's analysis stands unamended.
+
 ## Context
 
 `docs/DESIGN.md` §8 scoped Phase 3 as "`bits`, DCT and CCITT wiring, `images` verb.
