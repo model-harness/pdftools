@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"strings"
 	"testing"
@@ -486,6 +487,108 @@ func TestClientServer(t *testing.T) {
 	}
 	if h.seenMax != 512 {
 		t.Errorf("handler saw max_tokens %d, want 512", h.seenMax)
+	}
+}
+
+// TestMaxTokensClamp walks a bound through both conversions on the MaxTokens path —
+// int to uint32 in the client, uint32 back to int in the server — for the values where
+// a plain conversion misbehaves.
+//
+// The invariant is that MaxTokens is a *ceiling*, so every arrival must be a large
+// number. The failure this guards is the opposite: a caller asking for the largest
+// bound they can express and the handler receiving a small or negative one, which
+// truncates every page in a run and looks like a model that stops early.
+func TestMaxTokensClamp(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+
+	// ask is uint64 rather than int so the table itself compiles on a 32-bit build,
+	// where these values do not fit an int. Cases above math.MaxInt are skipped there
+	// instead — a caller on that platform cannot express them, so there is nothing to
+	// clamp; the clamp that matters on 32-bit is the server's, on the way back in.
+	cases := []struct {
+		name string
+		ask  uint64
+	}{
+		{name: "an ordinary bound", ask: 8192},
+		{name: "just below the wire's width", ask: math.MaxUint32 - 1},
+		{name: "exactly the wire's width", ask: math.MaxUint32},
+		{name: "wider than the wire", ask: math.MaxUint64},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.ask > uint64(math.MaxInt) {
+				t.Skipf("%d is not expressible as an int on this build", tc.ask)
+			}
+			h := &fake{tags: "<doctag></doctag>"}
+			e := serveOne(t, h)
+			if _, err := e.Recognize(context.Background(), img, ocr.Options{MaxTokens: int(tc.ask)}); err != nil {
+				t.Fatalf("Recognize: %v", err)
+			}
+			// Not compared to tc.ask directly: a bound above what the wire can carry is
+			// expected to arrive reduced. What must hold is that it stayed a ceiling.
+			if h.seenMax <= 0 {
+				t.Fatalf("handler saw max_tokens %d for a request asking %d; a ceiling became no bound or a negative one", h.seenMax, tc.ask)
+			}
+			want := min(tc.ask, math.MaxUint32)
+			if uint64(h.seenMax) != want {
+				t.Errorf("handler saw max_tokens %d, want %d", h.seenMax, want)
+			}
+		})
+	}
+
+	// The server's own clamp, exercised by writing the frame directly rather than
+	// through Recognize. Necessary because the client clamps first: on a 32-bit build a
+	// caller cannot express MaxUint32 at all, so the cases above skip and the server's
+	// conversion — the one that turns a peer's large bound negative — goes untested on
+	// exactly the platform where it is the bug.
+	t.Run("a peer's bound wider than the server's int", func(t *testing.T) {
+		h := &fake{tags: "<doctag></doctag>"}
+		c, s := net.Pipe()
+		t.Cleanup(func() { _ = c.Close() })
+		go func() { _ = Serve(context.Background(), NewConn(s), h, slog.New(slog.DiscardHandler)) }()
+		client := NewConn(c)
+
+		n := uint32(math.MaxUint32)
+		if err := client.WriteRequest(Request{
+			ID:          "big",
+			Messages:    []Message{{Role: "user", Content: []Block{ImageBlock("big"), TextBlock("convert")}}},
+			Attachments: []Attachment{attach(t, "big", img)},
+			MaxTokens:   &n,
+		}); err != nil {
+			t.Fatalf("WriteRequest: %v", err)
+		}
+		for {
+			_, payload, err := client.ReadFrame()
+			if err != nil {
+				t.Fatalf("ReadFrame: %v", err)
+			}
+			var r Response
+			if err := json.Unmarshal(payload, &r); err != nil {
+				t.Fatal(err)
+			}
+			if r.IsTerminal() {
+				if r.Type != RespDone {
+					t.Fatalf("resp = %+v, want done", r)
+				}
+				break
+			}
+		}
+		if h.seenMax <= 0 {
+			t.Errorf("handler saw max_tokens %d for a peer asking %d; a ceiling became no bound or a negative one", h.seenMax, n)
+		}
+	})
+
+	// Zero and negative mean "no bound", and the field must be absent rather than sent
+	// as a clamped huge number — the server distinguishes the two by the pointer.
+	for _, ask := range []int{0, -1} {
+		h := &fake{tags: "<doctag></doctag>"}
+		e := serveOne(t, h)
+		if _, err := e.Recognize(context.Background(), img, ocr.Options{MaxTokens: ask}); err != nil {
+			t.Fatalf("Recognize(MaxTokens: %d): %v", ask, err)
+		}
+		if h.seenMax != 0 {
+			t.Errorf("MaxTokens %d reached the handler as %d, want 0 (unbounded)", ask, h.seenMax)
+		}
 	}
 }
 

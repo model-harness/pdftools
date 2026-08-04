@@ -542,6 +542,38 @@ All notable changes to this project are documented here, following
   shadows the standard library package for every file in the package, which the `ocr` verb's
   `"context"` import turned from latent into a build failure.
 
+### Fixed — 2026-08-04
+
+- **`ocr/ipc` did not compile for any 32-bit target.** `math.MaxUint32` is an untyped
+  constant that does not fit an `int` on a 32-bit build, so the two guards written to
+  *prevent* an overflow (`opt.MaxTokens < math.MaxUint32` in the client, `out <
+  math.MaxUint32` in the server) were themselves compile errors there — `GOARCH=386 go
+  vet ./...` failed on three sites. Both comparisons now widen to `uint64`. Found by
+  running the 32-bit vet rather than by reading, and `GOARCH=386` is now part of the gate:
+  every other package in the repo already built clean for it, so this was a regression the
+  64-bit gate could not see.
+- `ocr/ipc`'s server clamps a peer's `max_tokens` instead of converting it. `uint32` to
+  `int` is lossy where `int` is 32 bits, and a peer's bound above 2³¹ arrived *negative* —
+  which every handler here reads as "no bound", the exact opposite of a peer asking for a
+  large one. It saturates now, so a ceiling stays a ceiling. This is the mirror of the
+  client-side clamp added the same day, and `TestMaxTokensClamp` walks a bound through both
+  conversions; its last case writes the frame directly rather than through `Recognize`,
+  because the client clamps first and would otherwise hide the server's bug on precisely
+  the platform where it bites.
+
+### Added — 2026-08-04 (tests)
+
+- `ocr/docd` has unit tests. The subprocess half still does not — that needs a real
+  llama-server, a model download, and a GPU decision, which is an integration concern — but
+  the SSE reader and the PNG encoder are pure, and they are where a page silently loses
+  content. Seven cases on `stream`: delta concatenation, a stream that ends without
+  `[DONE]` (an error, *with* the partial text), an in-band server error, non-`data:` frame
+  lines, a malformed chunk skipped rather than fatal, a 200 KiB delta that would truncate
+  under `bufio.Scanner`'s 64 KiB default, and a mid-stream read failure. Plus a
+  `dataURI` round-trip through `png.Decode` — compared as resolved components, since PNG
+  decoding an opaque image yields `NRGBA` where the source is `RGBA` and the `color.Color`
+  interface values differ by dynamic type while every channel matches.
+
 ### Changed — 2026-08-03
 
 - `TestMDEmitsNoHeadingsYet` became `TestMDEmitsOutlineHeadings`, which is the inversion its

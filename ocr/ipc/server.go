@@ -106,9 +106,20 @@ func handle(ctx context.Context, conn *Conn, req Request, h Handler, log *slog.L
 		return nil
 	}
 
+	// Clamped on the way in, the mirror of the client's clamp on the way out. int is
+	// 32 bits on a 32-bit build, so a peer's bound above 2^31 arrives negative — and a
+	// negative maxTokens means "no bound" to every handler here, which is the opposite
+	// of a peer asking for a very large one. Saturating keeps it a ceiling.
 	var maxTokens int
 	if req.MaxTokens != nil {
-		maxTokens = int(*req.MaxTokens)
+		// Widened to uint64 for the comparison: math.MaxInt as an untyped constant
+		// against a uint32 operand does not compile on a 64-bit build, because the
+		// constant does not fit the operand's type.
+		if uint64(*req.MaxTokens) > uint64(math.MaxInt) {
+			maxTokens = math.MaxInt
+		} else {
+			maxTokens = int(*req.MaxTokens)
+		}
 	}
 
 	// Cancelled as soon as a delta fails to write, which is how the server learns its
@@ -156,8 +167,11 @@ func handle(ctx context.Context, conn *Conn, req Request, h Handler, log *slog.L
 	// Saturating rather than wrapping. out counts deltas, so reaching 2^32 needs a
 	// generation four billion chunks long — but a usage number that wrapped to a small
 	// one would misreport the runaway page this is most useful for spotting.
+	//
+	// The upper comparison is in uint64 because math.MaxUint32 does not fit an int on a
+	// 32-bit build, where `out < math.MaxUint32` fails to compile rather than comparing.
 	tokens := uint32(math.MaxUint32)
-	if out >= 0 && out < math.MaxUint32 {
+	if out >= 0 && uint64(out) < math.MaxUint32 {
 		tokens = uint32(out) // #nosec G115 -- guarded above
 	}
 	return conn.WriteJSON(Response{

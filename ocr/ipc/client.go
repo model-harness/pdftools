@@ -85,9 +85,14 @@ func (e *Engine) Recognize(ctx context.Context, img *image.RGBA, opt ocr.Options
 		// above 2^32 wraps to a small number, which is the opposite of what the caller
 		// asked for and silently truncates every page. MaxTokens is a ceiling, so
 		// clamping to the largest expressible one honours the intent exactly.
+		//
+		// Compared in uint64, not against the untyped constant: math.MaxUint32 does not
+		// fit an int on a 32-bit build, so `opt.MaxTokens < math.MaxUint32` is a compile
+		// error there rather than a comparison. The conversion is safe because the outer
+		// branch has already established MaxTokens is positive.
 		n := uint32(math.MaxUint32)
-		if opt.MaxTokens < math.MaxUint32 {
-			n = uint32(opt.MaxTokens) // #nosec G115 -- guarded above, and MaxTokens > 0
+		if u := uint64(opt.MaxTokens); u < math.MaxUint32 {
+			n = uint32(u) // #nosec G115 -- guarded above, and MaxTokens > 0
 		}
 		req.MaxTokens = &n
 	}
