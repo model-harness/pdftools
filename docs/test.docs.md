@@ -208,7 +208,8 @@ decision. All of it is asserted in `cmd/pdfspec/testdata_test.go`.
 | `test.pdf` | 1 | layout | Minimal Type1 smoke case |
 
 The scanned/OCRed pair is also the clearest statement of what Phase 4 is for: the text is
-in the image and this pipeline cannot read it.
+in the image and this pipeline cannot read it. Both now render, with the same ink percentage,
+which is the point — the invisible text layer is invisible.
 
 ### Adobe (`testdata/adobe-samples/`)
 
@@ -300,6 +301,36 @@ probe reports as `encrypted` and routes nowhere.
 
 ---
 
+## What the fixtures pin for rendering
+
+`render/pdfium` and the `render` verb test against these files rather than the corpus, for
+the usual reason: the fixture tests never skip. Six of them carry a distinct load.
+
+| File | What only this file establishes |
+|---|---|
+| `adobe-samples/ocrInput.pdf` | 4 visibly different scanned pages, which is what makes the **aliasing** test possible: render page 1, render 2–4, and require page 1 to be unchanged. go-pdfium's WASM adapter hands back a view into linear memory that `Cleanup` frees, so without a copy this fails — verified by reverting the copy and watching it fail. Also the concurrency case and both ends of the 1-based↔0-based conversion. |
+| `adobe-samples/disqualifiedScannedPages.pdf` | The **blank negative control.** No fonts and no images, so a correct render is empty, and it bounds every ink assertion from below. It also renders 151 pages of nothing, which is the honest answer probe's routing already implies. |
+| `pymupdf/type3font.pdf` | The **smallest page in the population**, 72 × 72 pt, so it exercises the one-pixel floor. It is also the file whose text is unrecoverable and whose *pixels* are not, which is the entire argument for the OCR path existing. |
+| `pymupdf/2201.00069.pdf` | A4's fractional point size, so it pins the rounding direction, and the page the pixel cap is measured against. |
+| `pymupdf/mupdf_explored.pdf` | 285 pages: the throughput measurement and the **zero-padding width**, which on a document this size is the difference between a usable directory listing and page 100 sorting before page 2. |
+| `adobe-samples/zeroLength.pdf` | 0 bytes must fail at `Open` with a reason. pdfium is a second, independent parser, so this is not covered by the extraction path's version of the same test. |
+
+Three gaps worth stating rather than implying. **No page anywhere in the fixtures or the corpus
+is rotated** — zero of 1,729 — so `/Rotate` handling rests on four PDFs built by hand during
+the spike, not on a file a producer emitted. **No file has an annotation with a visible
+appearance stream** either: three carry `/Annots`, and rendering them with annotations on and
+off is pixel-identical. That gap had teeth — `-annots` was a no-op for every subtype except
+form fields and no fixture could have shown it — so `render/pdfium` builds its own one-page PDF
+with a Square annotation in `TestAnnotationsFlag`. It is built rather than committed because
+the selection rule above admits only files upstream authored as test inputs. And nothing here
+has a `/MediaBox` large enough
+to reach the pixel cap; the largest page in the whole population is 630 × 1008 pt, which at
+200 DPI is 4.9 Mpx against a 64 Mpx cap. The cap is tested with a synthetic 200 × 200-inch
+box in `render`, because that is what a hostile producer writes for free and no honest
+document contains.
+
+---
+
 ## Running against these
 
 ```bash
@@ -309,6 +340,7 @@ pdfspec md testdata/pymupdf-utilities/ocr-ed.pdf  # to stdout
 pdfspec md -o out.md testdata/pymupdf/small-table.pdf
 pdfspec images -o ./img testdata/adobe-samples/sampleInvoice.pdf
 pdfspec okf -o ./bundle testdata/adobe-samples/extractPdfInput.pdf
+pdfspec render -o ./png testdata/adobe-samples/ocrInput.pdf -pages 1,3
 ```
 
 ```bash

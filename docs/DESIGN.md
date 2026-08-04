@@ -460,6 +460,19 @@ LightOnOCR-2-1B (1B, emits markdown directly, wants 200 DPI at 1540 px longest e
 community GGUFs). Ship granite-docling first: an eighth the size, official GGUF, and
 DocTags is structured output rather than prose that must be re-parsed.
 
+The raster half is done: `render` declares `Rasterizer`, `render/pdfium` supplies it on
+wazero, and the `render` verb writes PNG or JPEG. ADR 0005 records what the borrow costs,
+all of it measured — **+10.0 MB of binary** (10,416,128 → 20,890,624 bytes), ~1.4 s of
+one-time module compile, 3–8 ms per page at 200 DPI, and **a second parse of the file**,
+because pdfium brings its own parser and cannot be handed an `objects.Store`. That last one
+is why `Rasterizer` declares its own `PageCount`. Two findings from the spike changed the
+code rather than merely describing it: the WASM adapter's image `Pix` is a *view into linear
+memory* that `Cleanup` frees, so every bitmap must be copied out or one page's pixels appear
+in another's; and page dimensions are asked for in pixels rather than DPI, because the
+DPI API takes an `int` and the pixel cap produces a fractional one. Parallelism is several
+single-threaded Rasterizers over the same file — measured 7.6 ms/page at 1 worker, 3.4 at 4,
+and no better at 8, so `-jobs` defaults to `min(4, NumCPU)`.
+
 **Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
 sections without paying for inference.
 

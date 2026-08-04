@@ -350,6 +350,90 @@ All notable changes to this project are documented here, following
   from Adobe's: hidden text is extracted, since an OCR layer is invisible and is the entire
   content of a scanned page.
 
+### Added — 2026-08-04
+
+- `render` — the rasterization interface: `Rasterizer` (`PageCount`, `Page`, `Close`),
+  `Options` (DPI, `MaxPixels`, `Annotations`), `Raster` (image, the DPI actually used, and
+  the page box **with `/Rotate` applied**, which is the documented difference from
+  `doc.Page.Box`), and `Fit`, which is the whole of the resolution policy. `Fit` lives in
+  this package rather than in an adapter because every backend must apply it identically —
+  a native rasterizer that capped differently would make two backends disagree about the
+  same document — and because it is the one part of rendering testable without a rasterizer
+  at all. Writing that test found a real defect in it: a page reduced to land exactly on
+  `MaxPixels` and then rounded *up* on both axes lands past the bound (US Letter reduced to
+  fit 2,097,152 pixels is 1272.999 × 1647.411, whose product is the cap exactly, and
+  1273 × 1648 is 2,097,904 — 752 pixels over). Capped pages now floor; uncapped pages still
+  ceil, because rounding down otherwise
+  drops the last fractional row of every A4 page. The code was fixed rather than the bar
+  lowered, and the comment that had claimed this could not happen now records that a test
+  disagreed.
+- `render/pdfium` — the adapter over `klippa-app/go-pdfium` (MIT) on the WebAssembly
+  backend. The WASM build rather than the CGO one is a requirement, not a preference:
+  DESIGN.md §9 commits to pure Go, no CGO, single binary, cross-compiles, and rasterization
+  is the one borrowed layer that would otherwise break it. No go-pdfium type appears in any
+  exported signature, so the Phase 6 native rasterizer is a sibling package and a one-line
+  wiring change. ADR 0005 records the cost, all measured: **+10.0 MB of binary**
+  (`cmd/pdfspec` 10,416,128 → 20,890,624 bytes on windows/amd64, of which the embedded
+  `pdfium.wasm` is 5,225,611), ~1.4 s of one-time module compile, 3–8 ms per page at 200
+  DPI, and **a second parse of the file** — pdfium brings its own parser and cannot be
+  handed an `objects.Store`, which is why `Rasterizer` declares its own `PageCount`.
+- `cmd/pdfspec render` — pages to PNG or JPEG. `-o`, `-dpi` (default 200), `-pages` with the
+  usual `1,4-9,20-` syntax, `-format`, `-quality`, `-jobs`, `-annots`, `-maxpixels`. Files
+  are zero-padded to the *document's* page count so a listing sorts in page order on a
+  285-page manual. One page that fails does not fail the run — a 151-page scan with one
+  broken page should still yield 150 images — but the count is reported, up to five failures
+  are named, and the exit status reflects it, because a silent partial render is
+  indistinguishable from a complete one. A partially written image is deleted rather than
+  left, since it looks like a success and fails only when something opens it. `-dpi` is
+  validated before the WASM module compiles or a directory is created.
+- `docs/adr/0005-rasterize-through-pdfium-on-wasm.md` — the borrow decision, its measured
+  costs, and the three spike findings that changed the code rather than merely describing
+  it.
+- Tests. `render`: `Fit` across eight cases plus nine rejections, each also asserting the
+  cap holds *after* rounding, and a hostile 200 × 200-inch `/MediaBox` that must be reduced
+  into the cap while staying a usable image and keeping its aspect ratio. `render/pdfium`:
+  pdfium's page counts cross-checked against pdfcpu's on six fixtures (1/1/1/285/4/151, so a
+  future divergence between the two parsers fails by name), dimensions computed independently
+  from known page sizes so a box-reading bug cannot make the test agree with itself, the
+  1-based↔0-based conversion pinned at both ends, idempotent `Close` and use-after-close as
+  an error rather than a crash inside WASM, ink-percentage bands with
+  `disqualifiedScannedPages.pdf` as the blank negative control, and a Type3 page that
+  extraction correctly yields nothing for but rendering must not. The load-bearing one is
+  `TestPagesDoNotAliasEachOther`: go-pdfium's WASM adapter assigns `img.Pix` from wazero's
+  `Memory().Read`, which returns a view into linear memory rather than a copy, and `Cleanup`
+  frees the pdfium bitmap that view points at — so a returned image must own its pixels or
+  one page's content appears in another's, which is far harder to recognize than an error.
+  Confirmed load-bearing by reverting the copy and watching the test fail. `cmd/pdfspec`: 13 range
+  cases and 11 rejections, byte-identical output between `-jobs 1` and `-jobs 4`, and a
+  cross-check that every fixture `probe` routes to the OCR path does in fact rasterize.
+  `TestAnnotationsFlag` builds its own one-page PDF with a Square annotation, because no
+  file in `testdata/` or the corpus has an annotation with a visible appearance stream —
+  which is why that flag was silently untested and silently wrong. See Fixed.
+
+### Fixed — 2026-08-04
+
+- `-annots` drew form fields only, not annotations. go-pdfium's `RenderForm` calls
+  `FPDF_FFLDraw`, which draws form *fields*; the appearance stream of every other subtype —
+  a Square, Highlight, Stamp, or FreeText — is drawn under the separate `FPDF_ANNOT` render
+  flag, which was never set. So `-annots` was a no-op for the common case: measured 640
+  non-white pixels with the flag on and 640 with it off, on a page whose annotation covers
+  10,000. Both switches are now set together. Found by writing the test the flag never had,
+  and confirmed load-bearing by removing the fix and watching it fail.
+- `render.Fit` returned nonsense instead of an error when the pixel cap was disabled and the
+  DPI was absurd. Converting an out-of-range `float64` to `int` is implementation-defined —
+  on amd64 it yields the minimum int, which the one-pixel floor then reported as 1 — so
+  `-maxpixels 0 -dpi 1e18` on US Letter produced `8500000000000000000 × 1`. Dimensions are
+  now bounded at 1e9 per axis *before* the conversion, which is a hundred times any real page
+  at any real DPI; `MaxPixels` still bounds every sane case.
+- The `Raster.Box` doc comment claimed the box carries "its origin, not zero". The pdfium
+  adapter reports 0,0, because `GetPageSize` returns a size rather than a box. Only the
+  extent is meaningful and the comment now says so, since a caller reading position out of
+  `Min` would silently get the wrong answer.
+- Three restatements of the same arithmetic said US Letter reduced to a 2,097,152-pixel cap
+  is 1272.98 × 1647.40. It is 1272.999 × 1647.411, whose product is the cap exactly — which
+  is the actual reason rounding up breaches it. Corrected in `render.go`, its test, ADR 0005,
+  and above.
+
 ### Changed — 2026-08-03
 
 - `TestMDEmitsNoHeadingsYet` became `TestMDEmitsOutlineHeadings`, which is the inversion its

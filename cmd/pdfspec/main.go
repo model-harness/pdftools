@@ -16,6 +16,7 @@ commands:
   md       convert a PDF to Markdown
   okf      convert a PDF to an Open Knowledge Format bundle, one file per clause
   images   extract embedded images, original codec preserved where possible
+  render   rasterize pages to PNG or JPEG
   probe    report what a PDF contains and which extraction path it will take
   version  print version
 
@@ -39,6 +40,8 @@ func main() {
 		err = runOKF(args)
 	case "images":
 		err = runImages(args)
+	case "render":
+		err = runRender(args)
 	case "probe":
 		err = runProbe(args)
 	case "version", "-v", "--version":
