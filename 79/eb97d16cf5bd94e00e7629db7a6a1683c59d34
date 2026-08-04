@@ -1,0 +1,70 @@
+render/render_test.go
+  s_5cd1b28ed520c1::t_0cfbc1e43889bc 112-118
+  s_5cd1b28ed520c1::t_61819b9542b3c1 50-52
+  s_5cd1b28ed520c1::t_c49ceca04cd3d6 49,53-54,56-57
+  s_5cd1b28ed520c1::t_70bf0af3cac07f 1-48,55,58-111,119-161
+go.mod
+  s_5cd1b28ed520c1::t_c689a79d37658b 6,9,14,18,21-24
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_a26576e65605df 463-475
+cmd/pdfspec/render.go
+  s_5cd1b28ed520c1::t_1eac0e3f85836b 1-15,17-79,81-320
+  s_5cd1b28ed520c1::t_d5af266c886efc 16
+  s_5cd1b28ed520c1::t_c703bf95fd5e68 80
+docs/test.docs.md
+  s_5cd1b28ed520c1::t_38971784a45889 304-317,319,327-333
+  s_5cd1b28ed520c1::t_b3f1d62b0a25e8 211-212
+  s_5cd1b28ed520c1::t_76f18590940429 318,320-326
+  s_5cd1b28ed520c1::t_6d678a58a3f8aa 343
+render/pdfium/pdfium_test.go
+  s_5cd1b28ed520c1::t_268f8a5b40cde4 1-4,6-358,464-471
+  s_5cd1b28ed520c1::t_a38ce3ca348333 359-463
+  s_5cd1b28ed520c1::t_10d7f05e622d18 5
+docs/adr/0005-rasterize-through-pdfium-on-wasm.md
+  s_5cd1b28ed520c1::t_61ad03ab473497 110-113
+  s_5cd1b28ed520c1::t_de85c62f8e8f54 1-57,61-109,114-150
+  s_5cd1b28ed520c1::t_aff941ebcdc6ba 58-60
+cmd/pdfspec/render_test.go
+  s_5cd1b28ed520c1::t_479aeaff74c6bd 1-3,5-191,193-289,291-358
+  s_5cd1b28ed520c1::t_11894cee448c4f 4
+  s_5cd1b28ed520c1::t_06993b949f55de 192
+  s_5cd1b28ed520c1::t_a25680a7d26bc3 290
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_35759ce254cb3c 353-363,367-400,407-408,436
+  s_5cd1b28ed520c1::t_47d050050995a1 364-366
+  s_5cd1b28ed520c1::t_212a5a856d178f 401-406
+  s_5cd1b28ed520c1::t_830e03b07362e2 409-435
+render/pdfium/pdfium.go
+  s_5cd1b28ed520c1::t_36ae9a84dfdf99 43
+  s_5cd1b28ed520c1::t_9b4e0de12d8f6c 223-231,233-237
+  s_5cd1b28ed520c1::t_aaf77ddfc078fa 1-11,19-42,44-222,232,238-275
+  s_5cd1b28ed520c1::t_782f2f9a068cb3 12-18
+render/render.go
+  s_5cd1b28ed520c1::t_1599daeb65064f 1-124,139-168,170,173-174,176-178,214-221
+  s_5cd1b28ed520c1::t_103f8ad1fe5125 169,171-172,175,179-183,188-195,210-213
+  s_5cd1b28ed520c1::t_581cac4355cee0 125-132
+  s_5cd1b28ed520c1::t_32da410e0bc676 184-187
+  s_5cd1b28ed520c1::t_84d07b903d81bc 133-138
+  s_5cd1b28ed520c1::t_5be1dd848dab92 196-209
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_2793d03f27b6dc 43-44
+  s_5cd1b28ed520c1::t_aec893243bc0e7 19
+go.sum
+  s_5cd1b28ed520c1::t_58ad32cfabd2f3 1-2,5-19,26-29,32-35,40-51,54-65,70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "79eb97d16cf5bd94e00e7629db7a6a1683c59d34",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
