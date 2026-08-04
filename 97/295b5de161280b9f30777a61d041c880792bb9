@@ -1,0 +1,89 @@
+cmd/pdfspec/extract_test.go
+  s_5cd1b28ed520c1::t_7e8501ef789023 178
+cmd/pdfspec/md_test.go
+  s_5cd1b28ed520c1::t_7e8501ef789023 58
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_521522c41b23ab 453
+  s_5cd1b28ed520c1::t_9f9b0308b9850d 166-175
+  s_5cd1b28ed520c1::t_7f13b8e4989007 461
+  s_5cd1b28ed520c1::t_177de66079b5ed 476,479-484
+  s_5cd1b28ed520c1::t_b7a55e7fe383fd 485
+image/encode_test.go
+  s_5cd1b28ed520c1::t_b701724efb8162 65
+  s_5cd1b28ed520c1::t_4dd047eb7974be 43-45
+  s_5cd1b28ed520c1::t_f37443a8188333 200
+  s_5cd1b28ed520c1::t_8a484ec9c75efb 64
+  s_5cd1b28ed520c1::t_f9e8e09987aca3 201
+  s_5cd1b28ed520c1::t_dea85a8257a7da 225,249
+docs/test.docs.md
+  s_5cd1b28ed520c1::t_eb095a14146612 24-26
+  s_5cd1b28ed520c1::t_195debb6f405d4 8-17
+  s_5cd1b28ed520c1::t_48216e4eb6331b 211
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_fd3755d8de6de0 631-657
+docs/adr/0004-extract-images-without-compositing.md
+  s_5cd1b28ed520c1::t_60cad72139aa61 12-21
+cmd/pdfspec/corpus_test.go
+  s_5cd1b28ed520c1::t_94b9c159d71eaa 106-120
+  s_5cd1b28ed520c1::t_9515a301da5056 26-37,39-41
+  s_5cd1b28ed520c1::t_924de076c4ad0f 42-66,68-70
+  s_5cd1b28ed520c1::t_a25bdcabca9837 170-174
+cmd/pdfspec/images_test.go
+  s_5cd1b28ed520c1::t_19683c808ce918 151-152
+  s_5cd1b28ed520c1::t_0134e1d83945ec 202-203
+image/image.go
+  s_5cd1b28ed520c1::t_84079c6166b5dc 3-7
+  s_5cd1b28ed520c1::t_08ba151b22cf1d 16,157
+cmd/pdfspec/sectionize_test.go
+  s_5cd1b28ed520c1::t_7e8501ef789023 367
+cmd/pdfspec/content_test.go
+  s_5cd1b28ed520c1::t_603d2a65a8a70f 374
+  s_5cd1b28ed520c1::t_57bef2cbac045c 127-131
+  s_5cd1b28ed520c1::t_20a304b0019d65 123-126
+  s_5cd1b28ed520c1::t_2d1f1594e7a407 330-337,341-342,344
+bits/bits.go
+  s_5cd1b28ed520c1::t_363520120e976e 98
+.gitignore
+  s_5cd1b28ed520c1::t_5aa2617b0fb62f 25-37
+cmd/pdfspec/testdata_test.go
+  s_5cd1b28ed520c1::t_8f84f1797f4c81 573
+  s_5cd1b28ed520c1::t_4957bb4bbd893a 572
+image/encode.go
+  s_15b6464673ef8b::t_abc94b4aa627db 443,450
+image/read.go
+  s_c511dec661c68b::t_3dbd3fd8849963 82,170
+image/read_test.go
+  s_c511dec661c68b::t_be34459c9b3238 117,141,363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "97295b5de161280b9f30777a61d041c880792bb9",
+  "prompts": {},
+  "sessions": {
+    "s_15b6464673ef8b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0488aaa5-b1a9-4922-a6c3-1bef91271e93",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_c511dec661c68b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ba64624c-ba66-4b0b-a52d-b7ab5e0b891f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
