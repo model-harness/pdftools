@@ -573,8 +573,10 @@ func TestFixtureImagesEncodeToValidFiles(t *testing.T) {
 // really one producer's habit measured 143 times, and ADR 0004's premultiplication
 // statement rests on it. These two files carry an /SMask with no /Matte at all — plain
 // alpha, nothing premultiplied — which is the branch that must not report a base image
-// as premultiplied when it is not. Getting that backwards would have the Phase 4
-// compositor un-premultiply samples that were never multiplied, darkening every edge.
+// as premultiplied when it is not. Getting that backwards now has a consequence in this
+// package rather than a hypothetical one downstream: Encode un-premultiplies (ADR 0007),
+// so a false positive here divides never-multiplied samples by their own alpha and blows
+// every partly transparent edge out to full intensity.
 func TestFixtureSoftMaskWithoutMatte(t *testing.T) {
 	for _, tc := range []struct {
 		file  string

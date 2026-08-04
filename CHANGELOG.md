@@ -574,6 +574,60 @@ All notable changes to this project are documented here, following
   decoding an opaque image yields `NRGBA` where the source is `RGBA` and the `color.Color`
   interface values differ by dynamic type while every channel matches.
 
+### Fixed — 2026-08-04
+
+- **131 extracted images carried pre-blended samples in a format that declares samples
+  non-premultiplied.** `/Matte` means the base image's colours were blended against the
+  matte using the mask as the weight (§11.6.5.3), and `decodeSamples` was writing those
+  samples straight into `color.NRGBA` — the *non*-premultiplied type — so every consumer
+  that composited them applied alpha a second time. `Encode` now inverts the pre-blending
+  with the spec's own `c = m + (c′ − m) / α`. Measured across the corpus: 2,283,562 of the
+  2,297,495 partial-alpha samples change value, by up to 127 of 255. This is a fix rather
+  than a refinement.
+- The inversion runs *before* the conversion to RGB, because §11.6.5.3 requires it —
+  "inversion of the pre-blending shall precede the colour conversion". Doing it afterwards
+  would invert a blend in a space the blend was never performed in, which for a CMYK or Lab
+  parent is different arithmetic with a different answer. That ordering is what places this
+  in `image`'s decoder rather than in `render` as ADR 0005 assumed; ADR 0007 records the
+  amendment, and 0004 and 0005 are annotated rather than edited.
+- It also runs *after* the `/Decode` remap, which the same clause requires: the computation
+  "shall use actual colour component values, with the effects of the **Filter** and
+  **Decode** transformations already performed", and Table 144 puts `/Matte`'s numbers in
+  that same post-`/Decode` domain. Every matted image in the corpus uses the default
+  `/Decode`, where the remap is the identity and either order passes, so this needed a test
+  built on an inverting `/Decode` to be pinned at all.
+- At α = 0 the inverse divides by zero. The spec permits any in-range value there and notes
+  the choice cannot affect output; the matte colour is chosen, being in range by
+  construction and already what the sample holds. Not an edge case: **85.00% of the corpus's
+  28,446,018 matted pixels have α = 0**, which is why the arbitrary value got a defensible
+  choice rather than a convenient one. Components are clamped to 0..1 in the sample domain
+  before conversion, since 1/α amplifies by up to ×255 at this corpus's smallest non-zero
+  alpha and `clamp8` would flatten an over-range channel to full intensity, losing the
+  ratios.
+
+### Added — 2026-08-04
+
+- `Image.Recoverable` reports whether the pre-blending can be inverted, and is true for any
+  image that was never blended. False for a DCT base (never decoded, so there is nothing to
+  invert — 5 of the corpus's 136), a DCT mask (no per-pixel alpha without importing the JPEG
+  decode the base path avoids), a matte whose length disagrees with the component count, an
+  `/Indexed` parent (the pre-blending applies to the palette, not to the index a sample
+  carries), `Lab` (the matte is in real Lab units while the sample is normalized 0..1), and a
+  matted mask whose dimensions differ from its parent's — which Table 143 forbids, and where
+  the α that would divide is a resampled guess rather than the α that multiplied. All 136 of
+  the corpus's matted masks match their parent, and the 4 differently-sized masks are all
+  unmatted, so that last exclusion fires only on a malformed file. `images -list` names the
+  count that stays blended with its reason, so the two populations in an output directory are
+  distinguishable.
+- Eight tests in `image`: the inversion at four alphas, the post-`/Decode` ordering, the
+  α = 0 case, a non-black matte
+  (`[0 0 0]` degenerates to a plain division and would hide a dropped `m` term — and every
+  matte in the corpus is `[0 0 0]`), the six `Recoverable` exclusions, an unrecoverable
+  image passing through unchanged, and an unmatted mask at partial alpha passing through
+  unchanged. Input is built by running the *forward* formula, so the tests are about the
+  inversion rather than about hand-computed constants that would encode the same mistake
+  twice. `TestCorpusSoftMasks` now pins 131 recoverable / 5 blocked, keyed by codec pair.
+
 ### Changed — 2026-08-03
 
 - `TestMDEmitsNoHeadingsYet` became `TestMDEmitsOutlineHeadings`, which is the inversion its

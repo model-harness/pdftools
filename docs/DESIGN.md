@@ -455,10 +455,14 @@ back a `.jbig2` this build cannot produce would be worse than declining.
 The premise that moved the design, though, is **`/SMask`: 143 of 245 images carry one,
 and 136 of those carry `/Matte [0 0 0]`.** Soft masks are the common case, not an edge
 case, and `/Matte` means the base image's samples are premultiplied against black —
-they are not the colours they appear to be. An extractor cannot resolve that: the honest
-output is both layers plus the statement that one is premultiplied, which is what
-`Image.Premultiplied` reports and what the verb writes as a separate `-mask` file.
-Compositing stays in Phase 4, where a rasterizer owns it.
+they are not the colours they appear to be. The verb writes both layers, the mask as its
+own `-mask` file, because compositing needs a backdrop and belongs in Phase 4's
+rasterizer. **Un-premultiplying, though, turned out to belong here** and was deferred a
+phase too long: §11.6.5.3 requires the inversion to precede colour conversion, so it can
+only run on pre-conversion samples inside the decoder, and until it did, 131 pre-blended
+images were being written into a PNG format that declares its samples *not* premultiplied.
+`Image.Recoverable` names the 5 where it cannot be done — all with a DCT base, which is
+never decoded. See ADR 0007.
 
 Two smaller measurements shaped the code: 7 images sit inside a Form XObject, so the
 form recursion is load-bearing rather than defensive — the same defect cost the font

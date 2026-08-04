@@ -5,6 +5,7 @@ import (
 	stdimage "image"
 	"image/color"
 	"image/png"
+	"math"
 	"testing"
 )
 
@@ -245,10 +246,10 @@ func TestSoftMaskOfDifferentSizeIsScaled(t *testing.T) {
 	}
 }
 
-// /Matte says the base samples are premultiplied against a colour, so they are not
-// the colours they appear to be. 136 of the corpus's 143 soft masks carry it, all
-// [0 0 0]. Encode does not un-premultiply — that is a rendering decision — but the
-// condition has to be reportable, or a consumer composites wrong and never knows.
+// /Matte says the base samples are pre-blended against a colour, so they are not the
+// colours they appear to be. 136 of the corpus's 143 soft masks carry it, all [0 0 0].
+// The condition has to be reportable whether or not Encode can act on it, because a
+// consumer that composites blended samples again gets a colour shift and no indication.
 func TestPremultipliedIsReported(t *testing.T) {
 	plain := &Image{SMask: &Image{}}
 	if plain.Premultiplied() {
@@ -261,6 +262,331 @@ func TestPremultipliedIsReported(t *testing.T) {
 	// No mask at all cannot be premultiplied, whatever else is set.
 	if (&Image{}).Premultiplied() {
 		t.Error("an image with no /SMask reported as premultiplied")
+	}
+}
+
+// matted builds a base image whose samples are pre-blended against matte at the given
+// per-pixel alpha, by running §11.6.5.3's forward computation. Building the input with
+// the forward formula and asserting the output against the original c is what makes the
+// test about the inversion rather than about a hand-computed constant.
+func matted(orig [][3]float64, alpha []uint8, matte []float64) *Image {
+	data := make([]byte, 0, len(orig)*3)
+	for i, c := range orig {
+		a := float64(alpha[i]) / 255
+		for k := 0; k < 3; k++ {
+			// c′ = m + α × (c − m)
+			blended := matte[k] + a*(c[k]-matte[k])
+			data = append(data, clamp8(blended))
+		}
+	}
+	return &Image{
+		Codec: CodecRaw, Width: len(orig), Height: 1, BitsPerComponent: 8,
+		ColorSpaceFamily: "DeviceRGB", Components: 3,
+		Data: data,
+		SMask: &Image{
+			Codec: CodecRaw, Width: len(orig), Height: 1, BitsPerComponent: 8,
+			ColorSpaceFamily: "DeviceGray", Components: 1,
+			Data:  append([]byte(nil), alpha...),
+			Matte: matte,
+		},
+	}
+}
+
+// The core of the fix: pre-blended samples are inverted back to the colours the file's
+// author had, per §11.6.5.3's c = m + (c′ − m) / α.
+//
+// Without the inversion a half-transparent red over a black matte is stored as 0x80,0,0
+// and written out as that — a dark red at 50% alpha, which composites to a quarter-
+// intensity red instead of a half-intensity one. The stored value is not the colour.
+func TestMatteIsUnblended(t *testing.T) {
+	black := []float64{0, 0, 0}
+	orig := [][3]float64{
+		{1, 0, 0},      // saturated red
+		{1, 0, 0},      // the same red, at a different alpha
+		{0.5, 0.25, 1}, // an arbitrary colour
+		{1, 1, 1},      // white, the worst case for amplification
+	}
+	alpha := []uint8{255, 128, 64, 32}
+	im := matted(orig, alpha, black)
+
+	if !im.Premultiplied() {
+		t.Fatal("Premultiplied() = false for an image built with a /Matte")
+	}
+	if !im.Recoverable() {
+		t.Fatal("Recoverable() = false for a raw image with a raw mask and a 3-component matte")
+	}
+
+	img := pixels(t, im)
+	for x, want := range orig {
+		got := rgba(t, img, x, 0)
+		if got.A != alpha[x] {
+			t.Errorf("x=%d alpha = %d, want %d", x, got.A, alpha[x])
+		}
+		// One 8-bit step of slack per channel. The round trip stores c′ in 8 bits and
+		// the inversion multiplies that quantization by 1/α, so at α=32/255 a single
+		// stored step is eight recovered ones; asserting exact equality would be
+		// asserting that 8-bit storage is lossless, which it is not.
+		tol := int(math.Ceil(255 / (float64(alpha[x]) / 255) / 255))
+		for k, ch := range []uint8{got.R, got.G, got.B} {
+			exp := clamp8(want[k])
+			if diff := int(ch) - int(exp); diff > tol || diff < -tol {
+				t.Errorf("x=%d channel %d = %d, want %d ±%d (recovered colour is wrong)",
+					x, k, ch, exp, tol)
+			}
+		}
+	}
+}
+
+// The ordering §11.6.5.3 requires against /Decode: "This computation shall use actual
+// colour component values, with the effects of the Filter and Decode transformations
+// already performed." So /Matte is in the post-Decode domain — Table 144 calls its numbers
+// "valid colour components in that colour space" — and the inversion has to run after the
+// remap, not on the raw normalized sample.
+//
+// Only an inverting /Decode can show the difference, which is why this is a separate test
+// from TestMatteIsUnblended: with the default [0 1] per component the remap is the identity
+// and either order passes. Here the true colour is a mid grey, /Decode [1 0 1 0 1 0]
+// inverts, and the matte is white. Swap the two operations and the recovered value comes
+// out on the wrong side of the matte — a visible colour error, not a rounding one.
+func TestMatteIsInvertedInPostDecodeUnits(t *testing.T) {
+	white := []float64{1, 1, 1}
+	const (
+		trueVal = 0.6 // the colour the author had, in post-Decode units
+		alpha   = 128
+	)
+	a := float64(alpha) / 255
+	// c′ = m + α × (c − m), in post-Decode units.
+	blended := white[0] + a*(trueVal-white[0])
+	// /Decode [1 0] maps a raw sample v to 1−v, so the byte that yields c′ is 1−c′.
+	raw := clamp8(1 - blended)
+
+	im := &Image{
+		Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+		ColorSpaceFamily: "DeviceRGB", Components: 3,
+		Decode: []float64{1, 0, 1, 0, 1, 0},
+		Data:   []byte{raw, raw, raw},
+		SMask: &Image{
+			Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+			ColorSpaceFamily: "DeviceGray", Components: 1,
+			Data:  []byte{alpha},
+			Matte: white,
+		},
+	}
+	if !im.Recoverable() {
+		t.Fatal("Recoverable() = false for a raw DeviceRGB image with a raw mask")
+	}
+	got := rgba(t, pixels(t, im), 0, 0)
+	// Two 8-bit steps: one from storing c′, doubled by the 1/α amplification at α=128.
+	const tol = 2
+	want := clamp8(trueVal)
+	for k, ch := range []uint8{got.R, got.G, got.B} {
+		if diff := int(ch) - int(want); diff > tol || diff < -tol {
+			t.Errorf("channel %d = %d, want %d ±%d — /Decode and the unblend are in different units",
+				k, ch, want, tol)
+		}
+	}
+}
+
+// α = 0 is the case §11.6.5.3 calls out: the inverted formula divides by zero, and the
+// spec permits "an arbitrary value for c ... within the range of colour component values".
+// The matte colour is the choice, so a fully transparent pixel keeps what the file gave
+// it. What must never happen is a NaN or an Inf reaching the encoder, which clamp8 would
+// silently turn into black or white.
+func TestMatteAtZeroAlphaIsTheMatteColour(t *testing.T) {
+	matte := []float64{0.25, 0.5, 0.75}
+	im := &Image{
+		Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+		ColorSpaceFamily: "DeviceRGB", Components: 3,
+		// Whatever a producer left in a fully transparent sample. At α=0 the forward
+		// formula makes c′ = m, so this is what a conforming writer stores.
+		Data: []byte{clamp8(matte[0]), clamp8(matte[1]), clamp8(matte[2])},
+		SMask: &Image{
+			Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+			ColorSpaceFamily: "DeviceGray", Components: 1,
+			Data: []byte{0}, Matte: matte,
+		},
+	}
+	// Read as NRGBA rather than through rgba(), which goes via At().RGBA() and so
+	// premultiplies: at α=0 that returns 0,0,0,0 and the stored colour is unreadable
+	// through it. The bytes are in the PNG either way — this asserts what was written.
+	// That the colour is invisible to a premultiplied accessor is exactly the spec's
+	// point that "the arbitrary value of c does not affect output".
+	img := pixels(t, im)
+	nrgba, ok := img.(*stdimage.NRGBA)
+	if !ok {
+		t.Fatalf("PNG decoded to %T, want *image.NRGBA", img)
+	}
+	got := nrgba.NRGBAAt(0, 0)
+	if got.A != 0 {
+		t.Fatalf("alpha = %d, want 0", got.A)
+	}
+	for k, ch := range []uint8{got.R, got.G, got.B} {
+		if want := clamp8(matte[k]); ch != want {
+			t.Errorf("channel %d = %d, want the matte's %d — a NaN or Inf would land here", k, ch, want)
+		}
+	}
+}
+
+// A non-zero matte, because [0 0 0] — all 136 in the corpus — is the one colour where
+// the formula degenerates to a plain divide by alpha and a sign error or a dropped m
+// term is invisible.
+func TestMatteAgainstANonBlackColour(t *testing.T) {
+	white := []float64{1, 1, 1}
+	orig := [][3]float64{{0, 0, 0}, {0.2, 0.4, 0.6}}
+	alpha := []uint8{128, 200}
+	im := matted(orig, alpha, white)
+
+	img := pixels(t, im)
+	for x, want := range orig {
+		got := rgba(t, img, x, 0)
+		tol := int(math.Ceil(255 / (float64(alpha[x]) / 255) / 255))
+		for k, ch := range []uint8{got.R, got.G, got.B} {
+			exp := clamp8(want[k])
+			if diff := int(ch) - int(exp); diff > tol || diff < -tol {
+				t.Errorf("x=%d channel %d = %d, want %d ±%d", x, k, ch, exp, tol)
+			}
+		}
+	}
+}
+
+// Recoverable is the contract that tells a consumer whether it is looking at recovered
+// colour or at samples that had to be passed through blended. Each false here is a case
+// where inverting would produce a worse image than not inverting.
+func TestRecoverableExclusions(t *testing.T) {
+	raw := func(m ...float64) *Image {
+		return &Image{
+			Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+			ColorSpaceFamily: "DeviceRGB", Components: 3, Data: []byte{0, 0, 0},
+			SMask: &Image{
+				Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+				ColorSpaceFamily: "DeviceGray", Components: 1,
+				Data: []byte{128}, Matte: m,
+			},
+		}
+	}
+
+	if !(&Image{Codec: CodecJPEG}).Recoverable() {
+		t.Error("an image with no /Matte is not recoverable; nothing needs recovering")
+	}
+	if !raw(0, 0, 0).Recoverable() {
+		t.Error("a raw image with a raw mask and a matching matte should be recoverable")
+	}
+
+	// A DCT base is never decoded — the codec is preserved byte for byte — so its
+	// samples reach the output blended whatever else is true. 5 of the corpus's 136.
+	jpegBase := raw(0, 0, 0)
+	jpegBase.Codec = CodecJPEG
+	if jpegBase.Recoverable() {
+		t.Error("a DCT base reported recoverable, but its samples are never decoded")
+	}
+
+	// A DCT mask cannot become the per-pixel divisor without running the JPEG decoder
+	// the base path exists to avoid.
+	jpegMask := raw(0, 0, 0)
+	jpegMask.SMask.Codec = CodecJPEG
+	if jpegMask.Recoverable() {
+		t.Error("a DCT mask reported recoverable, but it supplies no per-pixel alpha")
+	}
+
+	// Table 144 requires n components. Inverting some channels and not others is a
+	// colour shift unrelated to the file's intent.
+	if raw(0, 0).Recoverable() {
+		t.Error("a 2-component matte on a 3-component image reported recoverable")
+	}
+
+	// Indexed pre-blends the palette, not the index the sample carries.
+	idx := raw(0, 0, 0)
+	idx.ColorSpaceFamily = "Indexed"
+	idx.Components = 3
+	if idx.Recoverable() {
+		t.Error("an Indexed parent reported recoverable; the blend applies to the palette")
+	}
+
+	// Lab's matte is in Lab units against a sample normalized to 0..1.
+	lab := raw(0, 0, 0)
+	lab.ColorSpaceFamily = "Lab"
+	if lab.Recoverable() {
+		t.Error("a Lab parent reported recoverable; the matte's units differ from the sample's")
+	}
+
+	// Table 143 requires a matted mask to match its parent's dimensions, and all 136 of the
+	// corpus's do. A file that breaks it would have alphaAt resampling the mask, and the α
+	// that divides would not be the α that multiplied — a guess at the weight rather than
+	// the weight. The 4 differently-sized masks in the corpus are all unmatted, so this
+	// exclusion costs nothing there and only fires on a malformed file.
+	sized := raw(0, 0, 0)
+	sized.Width = 2
+	sized.Data = []byte{0, 0, 0, 0, 0, 0}
+	if sized.Recoverable() {
+		t.Error("a matted mask of a different size reported recoverable; §11.6.5.3 forbids the shape")
+	}
+	// The same shape without a /Matte is legal and must stay unaffected: nothing is being
+	// inverted, so a resampled mask is just alpha and the exclusion must not reach it.
+	sized.SMask.Matte = nil
+	if !sized.Recoverable() {
+		t.Error("an unmatted mask of a different size reported unrecoverable")
+	}
+}
+
+// An unrecoverable image must come out exactly as it did before this behaviour existed:
+// blended samples, correct alpha, no arithmetic applied. The failure this guards is a
+// half-applied inversion, which is worse than none because it is neither the stored
+// value nor the true one.
+func TestUnrecoverableIsLeftBlended(t *testing.T) {
+	const blended = 0x80 // a half-alpha red pre-blended against black
+	im := &Image{
+		Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+		ColorSpaceFamily: "DeviceRGB", Components: 3,
+		Data: []byte{blended, 0, 0},
+		SMask: &Image{
+			Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+			ColorSpaceFamily: "DeviceGray", Components: 1,
+			Data: []byte{128},
+			// Two components against a three-component space: unrecoverable.
+			Matte: []float64{0, 0},
+		},
+	}
+	if im.Recoverable() {
+		t.Fatal("Recoverable() = true for a mismatched matte")
+	}
+	got := rgba(t, pixels(t, im), 0, 0)
+	if got.R != blended {
+		t.Errorf("R = %d, want the stored %d — an unrecoverable image must pass through", got.R, blended)
+	}
+	if got.A != 128 {
+		t.Errorf("alpha = %d, want 128", got.A)
+	}
+}
+
+// The other direction of the same guard: a mask with no /Matte at all leaves the samples
+// alone. Partial alpha is what makes this test say anything — at 0 or 255 the inversion is
+// a no-op or a divide-by-one, so an accidentally applied unblend would pass unnoticed. At
+// α=64 against a phantom black matte it would multiply the stored value by four.
+//
+// Not a hypothetical shape. pymupdf/img-transparent.pdf and 5 images in
+// adobe-samples/sampleInvoice.pdf carry exactly this, which the corpus itself does not.
+func TestUnmattedSamplesArePassedThrough(t *testing.T) {
+	const stored = 0x40
+	im := &Image{
+		Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+		ColorSpaceFamily: "DeviceRGB", Components: 3,
+		Data: []byte{stored, stored, stored},
+		SMask: &Image{
+			Codec: CodecRaw, Width: 1, Height: 1, BitsPerComponent: 8,
+			ColorSpaceFamily: "DeviceGray", Components: 1,
+			Data: []byte{64},
+		},
+	}
+	if im.Premultiplied() {
+		t.Fatal("Premultiplied() = true with no /Matte")
+	}
+	got := rgba(t, pixels(t, im), 0, 0)
+	if got.R != stored || got.G != stored || got.B != stored {
+		t.Errorf("got %v, want all channels at the stored %#x — an unmatted image must not be unblended",
+			got, stored)
+	}
+	if got.A != 64 {
+		t.Errorf("alpha = %d, want 64", got.A)
 	}
 }
 

@@ -152,6 +152,8 @@ func TestCorpusImagesEncodeToValidFiles(t *testing.T) {
 // of 245 images rather than the edge case the roadmap implied.
 func TestCorpusSoftMasks(t *testing.T) {
 	masks, premul, sized, dctMask := 0, 0, 0, 0
+	recoverable, blocked := 0, 0
+	blockedBy := map[string]int{}
 	for _, name := range corpusFiles() {
 		s, err := pcstore.Open(corpusFile(t, name))
 		if err != nil {
@@ -170,6 +172,14 @@ func TestCorpusSoftMasks(t *testing.T) {
 			sm := im.SMask
 			if sm.Matte != nil {
 				premul++
+				if im.Recoverable() {
+					recoverable++
+				} else {
+					blocked++
+					// Recorded by reason, because "5 not recovered" is only actionable
+					// if it says which of the exclusions applied.
+					blockedBy[im.Codec.String()+" base/"+sm.Codec.String()+" mask"]++
+				}
 			}
 			if sm.Width != im.Width || sm.Height != im.Height {
 				sized++
@@ -195,8 +205,19 @@ func TestCorpusSoftMasks(t *testing.T) {
 	if premul != 136 {
 		t.Errorf("premultiplied (/Matte) = %d, want 136", premul)
 	}
-	t.Logf("%d masks: %d premultiplied, %d differently sized, %d DCT-encoded",
-		masks, premul, sized, dctMask)
+	// The split that says how much of the pre-blending Encode actually undoes. 131 of
+	// the 136 are invertible; the other 5 have a DCT base, whose samples are never
+	// decoded because the codec is preserved byte for byte, so there is nothing to
+	// invert them in. A drop here means an exclusion widened and images that used to
+	// come out with true colours no longer do.
+	if recoverable != 131 {
+		t.Errorf("recoverable = %d, want 131 (blocked: %v)", recoverable, blockedBy)
+	}
+	if blocked != 5 {
+		t.Errorf("blocked = %d, want 5 (%v)", blocked, blockedBy)
+	}
+	t.Logf("%d masks: %d premultiplied (%d recoverable, %d blocked %v), %d differently sized, %d DCT-encoded",
+		masks, premul, recoverable, blocked, blockedBy, sized, dctMask)
 }
 
 // The verb end to end, including the naming and the mask files.

@@ -203,7 +203,7 @@ decision. All of it is asserted in `cmd/pdfspec/testdata_test.go`.
 | `dotted-gridlines.pdf` | 1 | layout | Table rules drawn as dot patterns — vector noise that must not become text |
 | `has-bad-fonts.pdf` | 1 | layout | **Deliberately broken font dictionaries.** A defective font may cost its own glyphs; it may not cost the page. This is `DESIGN.md` §1's whole argument as a test. |
 | `img-regular.pdf` | 1 | ocr | One image, no text: the minimal OCR-path file |
-| `img-transparent.pdf` | 1 | ocr | **`/SMask` with no `/Matte`** — plain alpha, nothing premultiplied. 136 of the corpus's 143 soft masks carry `/Matte [0 0 0]`, so ADR 0004's premultiplication statement rests on one producer's habit. |
+| `img-transparent.pdf` | 1 | ocr | **`/SMask` with no `/Matte`** — plain alpha, nothing premultiplied. 136 of the corpus's 143 soft masks carry `/Matte [0 0 0]`, so ADR 0004's premultiplication statement rests on one producer's habit. This is also the control for the un-premultiplication of ADR 0007: an unmatted mask must pass through untouched, and only a fixture that has one can show that. |
 | `mupdf_explored.pdf` | 285 | layout | The throughput case, and the **negative control** for the OCR fix: a C API manual full of code listings, where a false monospace positive would show up if anywhere. 374k non-space chars. |
 | `small-table.pdf` | 1 | layout | Bold/regular span split from the font alone — the layout path has nothing else to take emphasis from |
 | `symbol-list.pdf` | 1 | layout | Symbols drawn as vector paths, not glyphs. Only the labels are text; 136 chars is correct. |

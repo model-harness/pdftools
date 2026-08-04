@@ -4,7 +4,9 @@ Date: 2026-08-04
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0007](0007-invert-matte-pre-blending-in-the-decoder.md): the
+`/Matte` ownership claim under Consequences is withdrawn. §11.6.5.3 requires the inversion
+to precede colour conversion, which places it in `image`'s decoder, not here.
 
 ## Context
 
@@ -144,6 +146,14 @@ composites soft masks itself when rendering a page, which covers the rendered pa
 remains unbuilt is the extraction-side path that turns 136 premultiplied base images back
 into their true colours. That is a `render`-adjacent utility, not part of `Rasterizer`, and it
 is deliberately not in this interface.
+
+> **Withdrawn by [ADR 0007](0007-invert-matte-pre-blending-in-the-decoder.md).** The
+> paragraph above is wrong about placement, and this ADR is left unedited only because an
+> accepted ADR is immutable. §11.6.5.3 requires the inversion to precede colour conversion,
+> so it must run on samples in the parent image's own colour space — a state that exists
+> only inside `image`'s decoder, where it now lives. The rendered path is unaffected:
+> pdfium does composite soft masks itself, as stated. No `render`-adjacent utility was
+> built, and none should be.
 
 **The `render` verb tolerates per-page failure.** One page that fails does not fail the run —
 a 151-page scan with one broken page should still yield 150 images — but the count is reported,

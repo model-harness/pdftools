@@ -190,6 +190,11 @@ func decodeSamples(im *Image) (stdimage.Image, error) {
 	r := bits.NewReader(im.Data, bits.MSB)
 	smask := alphaAt(im)
 
+	// Non-nil only when the samples are pre-blended against a matte and that blend can
+	// actually be inverted. Resolved once, outside the loop, because the decision is a
+	// property of the image and not of the pixel.
+	matte := matteFor(im, smask)
+
 	sample := make([]float64, comps)
 	for y := 0; y < im.Height; y++ {
 		for x := 0; x < im.Width; x++ {
@@ -208,11 +213,28 @@ func decodeSamples(im *Image) (stdimage.Image, error) {
 				return dst, nil
 			}
 			applyDecode(im.Decode, sample)
-			cr, cg, cb := toRGB(im, sample)
 			a := uint8(255)
 			if smask != nil {
 				a = smask(x, y)
 			}
+			// After applyDecode and before toRGB. §11.6.5.3 pins both ends, and getting
+			// either wrong changes the arithmetic rather than merely the style:
+			//
+			//	"This computation shall use actual colour component values, with the
+			//	 effects of the Filter and Decode transformations already performed."
+			//	"If a colour conversion is required, inversion of the pre-blending
+			//	 shall precede the colour conversion."
+			//
+			// The first is why the /Decode remap comes first: /Matte holds "valid colour
+			// components in that colour space" (Table 144), which is the post-Decode
+			// domain, so inverting a raw normalized sample would mix two scales for any
+			// image with a non-default /Decode. The second is why this precedes toRGB —
+			// un-premultiplying after the conversion inverts a blend that was never
+			// performed in RGB, which for a CMYK parent is a different answer.
+			if matte != nil {
+				unblend(sample, matte, float64(a)/255)
+			}
+			cr, cg, cb := toRGB(im, sample)
 			dst.SetNRGBA(x, y, color.NRGBA{R: cr, G: cg, B: cb, A: a})
 		}
 		// Rows are byte-aligned, and this is the call that keeps a 1-, 2-, or
@@ -346,6 +368,73 @@ func gamma(v float64) float64 {
 		return 12.92 * v
 	}
 	return 1.055*math.Pow(v, 1/2.4) - 0.055
+}
+
+// matteFor returns the matte colour to un-premultiply against, or nil when the samples
+// should be written as the file holds them.
+//
+// The conditions are Recoverable's, deferred to rather than repeated so the predicate a
+// caller can query and the one the encoder acts on cannot drift apart. What is added here
+// is the requirement that alphaAt actually produced a lookup: /Matte says the samples
+// were blended using "the corresponding mask sample as the weighting factor", so with no
+// per-pixel α there is no per-pixel divisor, and inverting with an assumed α of 1 is a
+// no-op while any other assumption invents a weight the file never gave.
+//
+// The two are not redundant. Recoverable is a statement about the dictionary; smask is
+// nil for reasons the dictionary does not show, including a soft mask with a zero
+// dimension.
+func matteFor(im *Image, smask func(x, y int) uint8) []float64 {
+	if smask == nil || !im.Premultiplied() || !im.Recoverable() {
+		return nil
+	}
+	return im.SMask.Matte
+}
+
+// unblend inverts §11.6.5.3's pre-blending in place.
+//
+// The forward computation is c′ = m + α × (c − m), so the inverse is
+// c = m + (c′ − m) / α, performed independently per component.
+//
+// α = 0 is the case the spec calls out by name: the inverted formula divides by zero, and
+// it says "an arbitrary value for c can be chosen within the range of colour component
+// values" because "the arbitrary value of c does not affect output". The matte colour is
+// the choice here — it is in range by construction, being a colour in this very space,
+// and it is what c′ already holds when α is 0, so a fully transparent pixel keeps the
+// bytes the file gave it instead of acquiring a fabricated colour. That case is not
+// marginal: 85% of the 28.4 million pixels across the corpus's 131 invertible matted
+// images have α = 0.
+//
+// The result is clamped because the spec requires it — "The resulting c value shall lie
+// within the range of colour component values for the image colour space" — and because
+// the division amplifies by 1/α, which at the smallest non-zero alpha in this corpus
+// (1/255) is a factor of 255. Rounding in an 8-bit c′ is enough to push a recovered
+// component past 1.0 there, and clamp8 would fold an out-of-range value into a flat
+// white; clamping in the sample domain keeps the channel ratios that survive.
+//
+// 0..1 is the right bound for every space Recoverable admits, because that is what /Decode
+// maps into for all of them — Lab, whose components are not on that scale, is excluded for
+// exactly this reason. A malformed /Decode declaring a wider range loses nothing here that
+// it would not lose anyway: clamp8 applies the same bound a few lines later.
+func unblend(sample, matte []float64, alpha float64) {
+	if alpha >= 1 {
+		// c′ = m + 1 × (c − m) = c. Skipped rather than computed: this is 6.92% of the
+		// corpus's matted pixels, and dividing by exactly 1 would only add float error.
+		return
+	}
+	for i := range sample {
+		m := matte[i]
+		if alpha <= 0 {
+			sample[i] = m
+			continue
+		}
+		v := m + (sample[i]-m)/alpha
+		if v < 0 {
+			v = 0
+		} else if v > 1 {
+			v = 1
+		}
+		sample[i] = v
+	}
 }
 
 // alphaAt returns a per-pixel alpha lookup from the soft mask, or nil when there

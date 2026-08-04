@@ -63,7 +63,7 @@ func listImages(w io.Writer, ims []*pdfimage.Image) error {
 		return nil
 	}
 	byCodec := map[string]int{}
-	alpha, premul, unsupported := 0, 0, 0
+	alpha, premul, blended, unsupported := 0, 0, 0, 0
 	for _, im := range ims {
 		byCodec[im.Codec.String()]++
 		if im.Alpha() {
@@ -71,6 +71,9 @@ func listImages(w io.Writer, ims []*pdfimage.Image) error {
 		}
 		if im.Premultiplied() {
 			premul++
+			if !im.Recoverable() {
+				blended++
+			}
 		}
 		if _, err := im.Ext(); err != nil {
 			unsupported++
@@ -81,6 +84,12 @@ func listImages(w io.Writer, ims []*pdfimage.Image) error {
 	}
 	fmt.Fprintf(w, "\n%d images  %s\n", len(ims), joinCounts(byCodec))
 	fmt.Fprintf(w, "%d with transparency, %d premultiplied against a matte", alpha, premul)
+	if blended > 0 {
+		// Named because these are the images whose written samples are not the colours
+		// they should be. The rest are un-premultiplied on the way out, so a user who
+		// is not told this cannot tell the two populations apart in an output directory.
+		fmt.Fprintf(w, " (%d of them left blended — a DCT base is never decoded, so there is nothing to invert)", blended)
+	}
 	if unsupported > 0 {
 		// Said plainly, because these are the ones a write run will not produce.
 		fmt.Fprintf(w, ", %d in a codec this build cannot write", unsupported)

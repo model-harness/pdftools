@@ -4,7 +4,10 @@ Date: 2026-08-03
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0007](0007-invert-matte-pre-blending-in-the-decoder.md), which
+moves `/Matte` un-premultiplication into this package: the "hand over both layers" position
+below holds for the mask file and for the 5 images with a DCT base, but the other 131 base
+images now carry their true colours.
 
 ## Context
 
