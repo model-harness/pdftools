@@ -1,0 +1,140 @@
+ocr/ocr.go
+  s_5cd1b28ed520c1::t_0d33063f2eefbe 1-143
+ocr/ipc/listen_windows.go
+  s_5cd1b28ed520c1::t_3c4841108ed324 1-27
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_dc56de5bea8cd6 280-286
+  s_5cd1b28ed520c1::t_d03d03aeab642b 326
+  s_5cd1b28ed520c1::t_21f9decfa56a98 359-360,363-372
+  s_5cd1b28ed520c1::t_74b1608f4ee361 499-516
+  s_5cd1b28ed520c1::t_ddc4f58291a04c 233-239
+  s_5cd1b28ed520c1::t_9a8c00707fd1ca 469-484
+  s_5cd1b28ed520c1::t_bbead9313be82a 544-552
+docs/adr/0006-recognize-scanned-pages-over-an-inferd-compatible-wire.md
+  s_5cd1b28ed520c1::t_8672ae90f75331 1-167
+ocr/ipc/dial_windows.go
+  s_5cd1b28ed520c1::t_f316aa8417b444 25-28
+  s_5cd1b28ed520c1::t_0e4b706102ac28 1-24,29-61
+ocr/ocr_test.go
+  s_5cd1b28ed520c1::t_90971b550b2b41 1-140
+ocr/ipc/client.go
+  s_5cd1b28ed520c1::t_9492c3b5fdfffa 9
+  s_5cd1b28ed520c1::t_841f792b95907f 1-8,10-66,71-79,81-82,92-167
+  s_5cd1b28ed520c1::t_6c9f005395ef3a 67-70,80,83-91
+ocr/ipc/listen_unix.go
+  s_5cd1b28ed520c1::t_f8a17116c51ac3 1-50
+cmd/pdfspec/md_test.go
+  s_5cd1b28ed520c1::t_1c29d949b296cc 132-135
+  s_5cd1b28ed520c1::t_62da196cdf991f 126
+docs/adr/0005-rasterize-through-pdfium-on-wasm.md
+  s_5cd1b28ed520c1::t_f535f3b60b1cbe 48-57
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_bf862ccd0abee5 69-83
+ocr/doctags/doctags.go
+  s_5cd1b28ed520c1::t_6e565492c4ee48 627-632
+  s_5cd1b28ed520c1::t_da0112747cf59b 267-270,273-274
+  s_5cd1b28ed520c1::t_4ace69127d1a12 1-266,271-272,275-332,345-626,633-641,644,696
+  s_5cd1b28ed520c1::t_ff59bc1b4c8184 333-344
+  s_5cd1b28ed520c1::t_49f77f6ea6f0fa 642-643,645-695
+ocr/doctags/doctags_test.go
+  s_5cd1b28ed520c1::t_163c8f8f3b1ed3 231,238-241
+  s_5cd1b28ed520c1::t_69789053b2766b 1-37,42-47,49-193,195,198-206,209-230,232-237,242-437
+  s_5cd1b28ed520c1::t_44e00ea1ecc41d 194,196-197,207-208
+  s_5cd1b28ed520c1::t_b9411d495cd1b7 38-41,48
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_cf5b80cb07814c 46-47
+  s_5cd1b28ed520c1::t_4190ffcd59ea6b 20
+ocr/ipc/server.go
+  s_5cd1b28ed520c1::t_55d14be2d44ada 1-10,12-113,126-132,134-136,141-142,144-155,163-167,169-233
+  s_5cd1b28ed520c1::t_d938e8019193a0 11
+  s_5cd1b28ed520c1::t_4e43d6b9a0b640 156-162,168
+  s_5cd1b28ed520c1::t_7957b18cf09d85 114-125,133,137-140,143
+ocr/ipc/listen.go
+  s_5cd1b28ed520c1::t_87a78a74c42ac8 1-88
+ocr/ipc/ipc_test.go
+  s_5cd1b28ed520c1::t_54f8149cde2e70 382-412
+  s_5cd1b28ed520c1::t_ca55db7a3ca431 25,110,158,215,545,582
+  s_5cd1b28ed520c1::t_bf1de78578194c 26-33
+  s_5cd1b28ed520c1::t_5a95833f73e02b 1-20,34-109,111-155,159-214,216-282,284-381,413-544,546-581,583-606,608-711,720-724
+  s_5cd1b28ed520c1::t_1b6cda7a327950 21-24
+  s_5cd1b28ed520c1::t_a408f2162b6ed9 156-157
+  s_5cd1b28ed520c1::t_76d01d05bcdf56 283
+  s_5cd1b28ed520c1::t_8a4c468dd688aa 607
+  s_5cd1b28ed520c1::t_6d6b2bfe382c4f 712-719
+ocr/docd/docd.go
+  s_5cd1b28ed520c1::t_293ca58f4fe5ab 1-172,180-339,341-447
+  s_5cd1b28ed520c1::t_a408f2162b6ed9 340
+  s_5cd1b28ed520c1::t_1243f61fd0fd1a 173-179
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_4ef6784af7a62d 413-502
+  s_5cd1b28ed520c1::t_ad1ffd4b7030cd 527-544
+cmd/pdfspec/testdata_test.go
+  s_5cd1b28ed520c1::t_62da196cdf991f 791
+cmd/pdfspec/ocr_test.go
+  s_5cd1b28ed520c1::t_3999e53ad24f4e 1-4,6,8-47,49,51,55-82,97-98,100-103,105-119,121-169,177-221,223-251,253-269,271-290,292-358,360-361,369-370
+  s_5cd1b28ed520c1::t_13a91477d8ac7b 5,7
+  s_5cd1b28ed520c1::t_8dfa15d793c572 222,252
+  s_5cd1b28ed520c1::t_e03d9e951237b8 50
+  s_5cd1b28ed520c1::t_ae1b0999895ae3 120
+  s_5cd1b28ed520c1::t_052d9872b21348 83-96,99,104
+  s_5cd1b28ed520c1::t_97a50880873733 270
+  s_5cd1b28ed520c1::t_549996a7fbfb06 52-54
+  s_5cd1b28ed520c1::t_fb9d133f70fb81 170-176
+  s_5cd1b28ed520c1::t_288cb712168b1b 291
+  s_5cd1b28ed520c1::t_cd69387b2ecbb5 359,362-368
+  s_5cd1b28ed520c1::t_735bfb2e608194 48
+ocr/ipc/ipc.go
+  s_5cd1b28ed520c1::t_d388e954169631 1-451,461-467,473-474,482-492,501-518,520-538
+  s_5cd1b28ed520c1::t_f670940c6db862 452-460,468-472,475-481
+  s_5cd1b28ed520c1::t_405a257608f9ee 493-500
+  s_5cd1b28ed520c1::t_12d8b5183865a8 519
+ocr/ipc/dial_unix.go
+  s_5cd1b28ed520c1::t_2b39f45497449e 1-51
+docs/test.docs.md
+  s_5cd1b28ed520c1::t_ee4101dd85b093 398
+  s_5cd1b28ed520c1::t_6b5b7092d37b48 397
+  s_5cd1b28ed520c1::t_74ca46cebb46da 13-16
+  s_5cd1b28ed520c1::t_6b53c134581b25 82-97
+  s_5cd1b28ed520c1::t_fd3ec25cdde805 140
+  s_5cd1b28ed520c1::t_5f9b1266038e52 245-276
+  s_5cd1b28ed520c1::t_cd933b3fb8b122 384-396,399-407,418-419
+ocr/ipc/local.go
+  s_5cd1b28ed520c1::t_072eb1c752ce6e 1-39,43-80
+  s_5cd1b28ed520c1::t_3f829cf6e038fd 40-42
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_637fb0c92e2e9c 1-8,10-107,109-172,174-183,188-285,290-354
+  s_5cd1b28ed520c1::t_21e809ce802a26 173,184-187
+  s_5cd1b28ed520c1::t_8e919010908033 286-289
+  s_5cd1b28ed520c1::t_a36b8755a30778 108
+  s_5cd1b28ed520c1::t_ba5019f7ab3619 9
+testdata/docling/01030000000083.dt
+  s_5cd1b28ed520c1::t_e7e01d0a7e26f9 1-8
+testdata/docling/2206.01062.yaml.dt
+  s_5cd1b28ed520c1::t_5c6e3cb1cf0d2a 1-160
+testdata/docling/2206.01062.yaml.md
+  s_5cd1b28ed520c1::t_9da6d5ee23087e 1-318
+testdata/docling/bad_doc.yaml.dt
+  s_5cd1b28ed520c1::t_2ba3c7f7299d83 1-3
+testdata/docling/bad_doc.yaml.md
+  s_5cd1b28ed520c1::t_67b42ed6700a93 1-3
+testdata/docling/barchart.dt
+  s_5cd1b28ed520c1::t_560876457e401d 1-3
+testdata/docling/barchart.gt.md
+  s_5cd1b28ed520c1::t_742bcdcc2c4fef 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "dc96c22340f8ea781143b042bdc180fa56d8da6e",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
