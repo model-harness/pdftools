@@ -17,6 +17,7 @@ commands:
   okf      convert a PDF to an Open Knowledge Format bundle, one file per clause
   images   extract embedded images, original codec preserved where possible
   render   rasterize pages to PNG or JPEG
+  ocr      convert a PDF to Markdown, recognizing pages that carry no text
   probe    report what a PDF contains and which extraction path it will take
   version  print version
 
@@ -42,6 +43,8 @@ func main() {
 		err = runImages(args)
 	case "render":
 		err = runRender(args)
+	case "ocr":
+		err = runOCR(args)
 	case "probe":
 		err = runProbe(args)
 	case "version", "-v", "--version":

@@ -45,10 +45,16 @@ repo declares.** `render.Rasterizer` is three methods — `PageCount`, `Page`, `
 go-pdfium type appears in any signature `render` or `render/pdfium` exports. The native
 rasterizer of Phase 6 is a sibling package and a one-line wiring change in `cmd`.
 
-**The WASM backend, not the CGO one, and this is a requirement rather than a preference.**
-go-pdfium ships both. The CGO build is faster and would break `go build` for any target
-without a pdfium toolchain on the machine, which is the single property §9 protects. wazero
-is a pure-Go runtime, so cross-compilation still produces one static binary.
+**The WASM backend, not the CGO one.** go-pdfium ships both. The CGO build is faster and
+would break `go build` for any target without a pdfium toolchain on the machine, which is
+the property §9 protects. wazero is a pure-Go runtime, so cross-compilation still produces
+one static binary.
+
+The rule this follows is about *linkage*, not about language. A CGO dependency changes what
+`go build` requires of every user of the library; a separate process does not, and §9 was
+softened to say so once `ocr/docd` began running llama.cpp as a subprocess. So a linked C++
+rasterizer is still ruled out here — the alternative is pure Go and costs only speed —
+while a subprocess elsewhere in the repo is not a contradiction of it.
 
 **The resolution policy lives in `render.Fit`, not in the adapter.** DPI, the pixel cap, and
 the rounding direction are one function every adapter calls, because a native rasterizer that

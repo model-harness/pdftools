@@ -123,15 +123,16 @@ func TestMDEmitsNoControlBytes(t *testing.T) {
 				if c == '\n' || c == '\r' || c == '\t' || c >= 0x20 && c != 0x7f {
 					continue
 				}
-				t.Fatalf("control byte 0x%02x at offset %d, in %q", c, i, context(md, i))
+				t.Fatalf("control byte 0x%02x at offset %d, in %q", c, i, around(md, i))
 			}
 		})
 	}
 }
 
-// context is the text around an offset, for a failure message that names the sentence
-// rather than the byte.
-func context(s string, i int) string {
+// around is the text around an offset, for a failure message that names the sentence
+// rather than the byte. Not called "context": the package imports the standard library's
+// context, and a function of that name here shadows the package for every file in it.
+func around(s string, i int) string {
 	lo, hi := max(0, i-40), min(len(s), i+40)
 	return s[lo:hi]
 }

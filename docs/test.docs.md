@@ -10,8 +10,10 @@ Association's technical notes, one arXiv paper. It is where every threshold in t
 suite was measured, and it is **gitignored** — the ISO PDFs are paid documents and not
 redistributable. Corpus tests skip when the files are absent, so a fresh clone passes.
 
-**`testdata/` — the reference fixtures.** 30 files from PyMuPDF and Adobe, committed,
-each one chosen upstream *as a test input*. See §Provenance.
+**`testdata/` — the reference fixtures.** 37 files from PyMuPDF, Adobe, and docling-core,
+committed, each one chosen upstream *as a test input*. Thirty are PDFs; the other seven are
+DocTags/Markdown pairs for the OCR parser, which needs a model's output rather than a
+model's input. See §Provenance.
 
 The corpus is a good regression baseline and a bad witness. Ten of its eleven files are
 tagged standards prose from one family of producers, so it exercises the tagged path
@@ -77,6 +79,22 @@ Adobe considers a representative or a problematic document.
 - `src/resources/invalidinputs/` — deliberately bad inputs. `zeroLength.pdf` is 0 bytes
   and `disqualifiedScannedPages.pdf` is 151 pages Adobe's own OCR declines.
 
+### docling-core — `github.com/docling-project/docling-core`
+
+**MIT** — the same licence as this repo, and the only source here with no licensing
+friction at all. It is also the only source that supplies no PDFs: what it supplies is
+DocTags, the tag stream `granite-docling-258M` emits, and the Markdown docling itself
+renders that stream to. These are the ground-truth pairs `ocr/doctags` is written against
+(§Fixtures), and they are what made the parser finishable before a model was ever loaded.
+
+- [`docling_core/types/doc/tokens.py`](https://github.com/docling-project/docling-core/blob/main/docling_core/types/doc/tokens.py)
+  — the vocabulary, and the only normative statement of it. `ADR 0006` pins it at commit
+  `23fa247e`. Two things in it are not guessable: `<loc_>` is a **500-unit normalized grid**
+  (`round(500*val)` clamped to `[0, 499]`, four tokens in x0,y0,x1,y1 order), and `<table>`
+  and `<chart>` are members of *both* the element set and the picture-classification set.
+- [`test/data/doc/`](https://github.com/docling-project/docling-core/tree/main/test/data/doc)
+  — the fixtures, as `.dt`/`.md` pairs.
+
 ### Adobe PDF Services docs — `github.com/AdobeDocs/pdfservices-api-documentation`
 
 **Apache-2.0** for the documentation. No fixtures taken from here; it is a reference for
@@ -119,7 +137,7 @@ it *as a reference fixture*. Two categories are excluded:
   licence.
 - **Copies of the ISO specifications.** ISO's copyright, whoever redistributes them.
 
-**On the AGPL.** 22 of the 30 fixtures are AGPL-3.0 upstream. They are data in a marked
+**On the AGPL.** 22 of the 37 fixtures are AGPL-3.0 upstream; the other 15 are MIT. They are data in a marked
 directory with attribution, not linked code — mere aggregation, which does not relicense
 this project's MIT Go source. No PyMuPDF or MuPDF code is used, read for copying, or
 translated; where their approach informed a design decision it is cited in `DESIGN.md` as
@@ -223,6 +241,38 @@ which is the point — the invisible text layer is invisible.
 | `sampleInvoice.pdf` | 3 | layout | **The producer-stub witness.** `StructTreeRoot` present, `/MarkInfo /Marked true`, and two `Document` elements holding nothing — 0 headings, 0 paragraphs, 0 MCIDs. Also 5 `/SMask`s with no `/Matte`. |
 | `watermark.pdf` | 1 | tagged | Tagged, and the text really is only spaces: every showing operator is `[( )] TJ` inside a `/Span`. 0 characters is correct. |
 | `zeroLength.pdf` | 0 | *error* | **0 bytes.** Every corpus file opens; this one must not, and must fail with a reason rather than a panic or an empty success. |
+
+### docling-core (`testdata/docling/`)
+
+The only fixtures that are not PDFs, because the thing they test is not a PDF. `ocr/doctags`
+parses what a vision model *emits*, so its input is a tag stream and its ground truth is
+docling's own Markdown for that stream. Asserted in `ocr/doctags/doctags_test.go`, which
+never skips: no model, no GPU, no daemon, and nothing downloaded at test time.
+
+| File | Covers |
+|---|---|
+| `2206.01062.yaml.dt` | **The wide case.** 9 pages of a real paper carrying every construct the parser handles: 5 OTSL tables with `lcel`/`ucel` spans, 6 pictures with captions nested inside them, 8 `<page_break>`s, unordered lists, footnotes. 567 blocks across every `doc.Role`. |
+| `2206.01062.yaml.md` | docling's Markdown for the file above — the ground truth our sink is measured against. |
+| `barchart.dt` | **The smallest complete document**, and the only one with a `<chart>`: a picture-classification token (`<bar_chart>`) ahead of the OTSL grid of the chart's data. Small enough that all 22 blocks are asserted individually. |
+| `barchart.gt.md` | Ground truth for the above, short enough to read whole. |
+| `01030000000083.dt` | **One page as a model actually emits it** — no document wrapper, `<page_header>`/`<page_footer>`, three `<otsl>` tables each with its caption nested inside. This is the shape `ParsePage` sees from the router, which is the only shape the OCR path ever produces. |
+| `bad_doc.yaml.dt` | **Upstream's deliberately degenerate input:** tags with no `<loc_>` tokens anywhere. A model that stops emitting coordinates mid-generation is a real failure, and this is the no-panics rule applied to model output — the text comes through with zero rectangles. |
+| `bad_doc.yaml.md` | Ground truth for the degenerate case, and the pin for a **deliberate divergence**: docling renders `section_header_level_1` as `###`, because its serializer nests headings relative to the `<title>` before them. This package assigns level 2, because a level that depends on what came earlier cannot be assigned while parsing a single page — and a single page is all the router ever asks for. Recorded as a decision rather than left as a surprise. |
+
+Two things these files pin that no amount of reading the model's output would reveal.
+`<loc_>` is a **500-unit normalized grid**, not points and not a percentage, so the four
+tokens are `round(500*val)` clamped to `[0, 499]` in x0,y0,x1,y1 order. And **DocTags Y runs
+top-down while PDF user space runs bottom-up**, so the parser flips it — a document parsed
+without the flip reads perfectly and has every rectangle mirrored, which no text comparison
+can catch. `TestCoordinates` is the arithmetic; `TestOCRVerbReplacesScannedPage` catches it
+again at the verb.
+
+The other trap is a token-set collision. `<table>` and `<chart>` are in the element set
+*and* the picture-classification set, and a classification is shaped exactly like an element
+name. Nesting context resolves it — inside a `<picture>`, one of those names is the
+classification — and getting it backwards is not subtle: the first implementation read every
+element name as a classification and produced 561 paragraphs and zero headings from a 9-page
+paper.
 
 ### The CJK line wrap
 
@@ -331,6 +381,30 @@ document contains.
 
 ---
 
+## What the fixtures pin for the OCR router
+
+The `ocr` verb's decision — send this page to a model or keep what the extractor found — is
+a threshold on text coverage, and these files are where the threshold's two ends were
+measured. The numbers are the argument for 5% being safe (ADR 0006):
+
+| File | Coverage | What it establishes |
+|---|---|---|
+| `pymupdf-utilities/scanned.pdf` | 0.000 | The clean positive: one DCT image, no fonts, nothing to extract. |
+| `adobe-samples/watermark.pdf` | 0.000 | Zero coverage from a *tagged* file — every showing operator is `[( )] TJ`. Coverage does not read the tags, and here it is right not to. |
+| `pymupdf-utilities/test.pdf` | 0.003 | **The case the rule exists for, and it routes.** 711 bytes of one line on a full page is indistinguishable from a scan carrying a Bates number, because nothing in the file distinguishes them. Not a false positive — which is why the tests' born-digital witness is `2201.00069.pdf` and a comment in `ocr_test.go` says so. |
+| `pymupdf/test-linebreaks.pdf` | 0.044 | Just under the threshold: the nearest thing in the population to a borderline call. |
+| `pymupdf/2201.00069.pdf` | 0.729 | The clean negative, and the tests' digital fixture. |
+| `adobe-samples/extractPdfInput.pdf` | 0.806 / 0.721 / 0.709 | The densest in the population, and three pages of it, so the negative is not one lucky page. |
+| `pymupdf/mupdf_explored.pdf` | 0.026 (p1) | 285 pages, **5 of them below the threshold** — a title page and chapter dividers, correctly. The reason the decision is per page and not per document. |
+
+Two orders of magnitude separate the two populations, which is what makes the exact default
+not load-bearing. What no fixture here covers is whether the model reads a given page
+*correctly*: that is a property of the weights, and no test in this repository can assert it.
+`ocr/doctags` is tested against upstream's ground truth (§above) and the verb's pipeline is
+tested with a fake `Engine`, which is what the interface is for.
+
+---
+
 ## Running against these
 
 ```bash
@@ -341,6 +415,8 @@ pdfspec md -o out.md testdata/pymupdf/small-table.pdf
 pdfspec images -o ./img testdata/adobe-samples/sampleInvoice.pdf
 pdfspec okf -o ./bundle testdata/adobe-samples/extractPdfInput.pdf
 pdfspec render -o ./png testdata/adobe-samples/ocrInput.pdf -pages 1,3
+pdfspec ocr -dry-run testdata/adobe-samples/ocrInput.pdf   # which pages need a model
+pdfspec ocr -o out.md testdata/pymupdf-utilities/scanned.pdf
 ```
 
 ```bash

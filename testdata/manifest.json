@@ -66,6 +66,21 @@
         { "path": "adobe-samples/zeroLength.pdf", "upstream": "src/resources/invalidinputs/zeroLength.pdf", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "size": 0, "why": "Zero bytes. Upstream ships it deliberately as an invalid input: must fail with a reason, not panic" },
         { "path": "adobe-samples/disqualifiedScannedPages.pdf", "upstream": "src/resources/invalidinputs/disqualifiedScannedPages.pdf", "sha256": "d1177e325d3eaa93edd4abe034eff5225d7565dd9f36c3e3c49b79006178ae28", "size": 26353, "why": "151 pages, zero fonts, zero images — Adobe's own disqualified-input fixture" }
       ]
+    },
+    {
+      "repo": "docling-project/docling-core",
+      "commit": "23fa247e9abeaaf3e9f378f635758ce8915b08e7",
+      "license": "MIT",
+      "license_note": "Not PDFs. These are DocTags documents and the Markdown docling itself renders them to — the ground-truth pairs for ocr/doctags. MIT, the same licence as this repo. They matter because they make the parser testable with no model running and no GPU: DocTags is granite-docling's output format, and these are the format's own author's expectations.",
+      "files": [
+        { "path": "docling/2206.01062.yaml.dt", "upstream": "test/data/doc/2206.01062.yaml.dt", "sha256": "9b447e052046b132197e514b91523b8527ca7236116ade3e59982f68ad97aaab", "size": 56218, "why": "The wide case: 9 pages of a real paper, every tag the parser must handle — 5 OTSL tables with lcel/ucel spans, 6 pictures with nested captions, 8 page_breaks, unordered lists, footnotes" },
+        { "path": "docling/2206.01062.yaml.md", "upstream": "test/data/doc/2206.01062.yaml.md", "sha256": "4d41d53d1304e6961467b867f347801fdd93b3f1f721c3a9173a9563c368b2d7", "size": 50908, "why": "docling's own Markdown for the file above: the ground truth this repo's Markdown sink is measured against, so a disagreement is visible rather than argued" },
+        { "path": "docling/barchart.dt", "upstream": "test/data/doc/barchart.dt", "sha256": "f312bc1bf98ca847dcc08d13697dfa57ad4c04861d5e909f933f1a0691f9242c", "size": 436, "why": "The smallest complete document, and the only fixture with a <chart> holding a picture-classification token (<bar_chart>) before its OTSL grid" },
+        { "path": "docling/barchart.gt.md", "upstream": "test/data/doc/barchart.gt.md", "sha256": "fb655f13706c4173ba48166faf771fb5e622b8cf74a01114b30836d82d8b525f", "size": 563, "why": "Ground truth for barchart.dt, small enough to read whole" },
+        { "path": "docling/01030000000083.dt", "upstream": "test/data/doc/01030000000083.dt", "sha256": "3cde16ef453c6714d53e1de6de86cf06ca840bcea7ce8fd9d37c5241245ea91d", "size": 2051, "why": "One page as the model actually emits it — a scanned page's worth of OTSL, page_header and page_footer, unwrapped by any document assembly step" },
+        { "path": "docling/bad_doc.yaml.dt", "upstream": "test/data/doc/bad_doc.yaml.dt", "sha256": "f209f0aae47baf77e74c419b42a803665aefc1bfa5565210222e5d8d18781aba", "size": 126, "why": "Upstream's deliberately-degenerate case: tags with no <loc_> coordinates at all. A model that stops emitting locations must still parse, which is the no-panics gate applied to model output" },
+        { "path": "docling/bad_doc.yaml.md", "upstream": "test/data/doc/bad_doc.yaml.md", "sha256": "dcfc1f39df47d6021f26c3467de550f8d806310cf7e699a8540802724504b260", "size": 51, "why": "Ground truth for the degenerate case, and the pin for a surprise: docling renders section_header_level_1 as `###`, not `##`" }
+      ]
     }
   ]
 }

@@ -410,6 +410,96 @@ All notable changes to this project are documented here, following
   file in `testdata/` or the corpus has an annotation with a visible appearance stream —
   which is why that flag was silently untested and silently wrong. See Fixed.
 
+- `ocr` — the recognition interface and the routing rule, which is the whole of the package's
+  policy. `Engine` is `Recognize(ctx, *image.RGBA, Options) (string, error)` plus `Close`;
+  `Route(page, threshold)` decides a page by **text coverage** — the union of its block
+  rectangles over its crop box — rather than by a character count, because a scanned page
+  carrying a Bates number or a stamped folio has characters and no content. `DefaultThreshold`
+  is 0.05. Two orders of magnitude separate the populations it divides (measured: 0.000 for a
+  bare scan against 0.729 and 0.806 for pages of prose), so the exact default is not
+  load-bearing; 0 is the off switch and 1 forces every page, which is how a caller expresses
+  both extremes without a second flag meaning the same thing. A page already marked
+  `Rasterized` is never routed, since asking a model to re-read its own output is not a
+  stronger reading of the page.
+- `ocr/doctags` — the parser for DocTags, the tag stream `granite-docling-258M` emits, into
+  the same `doc.Page` the extractor produces. `Parse` for a whole document, `ParsePage` for
+  one page, and a page break inside single-page input is an error rather than a silent second
+  page. Both sinks and every downstream consumer therefore work on a document that is part
+  scanned and part digital without knowing which pages were which — `doc.Page.Rasterized` is
+  the only trace the model leaves. The vocabulary is pinned from `docling_core/types/doc/
+  tokens.py` at commit `23fa247e`, and two of its properties are not guessable from the
+  output: `<loc_>` is a **500-unit normalized grid** (`round(500*val)` clamped to `[0, 499]`,
+  four tokens in x0,y0,x1,y1 order), and **DocTags Y runs top-down while PDF user space runs
+  bottom-up**, so the parser owns the flip. A document parsed without it reads perfectly and
+  has every rectangle mirrored, which no text comparison catches.
+- `ocr/ipc` — the wire, **byte-identical to inferd's generation protocol v2** rather than
+  merely similar: `[uvarint payload_len][1 byte frame_type][payload]` with no delimiter,
+  `0x01` JSON and `0x02` BLOB, `Version uint32 = 1` in band, a 64 MiB cap checked *before*
+  allocation, inferd's socket-resolution chain (`$XDG_RUNTIME_DIR/inferd/inferd.sock` →
+  `$HOME/.inferd/run` → `/tmp/inferd`, `${TMPDIR}` on macOS, `\\.\pipe\inferd` on Windows),
+  and its enumerated error codes. Byte compatibility is what "inferd is a drop-in
+  replacement" actually means, so matching a JSON idiom would not have been enough. Framed
+  binary rather than NDJSON because a 200 DPI page is ~12 MB of arbitrary octets and base64
+  costs a third more plus a copy each way; images ride as interleaved RGB with no alpha,
+  matching inferd's ADR 0016, because the daemon links no image codec. Reimplemented rather
+  than imported — inferd's Go client has no server side, this repo needs one, and a shared
+  module would couple two release cadences. Both a `Local` bridge (in-process, no socket) and
+  an `Engine` (over the socket) satisfy `ocr.Engine`, and a test asserts the same handler
+  yields identical text either way.
+- `ocr/docd` — minimal scaffolding to run a model: `llama-server` as a child process, talked
+  to over loopback HTTP. `/v1/chat/completions` with a PNG data URI rather than `/completion`
+  with a media marker, because `get_media_marker()` in llama.cpp's `tools/server/
+  server-common.cpp` **randomizes the marker per process** while `mtmd_default_marker()` still
+  returns the documented `<__media__>` — a client using the documented one fails against a
+  real server, and fails as a model-quality problem rather than a protocol error. PNG rather
+  than JPEG because the payload is a page of text and JPEG's ringing lands on exactly the
+  glyph edges the model reads. The executable is **located on `PATH` and never downloaded**;
+  when it is absent the error carries the official per-platform install command. Model
+  *weights* are data and go through llama.cpp's own `-hf` cache with its own integrity checks,
+  deliberately not reimplemented — a second downloader means a second cache, a second checksum
+  policy, and two places for a partially written GGUF to hide. `granite-docling-258M-GGUF` is
+  the default: Apache-2.0 base weights, because an MIT repo cannot make a copyleft model its
+  default. Binds 127.0.0.1 with no option to change it.
+- `cmd/pdfspec ocr` — Markdown, recognizing only the pages that need it. `-o`, `-pages`,
+  `-threshold`, `-force`, `-dry-run`, `-dpi`, `-max-tokens`, `-addr`, `-exe`, `-model`, `-ngl`,
+  `-ctx`, `-frontmatter`, `-artifacts`. It is `md` plus a fallback, not a second pipeline: the
+  extractor runs over the whole document, the router picks the pages whose content stream
+  carries nothing, and only those cost a model — so a born-digital file produces byte-identical
+  output to `md` and **loads nothing at all**, which is asserted. `-dry-run` reports the routing
+  decision and exits, because the model is the expensive part and the decision is free ("which
+  pages of this 1,000-page file need OCR" should not cost a 500 MB download). Generation is
+  bounded at 8192 tokens per page by default, since the failure mode of a vision model on a
+  dense page is not silence but a repetition loop emitting the same table row until something
+  stops it; the bound turns it into a truncated page the parser still reads. Recognition is
+  serial and deliberately has **no `-jobs` flag** — the host runs one slot and the wire allows
+  one in-flight request per connection, so page-level fan-out would add queueing without
+  throughput, and this is the one place the verb's structure diverges from `render`'s because
+  the resource does. A page the model fails on keeps its extracted text and is not marked
+  `Rasterized`, while a generation that errored *after* emitting DocTags is kept and parsed.
+- `docs/adr/0006-recognize-scanned-pages-over-an-inferd-compatible-wire.md` — the four
+  cross-cutting decisions (which pages, what the model returns, who runs it, how this repo
+  talks to it), the measurements that shaped them, and the security posture stated rather than
+  assumed.
+- 7 MIT fixtures in `testdata/docling/` — docling-core's own DocTags documents and the
+  Markdown docling renders them to, pinned by SHA-256 at commit `23fa247e`. The only
+  non-PDF fixtures in the repo, and the reason the parser was finishable before a model was
+  ever loaded: `ocr/doctags`'s tests run with no model, no GPU, and no daemon.
+- Tests. `ocr`: `Route` across the routing table, the threshold's two extremes, and a check
+  that the default separates the two measured populations. `ocr/doctags`: 9 pages and 567
+  blocks across every `doc.Role` from upstream's widest fixture, the smallest document
+  asserted block by block, upstream's no-coordinates degenerate case, one page as a model
+  emits it, the Y-flip arithmetic, and a 25-case malformed-input matrix. `ocr/ipc`: framing,
+  the wire version, the request JSON shape against inferd's field names, round-trips, image
+  padding, the frame cap, malformed frames, blob/descriptor mismatch, cancellation, and
+  `TestLocalMatchesIPC`, which is the claim the two paths are one interface. `cmd/pdfspec`: the
+  whole verb pipeline against a fake `Engine` — which is what the interface is for, and why
+  none of this needs a llama-server on CI — including that a scanned page comes out holding the
+  model's text and marked `Rasterized`, that a failed page keeps what the file said, that a
+  truncated generation is kept, byte-identical output to `md` on a born-digital document, and
+  two assertions that catch coordinate defects no text comparison would: a recognized block
+  above the page midpoint (a removed Y flip fails it) and an image width ≥ 500 at 72 DPI
+  (passing the page box instead of the raster fails it).
+
 ### Fixed — 2026-08-04
 
 - `-annots` drew form fields only, not annotations. go-pdfium's `RenderForm` calls
@@ -433,6 +523,24 @@ All notable changes to this project are documented here, following
   is 1272.98 × 1647.40. It is 1272.999 × 1647.411, whose product is the cap exactly — which
   is the actual reason rounding up breaches it. Corrected in `render.go`, its test, ADR 0005,
   and above.
+
+### Changed — 2026-08-04
+
+- **`DESIGN.md` §9's "pure Go, no CGO" is a preference scoped to linkage, not a prohibition on
+  languages.** The rule it was written to protect is that `go build` works for any target with
+  no toolchain on the machine and the binary is one file, and a CGO dependency changes that for
+  every user of the library. A *subprocess* does not, so what the binary talks to is a separate
+  question and Rust or C++ on the far side of a process boundary is acceptable where it is the
+  right tool — `ocr/docd` runs llama.cpp that way, and the OCR path degrades to "no model
+  available" rather than failing to compile. ADR 0005 was amended to match: a linked C++
+  rasterizer is still ruled out there, because the alternative is pure Go and costs only speed,
+  while a subprocess elsewhere in the repo is not a contradiction of it.
+- `docs/test.docs.md` records the docling fixtures, the DocTags vocabulary pin, and the
+  coverage measurement behind the OCR router's default. The fixture count is now 37 across
+  four upstreams, 15 of them MIT.
+- A test helper in `cmd/pdfspec` named `context` became `around`. A function of that name
+  shadows the standard library package for every file in the package, which the `ocr` verb's
+  `"context"` import turned from latent into a build failure.
 
 ### Changed — 2026-08-03
 

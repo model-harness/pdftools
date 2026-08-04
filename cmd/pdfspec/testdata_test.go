@@ -788,7 +788,7 @@ func TestFixtureNoControlBytes(t *testing.T) {
 				if c == '\n' || c == '\r' || c == '\t' || c >= 0x20 && c != 0x7f {
 					continue
 				}
-				t.Fatalf("control byte 0x%02x at offset %d, in %q", c, i, context(md, i))
+				t.Fatalf("control byte 0x%02x at offset %d, in %q", c, i, around(md, i))
 			}
 		})
 	}

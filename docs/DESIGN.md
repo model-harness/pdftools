@@ -230,9 +230,13 @@ sectionize/           Section reconstruction by heading sequence: each heading
                         doc.Section
 render/               Interface: Rasterizer — page → image.Image at DPI
 render/pdfium/          Adapter: go-pdfium on wazero WASM. No CGO
-ocr/                  Interface: Engine — image → markdown or DocTags
-ocr/llamacpp/           Adapter: llama.cpp multimodal, model download + cache
-ocr/doctags/            DocTags → doc.Section parser (granite-docling output)
+ocr/                  Interface: Engine — image → DocTags. Also Route, the
+                        text-coverage rule that decides which pages cost a model
+ocr/doctags/            DocTags → doc.Page parser (granite-docling output)
+ocr/ipc/                The wire, byte-identical to inferd's generation protocol.
+                        Client, server, and an in-process bridge, all one Engine
+ocr/docd/               Host: llama-server as a subprocess over loopback HTTP.
+                        The interim backend until inferd carries docling
 sink/markdown/        doc.Document → one .md or per-page .md
 sink/okf/             doc.Section tree → OKF bundle
 cmd/pdfspec/          CLI
@@ -273,10 +277,13 @@ PDF ─► objects ─┬──►│                                           
 ```
 
 The router is per page and its rule is measurable: if a page's extracted text covers less
-than a threshold of the page area, or yields no text at all, that page goes to
-`render → ocr`. A mixed document — a born-digital spec with three scanned appendix pages
-— produces a mixed pipeline in one pass. This is why `ocr` returns `doc.Section` and not
-a string: OCR output rejoins the same domain model and the same sinks.
+than a threshold of the page area — 5% by default — or yields no text at all, that page goes
+to `render → ocr`. A mixed document, a born-digital spec with three scanned appendix pages,
+produces a mixed pipeline in one pass. This is why the OCR path ends at **`doc.Page` and not
+at a string**: recognized pages rejoin the same domain model and the same sinks, so nothing
+downstream needs to know which pages a model read. `doc.Page.Rasterized` is the only trace
+it leaves, and it is there because a knowledge bundle a model will later treat as fact must
+record which of its text was inferred.
 
 ### Solving the spaces problem properly
 
@@ -316,7 +323,7 @@ copyleft; nothing borrowed is EULA-encumbered.
 | Glyph rasterization | via the raster adapter | — | Follows the rasterizer |
 | JBIG2 decode | none initially | — | **High.** Port from Apache PDFBox's decoder (Apache-2.0, ITU T.88 / ISO 14492) |
 | JPX (JPEG 2000) | none initially | — | Lowest priority, highest cost. Rare in practice |
-| VLM inference | `llama.cpp` multimodal | MIT | Never native |
+| VLM inference | `llama.cpp` multimodal, as a **subprocess** | MIT | Never native. Not linked either — see §9: the rule is about linkage, and a model host belongs in its own process |
 | Structure tree, extraction, sectionize, sinks | **native from day one** | MIT | n/a — this is the repo's own contribution |
 
 The last row is the point. The borrowed layers are the commodity ones. The layers that
@@ -349,12 +356,20 @@ pdfspec probe <file.pdf>               tagged? encrypted? filters? fonts? per-pa
 pdfspec images <file.pdf> -o dir/      extract embedded images, original codec preserved
 pdfspec images --list <file.pdf>       report codecs, sizes, and masks; write nothing
 pdfspec render <file.pdf> -o dir/      pages → PNG at --dpi
-pdfspec ocr <file.pdf>                 force the VLM path
+pdfspec ocr <file.pdf> [-o out]        one .md, recognizing only the pages that need it
+pdfspec ocr -dry-run <file.pdf>        which pages would go to a model; loads nothing
 ```
 
-Flags that matter: `--dpi` (default 200), `--ocr auto|never|always` (default `auto` — the
-per-page router), `--model` (granite-docling | lightonocr), `--jobs` (page-level
-parallelism).
+Flags that matter: `-dpi` (default 200 for `render`), `-jobs` (page-level parallelism, for
+`render` only — see below), and on `ocr`, `-threshold` (the router's coverage rule; 0 is the
+off switch, 1 forces every page), `-addr` (talk to a host someone else is running), and
+`-model`.
+
+The router is a threshold rather than a mode, which is why there is no `--ocr
+auto|never|always`: three names for two numbers is a worse interface than the numbers, and
+`-threshold 0` and `-threshold 1` already say "never" and "always" without a second flag that
+can disagree with the first. `ocr` has no `-jobs` at all — one model, one slot, one in-flight
+request per connection, so page-level fan-out would add queueing without throughput.
 
 `probe` exists because the first question about any PDF is "which path will this take, and
 why", and the answer must be inspectable without reading source. It is also the harness
@@ -451,14 +466,22 @@ subsystem 21 of its 247 fonts — and deduplication by indirect reference is wha
 the count 245 instead of many thousands, because ISO 32000-2 draws shared images across
 1,023 pages.
 
-**Phase 4 — raster and OCR.** `render` + pdfium WASM adapter, `ocr` + llama.cpp adapter,
-`ocr/doctags`, the per-page router, `render`/`ocr` verbs. Model handling: download to a
-cache directory, verify checksum, load via llama.cpp. Both candidate models are
-Apache-2.0 — granite-docling-258M (Idefics3; siglip2-base-patch16-512 + Granite 165M;
-emits DocTags; official GGUF published by ibm-granite, plus a ggml-org build) and
-LightOnOCR-2-1B (1B, emits markdown directly, wants 200 DPI at 1540 px longest edge,
-community GGUFs). Ship granite-docling first: an eighth the size, official GGUF, and
-DocTags is structured output rather than prose that must be re-parsed.
+**Phase 4 — raster and OCR.** Done, in two halves. `render` + pdfium WASM adapter, `ocr` +
+`ocr/doctags` + `ocr/ipc` + `ocr/docd`, the per-page router, and the `render` and `ocr` verbs.
+Both candidate models were Apache-2.0 — granite-docling-258M (Idefics3;
+siglip2-base-patch16-512 + Granite 165M; emits DocTags; official GGUF published by
+ibm-granite) and LightOnOCR-2-1B (1B, emits Markdown directly, wants 200 DPI at 1540 px
+longest edge, community GGUFs). granite-docling shipped: an eighth the size, official GGUF,
+and DocTags is structured output rather than prose that must be re-parsed. Apache-2.0 was a
+gate rather than a preference — an MIT repo cannot make a copyleft model its default.
+
+Model handling is **not** what this section originally planned. Weights go through llama.cpp's
+own `-hf` cache with its own integrity checks rather than through a downloader here, because a
+second downloader means a second cache, a second checksum policy, and two places for a
+partially written GGUF to hide. The *executable* is a different question and gets the opposite
+answer: `ocr/docd` locates `llama-server` on `PATH` and prints the official install command
+when it is absent, never fetching it, because fetching and running a binary on a user's behalf
+is a supply-chain step of a different kind than fetching data.
 
 The raster half is done: `render` declares `Rasterizer`, `render/pdfium` supplies it on
 wazero, and the `render` verb writes PNG or JPEG. ADR 0005 records what the borrow costs,
@@ -472,6 +495,24 @@ in another's; and page dimensions are asked for in pixels rather than DPI, becau
 DPI API takes an `int` and the pixel cap produces a fractional one. Parallelism is several
 single-threaded Rasterizers over the same file — measured 7.6 ms/page at 1 worker, 3.4 at 4,
 and no better at 8, so `-jobs` defaults to `min(4, NumCPU)`.
+
+The OCR half is a **three-part decoupled chain** — parser ↔ host ↔ model — and the middle link
+is the one with a contract. `ocr.Engine` is three methods this repo declares; `ocr/ipc`
+implements a wire **byte-identical to inferd's generation protocol v2**, so inferd becomes a
+drop-in replacement once it carries docling and `ocr/docd` is the lightweight interim host.
+Byte compatibility rather than a matching JSON idiom is what makes that substitution real. Two
+paths sit behind the one interface and a test asserts they are equivalent: in-process for the
+common case of one CLI invocation over one document, and over a socket for a warm host or a
+machine with the GPU. Neither side can tell which it is.
+
+The router is the reason this is cheap. `ocr.Route` sends a page to a model only when its text
+coverage — the union of block rectangles over the crop box — falls below 5%, so a specification
+with scanned annexes pays for the annexes and nothing else, and a born-digital file loads no
+model at all. Coverage rather than a character count, because a scanned page carrying a Bates
+number has characters and no content. Both paths converge on `doc.Page`, so no sink knows which
+pages were recognized; `doc.Page.Rasterized` is the only trace the model leaves. ADR 0006
+records the rest, including the two things about DocTags that are not guessable from a model's
+output — the 500-unit normalized `<loc_>` grid, and the top-down Y that the parser must flip.
 
 **Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
 sections without paying for inference.
@@ -500,8 +541,15 @@ OKF-ified spec.
   engines is the actual problem this repo exists to absorb.
 - **No panics on malformed input, ever.** A PDF tool that crashes on a broken file is
   useless for the corpora that need it most.
-- **Pure Go, no CGO, single binary, cross-compiles.** The WASM rasterizer is chosen
-  specifically to preserve this.
+- **Pure Go, no CGO, single binary, cross-compiles — for the library and the CLI.** This is a
+  strong preference, not a prohibition, and the distinction is where it applies. Every
+  package a caller imports is pure Go, so `go build` works for any target with no toolchain
+  on the machine and the binary is one file; the WASM rasterizer is chosen specifically to
+  preserve that. What the binary may *talk to* is a separate question, and Rust or C++ on the
+  far side of a process boundary is acceptable where it is the right tool — `ocr/docd` runs
+  llama.cpp as a subprocess for exactly that reason, and the OCR path degrades to "no model
+  available" rather than failing to compile. The line is linkage, not language: a CGO
+  dependency changes what `go build` requires of every user, and a subprocess does not.
 - Full lint, test, and security scan across the codebase before any commit.
 
 ---
