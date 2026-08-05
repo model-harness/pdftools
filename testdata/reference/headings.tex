@@ -1,0 +1,38 @@
+% headings — the heading sequence, and nothing else.
+%
+% One concern: does a run of headings at three depths come back as headings at
+% three depths, in the right order, with their text intact? No lists, no styling,
+% no figures, and short bodies that exist only to prove a heading ended. When this
+% fixture fails, heading detection or ordering is what broke, and nothing else can
+% be blamed for it.
+%
+% Untagged on purpose. Most PDFs are, and the layout path — which infers a heading
+% from its size and weight relative to body text — is the one that reads them. The
+% tagged counterpart is clauses.tex.
+%
+% lmodern and no [T1]{fontenc}: see README.md. Without lmodern pdfTeX can embed PK
+% bitmaps as Type 3 fonts whose glyph names carry no character meaning, and T1
+% writes /Differences entries naming font-encoding slots that look like Unicode and
+% are not.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+
+\section{First Section}
+
+Body of the first section.
+
+\subsection{A Subsection}
+
+Body of the subsection.
+
+\subsubsection{A Sub-subsection}
+
+Body of the sub-subsection.
+
+\section{Second Section}
+
+Body of the second section.
+
+\end{document}

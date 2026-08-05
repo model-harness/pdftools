@@ -40,6 +40,53 @@ All notable changes to this project are documented here, following
   clean conversion. Deliberately a warning and not an error — a page holding one image has
   no text, and that is the honest answer.
 
+### Added — 2026-08-05
+
+- **A yardstick: six reference PDFs with hand-written gold Markdown beside them.** Every
+  fidelity check before this compared the pipeline to *itself* — counts reconciled, bundles
+  round-tripped, escape rates held steady — which detects drift and not being wrong from the
+  start. Asked directly whether the Markdown matched what the PDF said, the honest answer was
+  that nothing had ever compared the two. `testdata/reference/` now holds one single-concern
+  document per feature (headings, text styles, lists, a table, an image-only page, a tagged
+  clause hierarchy), each generated from a committed `.tex` and each beside the Markdown it
+  should produce. The gold files are written from the source's *intent*, never from any
+  reader's output including ours: an Acrobat export would only prove we agree with Acrobat, and
+  an export of our own would turn a defect into an assertion. All six are MIT and committed, so
+  unlike the sponsored ISO corpus every clone can run these.
+- `TestReferenceFidelity` is the tier that must pass: every word the document says, in order,
+  and none invented. `TestReferenceExactMatch` reports the remaining distance without failing
+  the suite, because part of that distance is a debt we chose to defer (grid table emission,
+  DESIGN.md §10) and gating commits on it would mean either paying it now or deleting the test
+  that remembers it. A fixture is promoted into the enforced set the first time it matches;
+  `image` and `clauses` are there today. What the other four measure is a worklist, and the
+  point is that it is measured rather than remembered.
+- The manifest now distinguishes a *generated* source from a vendored one. A vendored file
+  pins an upstream commit because somebody else set its licence; a file authored here has its
+  provenance in this repo's history and has no commit to pin, and a field filled in to satisfy
+  a test stops meaning anything. `.tex`, `.gold.md` and `README.md` under `reference/` are
+  exempt from hash pinning for a related reason: a gold file is *meant* to change as fidelity
+  improves, so a hash would turn every improvement into a manifest edit and teach everyone to
+  update it on autopilot. The `.pdf` and `.png` stay pinned — those are opaque, and a byte
+  change in one is invisible in review.
+
+### Fixed — 2026-08-05
+
+- **The tagged path was verified against a real document for the first time, and it is
+  exact.** `clauses.pdf` extracts byte-for-byte identical to its independently authored gold
+  file: five numbered clauses at three depths, each with its body, nothing unplaced. That is
+  the path all eleven corpus documents take, and it had only ever been measured against its own
+  prior output. No code changed — the point is that the claim is now checked.
+- **A note for anyone regenerating the tagged fixture: build it with `lualatex`.** pdfTeX's
+  `latex-lab` tagging backend writes the wrong `/MCID` into every `/MCR` — `1` in all ten, for
+  a content stream that draws 0 through 9 — so nine of ten structure elements join to nothing.
+  The clause titles survive because they come from `/T` and every body paragraph falls out of
+  the tree into `Unplaced`, which extracted as five headings with no bodies plus a duplicate
+  dump of the page. Diagnosed by comparing the tree's `/MCID` references against the `BDC`
+  operators actually in the stream, and ruled out as ours by confirming a single revision with
+  no duplicate objects. Kept out of the fixtures deliberately: no reader can tell that file
+  from one whose paragraphs are genuinely untagged, so it would pin our behaviour against a
+  broken producer.
+
 ### Changed — 2026-08-05
 
 - `docs/` is now gitignored by allowlist — everything ignored, Markdown at any depth

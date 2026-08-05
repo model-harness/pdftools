@@ -1,0 +1,29 @@
+% text-styles — weight, slant, and monospace, one at a time and combined.
+%
+% One concern: does a style change inside a paragraph survive as emphasis, and does
+% it stop where the source stops it? The layout path reads style from the font's
+% own descriptor and name, so this is the fixture that fails when a font's traits
+% are misread — a bold face not recognized as bold, or an italic run that bleeds
+% into the words after it.
+%
+% Each style sits mid-sentence rather than alone on a line, because a run that
+% starts at a paragraph's first character and ends at its last cannot show a
+% boundary error. The words on either side are the assertion.
+%
+% \texttt is included because monospace maps to a code span, which is a different
+% emission path: everything inside backticks is literal, so a code span cannot
+% carry the other two.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+
+Plain text with \textbf{bold words} inside it.
+
+Plain text with \textit{italic words} inside it.
+
+Plain text with \textbf{\textit{bold italic words}} inside it.
+
+Plain text with \texttt{monospaced words} inside it.
+
+\end{document}

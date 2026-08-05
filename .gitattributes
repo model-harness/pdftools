@@ -9,6 +9,13 @@ go.sum text eol=lf
 *.toml text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+*.json text eol=lf
+
+# Fixture sources, for a sharper reason than the above: testdata/manifest.json
+# records a SHA-256 for every generated fixture, and a .tex that arrives CRLF on one
+# checkout and LF on another rebuilds to a different PDF. Pinning the source pins the
+# artifact the hash describes.
+*.tex text eol=lf
 
 # Binary fixtures must never be line-ending converted.
 *.pdf binary

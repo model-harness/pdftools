@@ -1,0 +1,27 @@
+% lists — bulleted items, including nested ones.
+%
+% One concern: does an item come back as one item at the right depth? Two failures
+% this catches and a heading fixture cannot. A list whose bullets are drawn as
+% separate text runs can lose the bullet, keep it as a literal character, or merge
+% two items into one line — and a nested item can come back flattened to the
+% outer level, which reads as a sibling of its own parent.
+%
+% Three items at the top level, because two cannot distinguish "kept the order"
+% from "reversed it". The nesting sits under the second item rather than the last,
+% so a flattening bug shows as an item out of place instead of merely trailing.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+
+\begin{itemize}
+  \item First item.
+  \item Second item.
+  \begin{itemize}
+    \item Nested item under the second.
+    \item Another nested item.
+  \end{itemize}
+  \item Third item.
+\end{itemize}
+
+\end{document}

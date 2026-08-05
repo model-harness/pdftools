@@ -1,0 +1,30 @@
+% table — a ruled table's cell text, in reading order.
+%
+% One concern, and it is deliberately the smaller half of the problem: does every
+% cell's text come out, once, with rows kept together? Grid emission is a documented
+% debt (DESIGN.md §10), so the gold file asserts the text and its row grouping
+% rather than pipes and dashes. When that debt is paid the gold file changes; what
+% it must never permit is a cell going missing or two cells merging, which is the
+% failure a table's column gaps actually produce — the space inference sees a gap
+% wide enough to be a paragraph break and splits a row, or narrow enough to be a
+% word and joins two cells.
+%
+% Rules on every edge, because a ruled table is the case a layout reader can
+% recognize from its strokes. Three columns and three rows: two of either cannot
+% distinguish a transposed read from a correct one.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+
+\begin{tabular}{|l|l|l|}
+\hline
+Header A & Header B & Header C \\
+\hline
+Cell A1 & Cell B1 & Cell C1 \\
+\hline
+Cell A2 & Cell B2 & Cell C2 \\
+\hline
+\end{tabular}
+
+\end{document}

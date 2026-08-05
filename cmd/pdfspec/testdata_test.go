@@ -59,7 +59,21 @@ func TestFixtureManifestMatchesTree(t *testing.T) {
 	}
 	var m struct {
 		Sources []struct {
-			Repo    string `json:"repo"`
+			Repo string `json:"repo"`
+			// Origin is "vendored" (the default and the strict case) or "generated".
+			//
+			// Two kinds of fixture with two kinds of provenance. A vendored file's
+			// provenance is external and must be pinned to bytes somebody else
+			// published, which is what a commit SHA and a hash are for. A file this
+			// repo authored has its provenance in this repo's history, and there is no
+			// upstream commit to name — demanding one would mean inventing a SHA, and a
+			// field filled in to satisfy a test stops meaning anything.
+			//
+			// The distinction is load-bearing rather than bookkeeping: it is the line
+			// between a file we may redistribute and one whose licence somebody else
+			// set. Defaulting to the strict kind keeps a new vendored source honest
+			// even if whoever adds it never reads this.
+			Origin  string `json:"origin"`
 			Commit  string `json:"commit"`
 			License string `json:"license"`
 			Files   []struct {
@@ -75,15 +89,31 @@ func TestFixtureManifestMatchesTree(t *testing.T) {
 
 	listed := map[string]bool{}
 	for _, src := range m.Sources {
-		if src.Repo == "" || src.Commit == "" || src.License == "" {
-			t.Errorf("source %q: repo, commit, and license are the provenance record and none may be empty", src.Repo)
+		generated := src.Origin == "generated"
+		if src.Repo == "" || src.License == "" {
+			t.Errorf("source %q: repo and license are the provenance record and neither may be empty", src.Repo)
 		}
-		// A commit has to be a full SHA-1. A branch name or a short hash resolves to
-		// different bytes over time, which is the whole thing the manifest prevents.
-		if len(src.Commit) != 40 {
+		switch {
+		case generated:
+			// No commit to check: the file was authored here, so its history is this
+			// repo's. What still has to hold is the licence and the hash — the licence
+			// because it is the claim that we may ship it, and the hash because a
+			// generated fixture that changes without the expectation beside it changing
+			// is the exact drift the manifest exists to make visible.
+			if src.Commit != "" {
+				t.Errorf("%s: origin is \"generated\" but a commit %q is recorded; a file authored here has no upstream commit to pin", src.Repo, src.Commit)
+			}
+		case src.Commit == "":
+			t.Errorf("source %q: a vendored source must record the commit it was taken from", src.Repo)
+		case len(src.Commit) != 40:
+			// A commit has to be a full SHA-1. A branch name or a short hash resolves to
+			// different bytes over time, which is the whole thing the manifest prevents.
 			t.Errorf("%s: commit %q is not a full 40-character SHA", src.Repo, src.Commit)
 		}
 		for _, f := range src.Files {
+			// A generated file's "upstream" names what it was built from — the .tex
+			// beside it, or "generated" for one this repo synthesized outright — so the
+			// field is still required and still says where the bytes came from.
 			if f.Upstream == "" || len(f.SHA256) != 64 {
 				t.Errorf("%s: %q has no upstream path or no SHA-256", src.Repo, f.Path)
 			}
@@ -110,6 +140,30 @@ func TestFixtureManifestMatchesTree(t *testing.T) {
 		switch rel {
 		case "manifest.json", "fetch.ps1":
 			return nil
+		}
+		// The reference fixtures' sources and expectations are exempt, and only those:
+		// their .tex, their .gold.md, and the directory's README.
+		//
+		// Not an erosion of the rule but a different answer to it. What the manifest
+		// protects against is a binary of unknown origin and unknown licence sitting in
+		// the tree, invisible because nobody can read it. These are text this repo
+		// authored, reviewable in the diff that added them, with their provenance in git.
+		//
+		// Pinning a .gold.md would also be actively wrong. A gold file is meant to
+		// change as fidelity improves — that is the point of the exact-match tier — so a
+		// hash would turn every genuine improvement into a manifest edit, and a hash
+		// everyone learns to update on autopilot protects nothing. A gold file that is
+		// wrong is caught by TestReferenceFidelity comparing it to the PDF, which is a
+		// stronger check than comparing it to itself.
+		//
+		// The .pdf and the .png stay pinned: those are opaque, a byte change in them is
+		// invisible in review, and a fixture that drifts from its expectation without
+		// either being edited is exactly the drift worth catching.
+		if strings.HasPrefix(rel, "reference/") {
+			base := filepath.Base(rel)
+			if strings.HasSuffix(rel, ".tex") || strings.HasSuffix(rel, ".gold.md") || base == "README.md" {
+				return nil
+			}
 		}
 		if !listed[rel] {
 			untracked = append(untracked, rel)

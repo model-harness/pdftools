@@ -1,0 +1,59 @@
+% clauses — a numbered clause hierarchy, read from the structure tree.
+%
+% One concern: does the tagged path reconstruct nesting from the tree rather than
+% guessing it from type size? This is the only tagged fixture, and it is the one
+% that matters most for the corpus: every ISO document we read is tagged, numbered,
+% and nested three or four deep, and a clause attached to the wrong parent silently
+% moves a whole subtree in the output.
+%
+% Numbered explicitly in the section titles rather than left to LaTeX's counters,
+% because the number is part of the text a clause is identified by — the gold file
+% has to assert "4.2.1 Nested subclause" as a string, and a counter that starts at
+% a different value would change the assertion without changing the structure.
+%
+% Build this one with lualatex, not pdflatex. Two reasons, both measured:
+%
+% A kernel old enough to predate the latex-lab tagging code fails outright with
+% \DebugTemplatesOff undefined, whichever engine runs it. That is a version skew and
+% it announces itself.
+%
+% The second is quieter and is why the engine is named here rather than left to
+% whatever is on the path. pdfTeX's tagging backend writes /MCID 1 into every one of
+% this document's ten /MCR entries while the content stream draws 0 through 9, so
+% nine of the ten structure elements join to nothing: the clause titles survive
+% (they come from /T) and every body paragraph falls out of the tree into Unplaced.
+% Extracting that build produced five headings with no bodies and a duplicate dump of
+% the whole page. lualatex writes 0 through 9 and the same source extracts exactly.
+%
+% A reader has no way to tell that file from a document whose paragraphs genuinely
+% are untagged, so it is the wrong yardstick — it would assert our behaviour on a
+% broken producer instead of on a correct one. The committed PDF means a clone never
+% builds either.
+\DocumentMetadata{pdfstandard=ua-2, tagging=on}
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\begin{document}
+
+\section{4 Clause four}
+
+Body of clause four.
+
+\subsection{4.1 First subclause}
+
+Body of the first subclause.
+
+\subsection{4.2 Second subclause}
+
+Body of the second subclause.
+
+\subsubsection{4.2.1 Nested subclause}
+
+Body of the nested subclause.
+
+\section{5 Clause five}
+
+Body of clause five.
+
+\end{document}

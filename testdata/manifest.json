@@ -14,6 +14,31 @@
   ],
   "sources": [
     {
+      "repo": "model-harness/pdftools",
+      "origin": "generated",
+      "license": "MIT",
+      "license_note": "Generated for this repo from the .tex sources committed beside each PDF, so these are ours to redistribute — unlike the sponsored ISO documents in docs/, which are the corpus we measure against but cannot ship. This is why the fidelity tests run in every clone and the corpus tests skip.",
+      "$comment": [
+        "The yardstick: six single-concern PDFs, each beside a hand-written .gold.md",
+        "of what it should convert to. The gold files are written from the .tex",
+        "source's intent and never from a reader's output — deriving them from an",
+        "Acrobat export would only prove we agree with Acrobat, which is the opposite",
+        "of an independent reference. See testdata/reference/README.md.",
+        "No upstream 'commit' or fetch entry: fetch.ps1 verifies vendored bytes match",
+        "what upstream published, and these have no upstream. The SHA-256s below still",
+        "pin them, so a fixture that changes without its gold file changing is visible."
+      ],
+      "files": [
+        { "path": "reference/headings.pdf", "upstream": "reference/headings.tex", "sha256": "1fb0601773d59010ac29c35434ed8572027cb8fc6489b743f8634550e9ce2f18", "size": 76748, "why": "Heading sequence at three depths, untagged: the layout path infers level from size and weight" },
+        { "path": "reference/text-styles.pdf", "upstream": "reference/text-styles.tex", "sha256": "8925936b14702b831cf8a2e2c6796277da52bd505a3fcd188cdd82987554e74f", "size": 103100, "why": "Bold, italic, bold-italic and monospace mid-sentence — a run that bleeds past its words is a font-trait misread" },
+        { "path": "reference/lists.pdf", "upstream": "reference/lists.tex", "sha256": "cdda687c928f41d8b2f0808764ef78abb667f41f060111dccdfd422a6e589c06", "size": 32929, "why": "Bulleted items with one nested level; the markers arrive as text because the layout path has no list role" },
+        { "path": "reference/table.pdf", "upstream": "reference/table.tex", "sha256": "f86bb4610ecc52d857f0f58f6b3a837b3988bd026adf63c8a9a94fe992826fb5", "size": 26563, "why": "Ruled 3x3 table: every cell's text must survive, which column gaps threaten by splitting or joining cells" },
+        { "path": "reference/image.pdf", "upstream": "reference/image.tex", "sha256": "69612b7e04382242e018f6eb06eee9feb43572eeaba06730a11bb775bad4f662", "size": 28247, "why": "One image and one caption: 'no prose' must be distinguishable from lost prose, which is what the empty-output warning and the OCR router both depend on" },
+        { "path": "reference/clauses.pdf", "upstream": "reference/clauses.tex", "sha256": "4b213b2d397afcdb2b0206b6166e41944013fbc8da3c01995cc98e4499a60012", "size": 38902, "why": "The only tagged fixture, and the path every corpus document takes: five numbered clauses at three depths, each with its body, joined on (page, MCID). Built with lualatex because pdfTeX's tagging backend writes the same /MCID into every /MCR, which silently drops every body paragraph" },
+        { "path": "reference/image-bands.png", "upstream": "generated", "sha256": "fd578b5467915e829ffa1651425b47dd3d7acf445ad4cdcfb0f3232db9332a49", "size": 137, "why": "The image inside image.pdf: three flat colour bands at 64x48, flat so extracted pixels are checkable and non-square so a transposed read shows in the dimensions" }
+      ]
+    },
+    {
       "repo": "pymupdf/pymupdf",
       "commit": "8a6297723c5c4115a064c79966d41465f7644402",
       "license": "AGPL-3.0",

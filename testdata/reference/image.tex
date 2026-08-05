@@ -1,0 +1,26 @@
+% image — a page whose only content is an image, and a caption.
+%
+% One concern: a page with no extractable prose must not be mistaken for a failure.
+% "No text" is the honest answer here, and the whole point of the fixture is that
+% the honest answer is distinguishable from a lost one — this is the case the md
+% verb's empty-output warning must not fire on falsely, and the case the OCR router
+% is supposed to select on coverage.
+%
+% The caption is what makes it a real test rather than a blank page: the page has
+% exactly one line of text, so an extractor that returns nothing has lost something
+% and an extractor that returns the body of some other page has invented something.
+%
+% image-bands.png is generated, not sourced: three flat colour bands at 64x48. Flat
+% so extracted pixels are trivially checkable, and non-square so a transposed or
+% rotated read shows up in the dimensions alone.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\pagestyle{empty}
+\begin{document}
+
+\includegraphics[width=4cm]{image-bands.png}
+
+Figure 1: three colour bands.
+
+\end{document}

@@ -576,6 +576,25 @@ OKF-ified spec.
 - **Table extraction.** Tagged PDFs declare `Table`/`TR`/`TD`, so the tagged path can emit
   real Markdown tables. Untagged table detection is a research problem and is explicitly
   out of scope for Phase 1–5; the VLM path covers it in the interim.
+- **The untagged layout path's four measured gaps.** `TestReferenceExactMatch` in
+  `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
+  measured worklist rather than a remembered one. The tagged path has no gaps — `clauses`
+  matches exactly and is enforced — and every item here is the layout path lacking a role the
+  structure tree would otherwise declare:
+  - *Heading rank.* `headings` emits `**1 First Section**` where the document means
+    `# 1 First Section`. The text and its order are right and its weight is detected; what is
+    missing is the step from "bold, larger" to a level. This is the font-size clustering
+    Phase 5 is for.
+  - *Paragraph breaks.* `text-styles`' four paragraphs arrive joined into one line. The words
+    and the styling are correct, so this is block segmentation and not extraction: a vertical
+    gap that a tagged document declares with `P` has to be inferred from leading.
+  - *List role.* `lists` emits LaTeX's drawn markers as ordinary text — `•` for the outer
+    level and a bold `–` for the nested one, which is genuinely what the page draws — instead
+    of `- ` at two spaces per level. The nesting depth is visible in the indent; nothing yet
+    reads it as a list.
+  - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
+    the untagged-table research problem named above; the fixture exists so the day it is
+    solved is measurable.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`
