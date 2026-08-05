@@ -1,0 +1,200 @@
+content/fuzz_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+image/encode.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 14-15
+render/render.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 31
+cmd/pdfspec/font_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6-8
+extract/run.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9-13
+cmd/pdfspec/render_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 11
+cmd/pdfspec/okf_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 10
+sink/okf/okf_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9
+cmd/pdfspec/ocr_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 13-19
+font/font_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+ocr/doctags/doctags_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9-10
+ocr/ipc/ipc_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 19
+filter/filter_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 11
+sectionize/sectionize_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7-8
+doc/doc.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 25
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 205
+  s_5cd1b28ed520c1::t_7a7be359ebcec2 1
+sink/markdown/export_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+sink/markdown/inline.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+cmd/pdfspec/probe.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 12-14
+image/read_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8
+sink/markdown/frontmatter.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+extract/extract.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 24-28
+filter/predictor_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 11
+font/metrics_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+sink/okf/xref_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+ocr/ocr_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6-7
+sink/okf/path.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 10
+content/state.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 4-5
+filter/predictor.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_222c7625f16ac5 631-659,666
+  s_5cd1b28ed520c1::t_2cb495c10698be 660-665
+sink/okf/okf.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 29-30
+sink/markdown/outline.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9
+font/decode.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 3
+go.mod
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 1
+sink/okf/path_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+sink/okf/frontmatter.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+sink/markdown/inline_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+cmd/pdfspec/images.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 13-14
+content/bench_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+cmd/pdfspec/span_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6-7
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 26
+cmd/pdfspec/cmap_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8-10
+image/read.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6-7
+image/image.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 36
+ocr/doctags/doctags.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 62-63
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 10-16
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 32-33
+sink/markdown/markdown_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7-8
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 14-24
+tag/tag.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 16
+tag/tag_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+cmd/pdfspec/content_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7-9
+filter/lzw_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9
+font/cmap/cmap.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 27-29
+extract/extract_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8-10
+objects/pdfcpu/pdfcpu.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 21
+render/render_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+cmd/pdfspec/encoding_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8-10
+README.md
+  s_5cd1b28ed520c1::t_19838bf5e2284c 92-94,105,109,111-113
+  s_5cd1b28ed520c1::t_4b19ea8ab81130 24,28
+  s_5cd1b28ed520c1::t_580482e61171e1 114-115
+  s_5cd1b28ed520c1::t_a33415c25e936a 1-23,25-27,29-53,70-71,76-91,95-104,106-108,110,116-192
+  s_5cd1b28ed520c1::t_0b6fc0553d9557 54-69,72-75
+cmd/pdfspec/images_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 12-13
+ocr/ipc/local.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 10
+render/pdfium/pdfium_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 12
+render/pdfium/pdfium.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 48-49
+ocr/ocr.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 40
+sink/markdown/frontmatter_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 7
+doc/block.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+font/font.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 26-28
+content/state_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8
+cmd/pdfspec/md_test.go
+  s_5cd1b28ed520c1::t_d429d61a186145 89
+  s_5cd1b28ed520c1::t_f782bd456d18ad 46,103
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 15
+  s_5cd1b28ed520c1::t_9a26aadbd6fa39 51-54,59
+  s_5cd1b28ed520c1::t_a988afc8f5c64a 13
+cmd/pdfspec/sectionize_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9-13
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 9-11
+cmd/pdfspec/testdata_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 12-14
+  s_5cd1b28ed520c1::t_64e9ed4c43d612 745
+  s_5cd1b28ed520c1::t_902293caf0cd9c 756-757
+filter/filter.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 24
+content/lexer_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8
+cmd/pdfspec/extract_test.go
+  s_5cd1b28ed520c1::t_fc1a5e4512067c 86,90
+  s_5cd1b28ed520c1::t_7e6c8a2ebe7907 267
+  s_5cd1b28ed520c1::t_6d9b43300cb76f 36
+  s_5cd1b28ed520c1::t_a4b7ba7d35a20f 163-166,169,173-177,181
+  s_5cd1b28ed520c1::t_53be8689e06ed9 19-23
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 10-11
+content/scanner_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8
+filter/fuzz_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8
+content/lexer.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 18
+content/scanner.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 3
+ocr/ipc/client.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 14
+sink/okf/xref.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 6
+cmd/pdfspec/render.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 16-18
+cmd/pdfspec/corpus_test.go
+  s_5cd1b28ed520c1::t_3c98f61c6ef0f1 8-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "bc0c11aa942cd6e99c888d575b50524e5419ad6b",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
