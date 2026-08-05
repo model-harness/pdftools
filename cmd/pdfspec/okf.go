@@ -67,7 +67,7 @@ func runOKF(args []string) error {
 	opt := okf.Options{
 		Type:        *typ,
 		DocID:       *docID,
-		Generator:   "pdfspec/" + version,
+		Generator:   "pdfspec/" + buildVersion(),
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Artifacts:   *artifacts,
 		Preamble:    *preamble,

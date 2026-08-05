@@ -1,4 +1,4 @@
-// Command pdfspec is the CLI for the pdf-spec toolkit.
+// Command pdfspec is the CLI for the pdftools toolkit.
 package main
 
 import (
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 )
 
 const usage = `pdfspec - PDF tooling that does not fight you
@@ -24,7 +26,37 @@ commands:
 run "pdfspec <command> -h" for command flags
 `
 
-var version = "0.0.0-dev"
+// version, when non-empty, overrides the version this binary reports. It is the
+// -ldflags -X hook and nothing assigns it in Go code, which is the only way that hook
+// works: the linker rewrites the initial value of a string var, so a var initialized by
+// a function call gets that value written and then immediately overwritten at package
+// init. This started as `var version = buildVersion()` and silently did exactly that —
+// `-X main.version=9.9.9` built cleanly and printed the pseudo-version.
+var version string
+
+// buildVersion is what the version verb prints and what stamps every OKF bundle's
+// generated.by, so it has to be right in a `go install`ed binary and not only in a
+// release built by a script we control. version alone was that script's hook and no
+// script exists, so every install reported 0.0.0-dev and wrote it into its own output.
+//
+// debug.ReadBuildInfo carries the version the toolchain resolved. Measured, all four
+// modes: `go install ...@v0.1.0` gives the tag, `@main` a pseudo-version, a plain
+// `go build` in this checkout a VCS-derived pseudo-version with "+dirty" when the tree
+// is, and `go run` "(devel)" — which is the one case with no version to report and the
+// only reason for the 0.0.0-dev fallback.
+//
+// The v is stripped because generated.by reads "pdfspec/0.1.0": the actor form in the
+// OKF spec is a name and a version, not a Go module selector.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return "0.0.0-dev"
+	}
+	return strings.TrimPrefix(info.Main.Version, "v")
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -48,7 +80,7 @@ func main() {
 	case "probe":
 		err = runProbe(args)
 	case "version", "-v", "--version":
-		fmt.Printf("pdfspec %s\n", version)
+		fmt.Printf("pdfspec %s\n", buildVersion())
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

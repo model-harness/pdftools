@@ -4,12 +4,13 @@ PDF extraction for Go — text, structure, images, raster, OCR — under MIT, as
 a CLI.
 
 ```
-go install github.com/model-harness/pdftools/cmd/pdfspec@latest
+go install github.com/model-harness/pdftools/cmd/pdfspec@v0.1.0
 pdfspec md paper.pdf > paper.md
 ```
 
-**Status: pre-1.0.** Phases 1–4 of `docs/DESIGN.md` are implemented and tested; the API is
-not yet stable and there is no tagged release. Everything documented below works today.
+**Status: v0.1.0, pre-1.0.** Phases 1–4 of `docs/DESIGN.md` are implemented and tested.
+Everything documented below works today; the API is not stable yet, so pin the tag —
+`@v0.1.0` rather than `@latest` — if you depend on it.
 
 ## Why
 

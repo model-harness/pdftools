@@ -5,6 +5,30 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-08-05
+
+First tagged release. Phases 1–4 of `docs/DESIGN.md`: extraction, clause reconstruction,
+Markdown and OKF output, image extraction, rasterization, and per-page OCR routing. Pin the
+tag rather than `@latest` — the API is not stable before 1.0.
+
+### Fixed — 2026-08-05
+
+- **`version` was a variable nothing set.** It was written to be filled by an `-ldflags -X`
+  that no release script exists to pass, so every `go install` reported `0.0.0-dev` — and
+  since `version` also stamps each OKF bundle's `generated.by`, a tagged build would have
+  written that string into its own output. Both consumers now call `buildVersion()`, which
+  reads `debug.ReadBuildInfo`: the tag when installed at one, a pseudo-version otherwise,
+  `0.0.0-dev` only from `go run`. The `v` is stripped, since `generated.by` is
+  `pdfspec/0.1.0` and the OKF actor form is a name and a version, not a module selector.
+  Found while tagging, which is the first thing that would have exposed it.
+- The first version of that fix broke the `-X` override it claimed to preserve. Writing
+  `var version = buildVersion()` means the linker sets the var's initial value and package
+  init then overwrites it, so `-X main.version=9.9.9` built clean and printed the
+  pseudo-version. `version` is now an empty var that nothing in Go assigns — the only shape
+  the hook works in — and `buildVersion` returns it when set. Measured in all four modes:
+  `-X` gives 9.9.9, `go install @v0.1.0` the tag, `go build` a VCS pseudo-version with
+  `+dirty`, `go run` the fallback.
+
 ### Added — 2026-08-02
 
 - `docs/DESIGN.md` — the toolkit concept: why the repo exists, the benchmark baseline to
@@ -904,3 +928,6 @@ All notable changes to this project are documented here, following
   was then undercounted by that factor, the shortfall accumulated, and it read as an
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
+
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/model-harness/pdftools/releases/tag/v0.1.0
