@@ -1,0 +1,45 @@
+.gitignore
+  s_5cd1b28ed520c1::t_b0ba60bfa97e65 52-60,62-64
+  s_5cd1b28ed520c1::t_0acb83cafb15a0 42-46,50-51
+  s_5cd1b28ed520c1::t_5b682130f30ba1 39-41,47-49,61,65
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_fbccd3ad246560 60
+  s_5cd1b28ed520c1::t_738f6f5c7c5598 9
+  s_5cd1b28ed520c1::t_20969883f146db 80-106
+font/font.go
+  s_5cd1b28ed520c1::t_c8610460dffed1 271,277-281
+  s_5cd1b28ed520c1::t_147fdc99655207 240-270,272-276,282-309
+font/decode.go
+  s_5cd1b28ed520c1::t_8d1af601244193 157-165
+  s_5cd1b28ed520c1::t_9cc057248288cf 31-37
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_5fa08b41e2f9e8 10-22,36-41
+  s_5cd1b28ed520c1::t_4da65e3b2ba201 23-35
+  s_5cd1b28ed520c1::t_09aed743cc9ee9 42-51
+font/font_test.go
+  s_5cd1b28ed520c1::t_bdf0439766ec19 199-240,257-258
+  s_5cd1b28ed520c1::t_eefb4c8e3cdc76 4
+  s_5cd1b28ed520c1::t_1ef5e67ba69345 182,187
+  s_5cd1b28ed520c1::t_34abbc84e772d9 241-256
+  s_5cd1b28ed520c1::t_c4fe7653b013b1 154-158
+  s_5cd1b28ed520c1::t_c04f9ec9b95db5 95-143,145,152-153,159-181,183-186,188-198
+  s_5cd1b28ed520c1::t_d1f7e341fe58aa 144,146-151
+cmd/pdfspec/empty_test.go
+  s_5cd1b28ed520c1::t_1450ed35b30a45 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "890e1b7099dc36bd61854dbaf222beca35ffb135",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
