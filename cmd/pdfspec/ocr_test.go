@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/extract"
-	"github.com/3rg0n/pdf-spec/geom"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/ocr"
-	"github.com/3rg0n/pdf-spec/render"
-	renderpdfium "github.com/3rg0n/pdf-spec/render/pdfium"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/geom"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/ocr"
+	"github.com/model-harness/pdftools/render"
+	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
 
 // These tests run the ocr verb's whole pipeline — extract, route, rasterize, recognize,

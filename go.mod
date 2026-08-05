@@ -1,4 +1,4 @@
-module github.com/3rg0n/pdf-spec
+module github.com/model-harness/pdftools
 
 go 1.26.5
 

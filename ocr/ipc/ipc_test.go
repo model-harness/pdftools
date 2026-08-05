@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/3rg0n/pdf-spec/ocr"
+	"github.com/model-harness/pdftools/ocr"
 )
 
 // attach is ImageAttachment for a test that has already established the image is a

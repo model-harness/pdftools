@@ -3,8 +3,8 @@ package main
 import (
 	"testing"
 
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/tag"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // TestSectionShapeOnTarget pins down how the target document expresses clause

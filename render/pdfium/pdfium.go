@@ -45,8 +45,8 @@ import (
 	"github.com/klippa-app/go-pdfium/requests"
 	"github.com/klippa-app/go-pdfium/webassembly"
 
-	"github.com/3rg0n/pdf-spec/geom"
-	"github.com/3rg0n/pdf-spec/render"
+	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/render"
 )
 
 // pool is the process-wide wazero runtime and compiled module.

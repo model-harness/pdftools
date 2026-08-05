@@ -3,8 +3,8 @@ package image
 import (
 	"fmt"
 
-	"github.com/3rg0n/pdf-spec/filter"
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/filter"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // maxFormDepth bounds recursion into Form XObjects.

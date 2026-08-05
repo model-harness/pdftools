@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/image/ccitt"
 
-	"github.com/3rg0n/pdf-spec/bits"
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/bits"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // Encode writes im to w in the format Ext reports.

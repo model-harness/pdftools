@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/content"
-	"github.com/3rg0n/pdf-spec/geom"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	"github.com/model-harness/pdftools/content"
+	"github.com/model-harness/pdftools/geom"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // These tests run the real corpus through the scanner and state machine. Hand-written

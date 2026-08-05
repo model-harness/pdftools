@@ -13,7 +13,7 @@ package tag
 import (
 	"fmt"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // Role is a normalized structure element type.

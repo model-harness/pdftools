@@ -5,9 +5,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/font/encoding"
-	"github.com/3rg0n/pdf-spec/objects"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	"github.com/model-harness/pdftools/font/encoding"
+	"github.com/model-harness/pdftools/objects"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // The glyph list in font/encoding is deliberately a reduced Adobe Glyph List,

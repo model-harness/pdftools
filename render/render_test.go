@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // TestFit covers the whole of the resolution policy, which is the only part of

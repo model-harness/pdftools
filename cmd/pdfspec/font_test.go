@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/font"
-	"github.com/3rg0n/pdf-spec/objects"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	"github.com/model-harness/pdftools/font"
+	"github.com/model-harness/pdftools/objects"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // The font package's unit tests prove it handles the dictionary shapes their

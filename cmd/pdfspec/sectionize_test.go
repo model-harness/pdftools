@@ -6,11 +6,11 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/extract"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/sectionize"
-	"github.com/3rg0n/pdf-spec/tag"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/sectionize"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // outlineOf runs the whole tagged pipeline over a corpus file, which is what these

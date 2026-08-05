@@ -1,4 +1,4 @@
-# pdf-spec — Design
+# pdftools — Design
 
 Status: draft · 2026-08-02 · License: MIT
 
@@ -202,7 +202,7 @@ model imports nothing outside the standard library.
 ### Package layout
 
 ```
-github.com/3rg0n/pdf-spec
+github.com/model-harness/pdftools
 
 doc/                  Domain model. Zero dependencies outside stdlib.
                         Document, Page, Block, Span, Style, Rect, Matrix,

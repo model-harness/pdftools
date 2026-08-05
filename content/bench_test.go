@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // The benchmark exists because the §1 target is a throughput number, and the

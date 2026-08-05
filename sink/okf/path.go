@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // layout assigns every section in an outline a file path, and is the only place in this

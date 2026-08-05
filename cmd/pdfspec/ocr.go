@@ -11,17 +11,17 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/extract"
-	"github.com/3rg0n/pdf-spec/geom"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/ocr"
-	"github.com/3rg0n/pdf-spec/ocr/docd"
-	"github.com/3rg0n/pdf-spec/ocr/doctags"
-	"github.com/3rg0n/pdf-spec/ocr/ipc"
-	"github.com/3rg0n/pdf-spec/render"
-	renderpdfium "github.com/3rg0n/pdf-spec/render/pdfium"
-	"github.com/3rg0n/pdf-spec/sink/markdown"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/geom"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/ocr"
+	"github.com/model-harness/pdftools/ocr/docd"
+	"github.com/model-harness/pdftools/ocr/doctags"
+	"github.com/model-harness/pdftools/ocr/ipc"
+	"github.com/model-harness/pdftools/render"
+	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
+	"github.com/model-harness/pdftools/sink/markdown"
 )
 
 // runOCR converts a PDF to Markdown, sending only the pages that need it through a

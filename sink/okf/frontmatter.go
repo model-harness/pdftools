@@ -4,7 +4,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/sink/markdown"
+	"github.com/model-harness/pdftools/sink/markdown"
 )
 
 // frontmatter is an OKF concept document's YAML block, built as a value and written once.

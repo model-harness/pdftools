@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // WriteOutline emits a reconstructed outline: the preamble, then every section as a

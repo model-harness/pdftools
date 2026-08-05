@@ -29,8 +29,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/tag"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // Options configures reconstruction.

@@ -3,8 +3,8 @@ package ocr
 import (
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // letter is US Letter in points.

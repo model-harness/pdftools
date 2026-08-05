@@ -7,8 +7,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/3rg0n/pdf-spec/extract"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	"github.com/model-harness/pdftools/extract"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // metrics are the columns of the docs/DESIGN.md §1 table, which is the whole
@@ -16,6 +16,11 @@ import (
 // benchmark because "extraction improved" is not a claim without them — every
 // library in §1 would have made it.
 type metrics struct {
+	// chars counts runes, not bytes. It was len(text) until the arXiv paper's 206
+	// multi-byte runes were noticed dividing into nonSpace, which counts runes: the
+	// published 39,257 non-space figure was a byte total minus a rune count, a
+	// subtraction across two units that no measurement produces. spaceRatio had the
+	// same mismatch in its denominator. Both are now runes throughout.
 	chars      int
 	spaceRatio float64
 	longWords  int // word-like tokens over 25 characters
@@ -28,7 +33,7 @@ type metrics struct {
 	// cross-extractor comparison that means anything. Total characters measure the
 	// producer's whitespace policy as much as the extraction: pdftotext pads lines
 	// to preserve layout and reports 47,032 characters on the arXiv paper against
-	// our 45,615, yet has 39,035 non-space to our 39,257. The padding was the whole
+	// our 45,409, yet has 39,035 non-space to our 39,049. The padding was the whole
 	// difference.
 	nonSpace int
 
@@ -78,10 +83,11 @@ func wordlike(w string) bool {
 // telling on itself, and a 4,069-character word is a whole paragraph with every
 // space dropped.
 func measure(text string, elapsed time.Duration) metrics {
-	m := metrics{chars: len(text), elapsed: elapsed}
+	m := metrics{elapsed: elapsed}
 
 	spaces := 0
 	for _, r := range text {
+		m.chars++
 		if unicode.IsSpace(r) {
 			spaces++
 		} else {
@@ -154,25 +160,25 @@ func extractDoc(t *testing.T, path string) (string, time.Duration) {
 	return text, time.Since(start)
 }
 
-// TestExtractionQualityOnArXiv is the §1 comparison, on the one arXiv paper this
-// repo can legally carry. It is not the same 6.89 MB paper the baselines were
-// measured on — that file belongs to a sibling project — so the bars below were
-// established by running two other extractors over this file directly:
+// TestExtractionQualityOnArXiv is the §1 comparison, on an arXiv paper rather than a
+// standards document. It is not the same 6.89 MB paper the baselines were measured on
+// — that file belongs to a sibling project — so the bars below were established by
+// running two other extractors over this file directly:
 //
 //	                    non-space   words   >25ch          longest   time
-//	this package           39,257   6,343   19 (0.30%)           71   22ms
+//	this package           39,049   6,343   19 (0.30%)           71   30ms
 //	pdftotext (Poppler)    39,035       —   —                     —      —
 //	pdfplumber 0.11.9      39,089   2,392   377 (15.8%)         110  660ms
 //
-// The three agree on the characters to within 0.6%, which is what rules out
-// missing text. Where they disagree is how those characters divide into words:
-// pdfplumber finds 2,392 where we find 6,343 from the same glyphs, and 15.8% of
-// its words run past 25 characters. That is the §1 spaces problem measured on this
-// document rather than quoted from the table.
+// The three agree on the characters to within 0.14%, which is what rules out missing
+// text. Where they disagree is how those characters divide into words: pdfplumber
+// finds 2,392 where we find 6,343 from the same glyphs, and 15.8% of its words run
+// past 25 characters. That is the §1 spaces problem measured on this document rather
+// than quoted from the table.
 //
 // The floor is 38,000 non-space characters — below the two references, not below a
 // guess. An earlier version of this test asserted 50,000 *total* characters and
-// failed at 45,615; the figure was invented, and pdftotext's higher total turned
+// failed at 45,409; the figure was invented, and pdftotext's higher total turned
 // out to be layout padding.
 func TestExtractionQualityOnArXiv(t *testing.T) {
 	path := paperFile(t)
@@ -258,7 +264,7 @@ func TestExtractionAcrossCorpus(t *testing.T) {
 			if m.words == 0 {
 				t.Fatal("no text extracted")
 			}
-			// The observed band across all ten producers is 13.97%–17.76%. A ratio
+			// The observed band across all ten producers is 14.11%–17.81%. A ratio
 			// below 10% is words running together; above 40% is the inverse defect,
 			// a space inferred between every glyph, which this package shipped once
 			// and which no character-count assertion would have caught.

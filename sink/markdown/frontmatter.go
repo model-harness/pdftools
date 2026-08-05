@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // frontmatter writes a YAML block delimited by "---".

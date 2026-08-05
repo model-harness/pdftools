@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // These tests run the md verb end to end — open, extract, render, write — and check
@@ -42,16 +43,20 @@ func mdOut(t *testing.T, args ...string) string {
 // unit test built from a hand-written span, and turns a specification into prose full
 // of backslashes. Nothing else in the suite would report it.
 //
-// Measured: 0.34 on the arXiv paper, 0.16 on ISO 32000-2 — roughly one backslash per
+// Measured: 0.35 on the arXiv paper, 0.16 on ISO 32000-2 — roughly one backslash per
 // 3,000 and 6,000 characters. The bar is 2, which is an order of magnitude below what
 // a policy that escaped "<", "-", or "_" unconditionally would produce on a document
 // made of PDF dictionaries and hyphenated compounds, and an order above what is
 // measured.
+//
+// The denominator is runes, matching measure. It was len(s) — bytes — which reported a
+// rate low by the document's multi-byte fraction and made this the second place in this
+// suite dividing one unit by another. The figures above are the corrected ones.
 func escapeRate(s string) float64 {
 	if s == "" {
 		return 0
 	}
-	return float64(strings.Count(s, `\`)) / float64(len(s)) * 1000
+	return float64(strings.Count(s, `\`)) / float64(utf8.RuneCountInString(s)) * 1000
 }
 
 func TestMDPreservesExtractedText(t *testing.T) {
@@ -81,7 +86,7 @@ func TestMDPreservesExtractedText(t *testing.T) {
 		t.Errorf("words = %d, extraction had %d: blocks were joined", m.words, rm.words)
 	}
 	// The §1 bars, restated at the end of the pipeline. Measured through md on this
-	// file: 39,781 non-space characters, 6,343 words, 14.04% spaces, 21 words over 25
+	// file: 39,781 non-space characters, 6,343 words, 14.10% spaces, 21 words over 25
 	// characters (0.33%), longest 71, 18ms. Against pdfplumber's 39,089 / 2,392 /
 	// 15.8% / 110 on the same document — the character counts agree and the word
 	// division does not, which is the §1 claim surviving the sink.
@@ -95,7 +100,7 @@ func TestMDPreservesExtractedText(t *testing.T) {
 		t.Errorf("longest word = %d, want <= 130", m.longest)
 	}
 	if r := escapeRate(md); r > 2 {
-		t.Errorf("escape rate %.2f per 1000 chars, want <= 2 (measured 0.34): escaping is too broad", r)
+		t.Errorf("escape rate %.2f per 1000 chars, want <= 2 (measured 0.35): escaping is too broad", r)
 	}
 }
 

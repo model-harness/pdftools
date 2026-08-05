@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/render"
+	"github.com/model-harness/pdftools/render"
 )
 
 // fixtureDir is the committed reference corpus. See docs/test.docs.md: these files

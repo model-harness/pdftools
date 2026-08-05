@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/3rg0n/pdf-spec/objects"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/tag"
+	"github.com/model-harness/pdftools/objects"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // report is what probe knows about one file.

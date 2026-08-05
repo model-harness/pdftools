@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/extract"
-	"github.com/3rg0n/pdf-spec/objects"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/sectionize"
-	"github.com/3rg0n/pdf-spec/sink/markdown"
-	"github.com/3rg0n/pdf-spec/tag"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/objects"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/sectionize"
+	"github.com/model-harness/pdftools/sink/markdown"
+	"github.com/model-harness/pdftools/tag"
 )
 
 func runMD(args []string) error {

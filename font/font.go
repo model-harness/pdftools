@@ -23,9 +23,9 @@ package font
 import (
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/font/cmap"
-	"github.com/3rg0n/pdf-spec/font/encoding"
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/font/cmap"
+	"github.com/model-harness/pdftools/font/encoding"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // Kind distinguishes the two ways a font addresses glyphs, which is the single

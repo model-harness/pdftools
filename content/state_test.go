@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // run drives a machine over a content stream, applying every state operator and

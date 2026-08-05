@@ -33,7 +33,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // ErrUnsupported reports an image whose codec this package cannot turn into a

@@ -5,7 +5,7 @@ import (
 	"compress/zlib"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // flateOf compresses data the way a producer would, so a test exercising a

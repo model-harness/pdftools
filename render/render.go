@@ -28,7 +28,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // Rasterizer renders pages of one document.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/3rg0n/pdf-spec/ocr"
+	"github.com/model-harness/pdftools/ocr"
 )
 
 // Engine is an ocr.Engine that sends pages over this wire.

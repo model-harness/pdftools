@@ -3,7 +3,7 @@ package okf
 import (
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // xref turns the specification's own cross-references into links inside the bundle.

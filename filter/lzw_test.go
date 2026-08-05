@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // lzwEncode produces PDF-flavored LZW with EarlyChange=1, the default.

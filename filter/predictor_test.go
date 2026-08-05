@@ -8,7 +8,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // pngEncodeRows applies PNG filtering to rows, producing the stride-prefixed

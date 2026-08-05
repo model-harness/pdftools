@@ -5,9 +5,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/3rg0n/pdf-spec/font/cmap"
-	"github.com/3rg0n/pdf-spec/objects"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	"github.com/model-harness/pdftools/font/cmap"
+	"github.com/model-harness/pdftools/objects"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // Hand-written CMap fixtures prove the parser handles the syntax its author

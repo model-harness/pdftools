@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/tag"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // The spec PDFs are gitignored (paid ISO documents, not redistributable), so

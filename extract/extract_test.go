@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/geom"
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // memStore is a Store over hand-written content streams.

@@ -37,7 +37,7 @@ import (
 	"context"
 	"image"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // Engine turns one page image into DocTags.

@@ -3,7 +3,7 @@ package content
 import (
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // Content streams are untrusted input, and the failure modes that matter here are

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // nilStore satisfies objects.Store for the parameter lookups the filters make.

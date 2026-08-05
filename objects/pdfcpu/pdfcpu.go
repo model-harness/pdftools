@@ -18,7 +18,7 @@ import (
 	pcmodel "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	pctypes "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // store implements objects.Store over a pdfcpu context.

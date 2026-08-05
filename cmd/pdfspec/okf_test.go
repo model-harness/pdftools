@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/sink/okf"
+	"github.com/model-harness/pdftools/sink/okf"
 )
 
 // bundleOf converts a corpus file and returns the rendered bundle.

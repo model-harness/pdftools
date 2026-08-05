@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	pdfimage "github.com/3rg0n/pdf-spec/image"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
+	pdfimage "github.com/model-harness/pdftools/image"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // The corpus numbers this package was scoped against, measured across every

@@ -3,7 +3,7 @@ package font
 import (
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/font/encoding"
+	"github.com/model-harness/pdftools/font/encoding"
 	pdfcpufont "github.com/pdfcpu/pdfcpu/pkg/font"
 )
 

@@ -1,6 +1,6 @@
 package font
 
-import "github.com/3rg0n/pdf-spec/font/cmap"
+import "github.com/model-harness/pdftools/font/cmap"
 
 // Glyph is one character code decoded: what it means, how far it advances, and
 // what it was written as.

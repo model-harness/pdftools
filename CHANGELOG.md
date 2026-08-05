@@ -628,6 +628,42 @@ All notable changes to this project are documented here, following
   inversion rather than about hand-computed constants that would encode the same mistake
   twice. `TestCorpusSoftMasks` now pins 131 recoverable / 5 blocked, keyed by codec pair.
 
+### Added — 2026-08-05
+
+- `README.md`. Every claim in it was run rather than transcribed, which caught two of its
+  own: the library example called `doc.Extract` and `markdown.Render`, neither of which
+  exists — `doc` is a pure model package with no exported functions — and the `probe` sample
+  was a table copied from DESIGN.md rather than the per-file report the binary actually
+  prints. Both are now output this build produces.
+
+### Changed — 2026-08-05
+
+- **Module path is `github.com/model-harness/pdftools`**, was `github.com/3rg0n/pdf-spec`.
+  That path never resolved — the repository does not exist under that owner — so the module
+  was not installable by anyone, `go get` included. Rewritten across 79 Go files, `go.mod`,
+  and `docs/DESIGN.md`; `go.sum` is unchanged, since no dependency moved. The binary stays
+  `pdfspec`.
+
+### Fixed — 2026-08-05
+
+- **`metrics.chars` counted bytes while `metrics.nonSpace` counted runes**, so the §1
+  comparison figure published since Phase 1 was a byte total minus a rune count — a
+  subtraction across two units, which no measurement produces. The arXiv paper's real
+  non-space count is **39,049, not 39,257**; the 206-character gap is its multi-byte runes.
+  `spaceRatio` had the same mismatch in its denominator and moves 13.94% → 14.01% on that
+  file. Corrected wherever the figures were quoted: the README comparison table, the
+  `extract_test.go` table and `nonSpace` doc, the corpus band (14.11%–17.81%), and the `md`
+  baseline's space ratio. Nothing regressed and no assertion changed — every bar is a floor
+  or a ceiling well clear of both figures, which is exactly why a wrong number survived
+  this long. The agreement with pdftotext and pdfplumber tightens from 0.6% to 0.14%.
+  Earlier CHANGELOG entries keep the figures they were written with.
+- `escapeRate` divided by `len(s)` — the same defect one function down, found by looking for
+  the class rather than the instance. Its denominator is runes now, which moves the arXiv
+  paper's rate 0.34 → 0.35 and leaves ISO 32000-2 at 0.16. Two figures in
+  `TestFixtureLargeDocumentStaysLinear`'s comment were stale independently of this and are
+  now measured: 374,166 non-space characters (was 375,696) and 2,759 backslashes (was
+  2,751), of which 2,609 still precede a C pointer asterisk.
+
 ### Fixed — 2026-08-04
 
 - **Every aggregate corpus figure in the repo was measured over twelve files instead of

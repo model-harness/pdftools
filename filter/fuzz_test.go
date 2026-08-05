@@ -5,7 +5,7 @@ import (
 	"compress/zlib"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // Stream data is untrusted, and every decoder here is a hand-written loop over

@@ -24,9 +24,9 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/3rg0n/pdf-spec/content"
-	"github.com/3rg0n/pdf-spec/font/encoding"
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/content"
+	"github.com/model-harness/pdftools/font/encoding"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // Bounds on what a CMap may declare. A CMap arrives as untrusted document data,

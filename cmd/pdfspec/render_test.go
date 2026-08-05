@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/render"
+	"github.com/model-harness/pdftools/render"
 )
 
 // TestParseRanges covers the page-range syntax. It is the one piece of the render

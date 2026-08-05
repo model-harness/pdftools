@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // Escaping is where this package can actually be wrong, in both directions: text

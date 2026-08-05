@@ -26,8 +26,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/sink/markdown"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/sink/markdown"
 )
 
 // Options configures the bundle.

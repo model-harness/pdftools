@@ -3,7 +3,7 @@ package markdown
 import (
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // inline renders a block's spans as Markdown inline content.

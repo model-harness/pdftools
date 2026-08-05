@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/3rg0n/pdf-spec/geom"
-	"github.com/3rg0n/pdf-spec/render"
-	renderpdfium "github.com/3rg0n/pdf-spec/render/pdfium"
+	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/render"
+	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
 
 func runRender(args []string) error {

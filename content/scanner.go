@@ -1,6 +1,6 @@
 package content
 
-import "github.com/3rg0n/pdf-spec/objects"
+import "github.com/model-harness/pdftools/objects"
 
 // maxOperands caps the operand stack.
 //

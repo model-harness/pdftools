@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	pdfimage "github.com/3rg0n/pdf-spec/image"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/tag"
+	pdfimage "github.com/model-harness/pdftools/image"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // The reference fixtures, which are a different kind of test input from the corpus in
@@ -742,7 +742,7 @@ func TestFixtureLargeDocumentStaysLinear(t *testing.T) {
 	m := measure(md, 0)
 	m.log(t, "mupdf_explored")
 
-	// Measured 375,696 non-space characters over 285 pages.
+	// Measured 374,166 non-space characters over 285 pages.
 	if m.nonSpace < 300_000 {
 		t.Errorf("non-space chars = %d, want >= 300000 over 285 pages", m.nonSpace)
 	}
@@ -753,8 +753,8 @@ func TestFixtureLargeDocumentStaysLinear(t *testing.T) {
 		t.Errorf("words >25ch = %.2f%%, want <= 1%%", m.longFrac)
 	}
 
-	// The escape rate here is 6.03 per 1000 characters against the corpus's bar of 2,
-	// and the difference is the document rather than the sink: 2,609 of the 2,751
+	// The escape rate here is 6.05 per 1000 characters against the corpus's bar of 2,
+	// and the difference is the document rather than the sink: 2,609 of the 2,759
 	// backslashes precede an asterisk, and every one of those asterisks is a C pointer
 	// declarator or a "/*" comment opener — "fz_context \*ctx", "const char \*uri".
 	// Unescaped they open emphasis and swallow the text to the next one, so each is

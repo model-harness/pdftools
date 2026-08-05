@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // fixtureDir holds docling's own DocTags documents and the Markdown docling renders

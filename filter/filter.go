@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // ErrUnsupported is returned for a filter this package does not decode,

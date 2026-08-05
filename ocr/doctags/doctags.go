@@ -59,8 +59,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // locGrid is the normalization constant from tokens.py: get_location divides by the

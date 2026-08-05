@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/3rg0n/pdf-spec/ocr"
+	"github.com/model-harness/pdftools/ocr"
 )
 
 // Local adapts a Handler to ocr.Engine without a socket.

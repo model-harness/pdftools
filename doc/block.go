@@ -3,7 +3,7 @@ package doc
 import (
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // Role is what a block is, in the vocabulary a Markdown or OKF sink can act on.

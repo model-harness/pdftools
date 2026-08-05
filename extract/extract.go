@@ -21,11 +21,11 @@ package extract
 import (
 	"fmt"
 
-	"github.com/3rg0n/pdf-spec/content"
-	"github.com/3rg0n/pdf-spec/doc"
-	"github.com/3rg0n/pdf-spec/font"
-	"github.com/3rg0n/pdf-spec/geom"
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/content"
+	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/font"
+	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // maxFormDepth bounds recursion into Form XObjects. A form may reference itself,

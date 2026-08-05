@@ -3,7 +3,7 @@ package filter
 import (
 	"fmt"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // applyPredictor reverses the predictor a Flate or LZW stream was encoded with

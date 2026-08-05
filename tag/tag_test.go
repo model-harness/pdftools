@@ -3,7 +3,7 @@ package tag
 import (
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/objects"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // store is a minimal objects.Store over an in-memory object table, so structure

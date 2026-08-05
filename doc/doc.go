@@ -22,7 +22,7 @@ package doc
 import (
 	"strings"
 
-	"github.com/3rg0n/pdf-spec/geom"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // Document is one PDF, read.

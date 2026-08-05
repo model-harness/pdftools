@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/3rg0n/pdf-spec/doc"
+	"github.com/model-harness/pdftools/doc"
 )
 
 // The three exports here exist for sink/okf, which composes markdown that is neither a whole

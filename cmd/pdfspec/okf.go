@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/3rg0n/pdf-spec/extract"
-	pcstore "github.com/3rg0n/pdf-spec/objects/pdfcpu"
-	"github.com/3rg0n/pdf-spec/sink/okf"
+	"github.com/model-harness/pdftools/extract"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/sink/okf"
 )
 
 func runOKF(args []string) error {
