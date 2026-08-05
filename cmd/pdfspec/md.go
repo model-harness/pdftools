@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/extract"
@@ -56,6 +57,7 @@ func runMD(args []string) error {
 	}
 	// The extractor reads the file, so it cannot know what the user called it.
 	d.Meta.Path = in
+	warnIfEmpty(d)
 
 	mopt := markdown.Options{Frontmatter: *frontmatter, Artifacts: *artifacts}
 	if *split {
@@ -73,6 +75,33 @@ func runMD(args []string) error {
 		}
 	}
 	return writeWhole(d, *out, mopt)
+}
+
+// warnIfEmpty reports on stderr that a document yielded no text, and why it might not
+// have.
+//
+// A conversion that produces an empty file and exits 0 is the worst available outcome:
+// the caller has a plausible artifact and no signal, and in a shell loop over a corpus
+// nothing distinguishes it from a document that converted cleanly. This is the same
+// failure the okf.Write duplicate guard replaced — a silently short result — and it was
+// found the same way, by a file that extracted to nothing while every exit code said
+// it had worked.
+//
+// A warning rather than an error, because empty is sometimes the honest answer: a page
+// holding one image has no text, and TestFixtureNoTextIsNotAnError pins that down.
+// Distinguishing "correctly empty" from "lost the text" needs the file's fonts, which
+// is what the hint names — a font with no /ToUnicode and glyph names outside the Adobe
+// glyph list has genuinely undecodable codes, so the text is not in the file to be
+// found and OCR is the only route. Written to stderr so redirecting stdout to a .md
+// still shows it.
+func warnIfEmpty(d *doc.Document) {
+	if len(d.Pages) == 0 || strings.TrimSpace(d.Text()) != "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "warning: %d page(s) yielded no text\n", len(d.Pages))
+	fmt.Fprint(os.Stderr, "  the fonts may carry no /ToUnicode and no recognizable glyph names,\n"+
+		"  in which case the characters are not recoverable from the file itself.\n"+
+		"  run \"pdfspec probe\" to see the fonts, or \"pdfspec ocr\" to read the pages as images.\n")
 }
 
 // readOutline reconstructs the clause hierarchy, or returns nil when the file has no

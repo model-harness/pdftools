@@ -28,8 +28,13 @@ type Glyph struct {
 	// and substituting U+FFFD would put noise in the output.
 	Text string
 
-	// Width is the horizontal advance in glyph space units, 1/1000 em. The caller
-	// scales it by font size and any horizontal scaling.
+	// Width is the horizontal advance in 1/1000 em, whatever the font's kind. The
+	// caller scales it by font size and any horizontal scaling.
+	//
+	// 1/1000 is the glyph space of every font kind except Type 3, whose glyph space
+	// is whatever its /FontMatrix says (§9.6.4). Those advances are converted into
+	// these units when the font loads, so a caller never asks what kind it holds —
+	// and must not apply a /FontMatrix again.
 	Width float64
 }
 
@@ -149,7 +154,15 @@ func (f *Font) Width(code, cid uint32) float64 {
 	// Outside /Widths, or no /Widths at all. The standard-14 metrics are the
 	// answer for the second case, which is the only reason a font may legally omit
 	// /Widths in the first place.
-	if f.enc != nil && code <= 0xFF {
+	//
+	// Not for Type 3, on two counts. Helvetica's advance for "A" says nothing about
+	// a font whose "A" is a content stream in its own /CharProcs, so the number
+	// would be a guess dressed as a metric. And it would be a guess in the wrong
+	// unit: this branch returns 1/1000 directly while a Type 3 font's own widths
+	// have been scaled out of its /FontMatrix glyph space, so one uncovered code in
+	// a font with a 0.00836 matrix would advance 8.36x its neighbours. /MissingWidth
+	// below is the entry the specification provides for this, and it scales.
+	if f.Subtype != "Type3" && f.enc != nil && code <= 0xFF {
 		if w, ok := StandardWidth(f.BaseFont, f.enc.Glyph(byte(code))); ok {
 			return float64(w)
 		}

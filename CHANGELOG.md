@@ -7,6 +7,48 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-05
 
+- **Type 3 glyph advances were read as 1/1000 em, which is the one font kind where that is
+  not the unit.** §9.6.4 gives a Type 3 font its own glyph space, mapped to text space by
+  `/FontMatrix`, where every other kind has that mapping fixed at 1/1000 — and
+  `/FontMatrix` was never read. Measured on a pdfTeX document that states the answer in its
+  own content stream: at `/FontMatrix [0.00836 …]` the five glyphs of "First" sum to 275.64,
+  which the file means as 33.06 text-space units and the stream's own `Td` confirms by
+  moving 38.32 to clear the word and the space after it; read as 1/1000 the same run
+  advances 3.95, an 8.36× error. Because `extract` infers inter-word spaces by comparing
+  measured gaps against these advances, the pen fell a word-width behind on every word and
+  every Type 3 run became its own text block. Widths and `/MissingWidth` are now normalized
+  into 1/1000 units at load, so `Width` means one thing to every caller. No corpus document
+  uses Type 3 for body text — all twelve produce byte-identical Markdown — so this is a
+  latent defect fixed on evidence rather than a regression.
+- **A Type 3 font could borrow the standard-14 metrics for a code its `/Widths` did not
+  cover.** That fallback exists because a simple font may legally omit `/Widths` when it is
+  one of the fourteen, but it is wrong twice over here: Helvetica's advance says nothing
+  about a glyph that is a content stream in the font's own `/CharProcs`, and it is returned
+  in 1/1000 directly while that font's own widths have been scaled out of its `/FontMatrix`
+  glyph space — so one uncovered code in a font with a 0.00836 matrix advanced 8.36× its
+  neighbours. Reachable, not theoretical: a Type 3 dictionary naming `/BaseFont /Helvetica`
+  returned Helvetica's 667. `/MissingWidth` is the entry the specification provides for this
+  case, and it scales.
+- **A malformed `/FontMatrix` was scaled by anyway.** A shorter-than-six array is not an
+  affine transform with a readable first element, but the guard accepted four or five and
+  read the scale from it — silently, and confidently. Now exactly six or the 1/1000 default,
+  which is what §9.6.4 documents for a missing entry.
+- **A document that extracted to nothing said so with an empty file and exit 0.** `md` now
+  warns on stderr when every page yielded no text, and names `probe` and `ocr` as the next
+  step. Same class as the `okf.Write` guard below and found the same way: a plausible
+  artifact, no signal, and in a shell loop over a corpus nothing to distinguish it from a
+  clean conversion. Deliberately a warning and not an error — a page holding one image has
+  no text, and that is the honest answer.
+
+### Changed — 2026-08-05
+
+- `docs/` is now gitignored by allowlist — everything ignored, Markdown at any depth
+  re-admitted — rather than by a list of extensions. The directory holds sponsored ISO
+  documents that cannot be redistributed, and an export of one is a derivative work of the
+  same content: Acrobat writes XML, HTML, text, RTF, Word, Excel, PowerPoint, CSV, JSON and
+  several image formats, so an enumeration reads as complete while leaving the next format to
+  be committed by a well-meaning `git add docs/`. Failing closed costs one line when a new
+  kind of doc is added; failing open costs a republished ISO document.
 - **An OKF bundle could silently drop concept documents.** A parent clause's own document is
   written *inside* its children's directory (`index.md` is reserved and cannot hold prose),
   but that name was chosen against the parent's sibling set and never reserved in the

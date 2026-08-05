@@ -237,6 +237,76 @@ func (f *Font) loadSimple(s objects.Store, d objects.Dict) {
 		f.defaultWidth, _ = objects.GetNum(s, fd, "MissingWidth")
 	}
 	f.traits(s, fd)
+	f.scaleType3(s, d)
+}
+
+// scaleType3 converts a Type 3 font's advances into the 1/1000 units every other
+// font reports, so that Width means one thing to its callers.
+//
+// Type 3 is the only font kind whose glyph space is not fixed. §9.6.4 says its
+// /Widths are in glyph space and that /FontMatrix maps glyph space to text space,
+// where every other kind has that mapping fixed at 1/1000. The matrix is not
+// decoration: pdfTeX writes [0.00836 0 0 0.00836 0 0] with widths near 60, and
+// 60/1000 is 8.36 times smaller than the 60*0.00836 the file means.
+//
+// Measured on a pdfTeX document whose content stream states the answer: the five
+// glyphs of "First" sum to 275.64 at /FontMatrix 0.00836 and 14.3462pt, which is
+// 33.06 units of text space, and the stream's own Td moves 38.32 to clear the word
+// and the space after it. Read as 1/1000 the same run advances 3.95, so the pen
+// falls a word-width behind on every word — and since the space inference in
+// extract compares measured gaps against these advances, a gap that is really one
+// space reads as an enormous one. Every Type 3 run became its own text block.
+//
+// Only the horizontal scale is taken. A /FontMatrix may rotate or skew, and a
+// caller wanting the glyph's shape needs the whole matrix — but Width answers how
+// far the pen moves, which is the matrix applied to (w, 0), and the b component of
+// that is a vertical displacement this field cannot express. Fonts that rotate
+// their glyph space are rare enough that reporting the horizontal component is
+// right for the corpus and honest about what it is.
+func (f *Font) scaleType3(s objects.Store, d objects.Dict) {
+	if f.Subtype != "Type3" {
+		return
+	}
+	m, ok := objects.GetArray(s, d, "FontMatrix")
+	if !ok || len(m) != 6 {
+		// §9.6.4 requires /FontMatrix in a Type 3 font, so a missing one is a
+		// defective dictionary. The specification's own default for the entry is
+		// [0.001 0 0 0.001 0 0], which is exactly the 1/1000 convention already
+		// assumed, so leaving the widths alone is both the documented default and
+		// the no-op.
+		//
+		// Exactly six, not at least one: a matrix is an affine transform written
+		// [a b c d e f], and a shorter array is not a matrix with a readable first
+		// element. Scaling every advance by a number taken from a malformed array is
+		// worse than declining to, because it is silent and it is confident.
+		return
+	}
+	a, _ := objects.AsNum(mustResolve(s, m[0]))
+	if a == 0 {
+		// A zero horizontal scale collapses every advance to nothing, which would
+		// stack a page of glyphs at one point. More likely a malformed matrix than a
+		// font that means it, and the 1/1000 assumption at least keeps the run
+		// legible.
+		return
+	}
+	// Into 1/1000 units: a width of w means w*a text-space units, and the callers
+	// divide by 1000, so w*a*1000 is the width that survives that division.
+	scale := a * 1000
+	for i := range f.widths {
+		f.widths[i] *= scale
+	}
+	f.defaultWidth *= scale
+}
+
+// mustResolve resolves a reference, returning the unresolved object on failure.
+// The callers ask for a number and treat a non-number as absent, so a failed
+// resolution needs no separate branch.
+func mustResolve(s objects.Store, o objects.Object) objects.Object {
+	r, err := s.Resolve(o)
+	if err != nil {
+		return o
+	}
+	return r
 }
 
 // baseEncoding decides which base encoding a simple font's codes start from,

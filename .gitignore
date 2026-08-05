@@ -36,6 +36,33 @@ docs/PDF20_*.pdf
 docs/LightOnOCR-2601.14251v1.pdf
 docs/LightOnOCR_*.mhtml
 
+# ---------------------------------------------------------------------------
+# Derived exports of the corpus documents.
+#
+# Two kinds, both hand-made in Acrobat and both used as independent references
+# for what we should be producing: "Export To > XML 1.0" for what the tag tree
+# should look like, and page renderings to PNG for what is actually on the page.
+# Acrobat is the reference implementation of the specification this repo reads,
+# so a disagreement is evidence about our reader rather than an argument about it.
+#
+# Ignored for the same reason the PDFs above are. An export is a derivative
+# work of a document we are not licensed to redistribute — the XML carries the
+# document's whole text, the images subdirectory carries its figures, and a page
+# rendering is the page. Same content in another container rather than a fact
+# about it. The failure mode to prevent is a well-meaning `git add docs/`.
+#
+# An allowlist rather than a list of extensions, because the enumeration cannot
+# be finished: Acrobat exports to XML, HTML, text, RTF, Word, Excel, PowerPoint,
+# CSV, JSON, and several image formats, and a list that names nine of them reads
+# as complete while leaving the tenth to be committed by accident. Ignore
+# everything under docs/ and re-admit what belongs — prose we wrote, and the ADRs
+# beside it. Getting this backwards costs a republished ISO document; getting it
+# right costs one line when we add a genuinely new kind of doc.
+# ---------------------------------------------------------------------------
+docs/**
+!docs/**/
+!docs/**/*.md
+
 # --- Go ---
 *.exe
 *.exe~

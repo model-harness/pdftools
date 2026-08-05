@@ -1,6 +1,7 @@
 package font
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -88,6 +89,170 @@ func TestSimpleFontWidthsIndexFromFirstChar(t *testing.T) {
 		if got := f.Width(tc.code, tc.code); got != tc.want {
 			t.Errorf("Width(%q) = %v, want %v: %s", rune(tc.code), got, tc.want, tc.why)
 		}
+	}
+}
+
+// TestType3WidthsScaleByFontMatrix is the regression for advances read as 1/1000 in
+// the one font kind where that is not the unit.
+//
+// Type 3 is the exception in §9.6.4: its /Widths are in a glyph space whose mapping
+// to text space is /FontMatrix, where every other kind has that mapping fixed at
+// 1/1000. The numbers here are a real pdfTeX font — /FontMatrix 0.00836 with widths
+// near 60 — because that is where the defect was measured: the five glyphs of
+// "First" sum to 275.64, which the file means as 275.64*0.00836 = 2.30 text-space
+// units per em rather than 0.276, an 8.36x error. Read as 1/1000 the pen falls a
+// word behind on every word, and since extract infers spaces by comparing measured
+// gaps against these advances, every Type 3 run became its own text block.
+//
+// Asserted in the 1/1000 units Width promises rather than in text space, because
+// normalizing at load is what keeps that promise true for every caller: extract
+// divides by 1000 and knows nothing about font kinds.
+func TestType3WidthsScaleByFontMatrix(t *testing.T) {
+	load := func(matrix objects.Object) *Font {
+		d := objects.Dict{
+			"Type":      objects.Name("Font"),
+			"Subtype":   objects.Name("Type3"),
+			"FirstChar": objects.Int('a'),
+			"LastChar":  objects.Int('a'),
+			"Widths":    objects.Array{objects.Real(60)},
+			"CharProcs": objects.Dict{},
+			"Encoding":  objects.Dict{"Differences": objects.Array{objects.Int('a'), objects.Name("a")}},
+		}
+		if matrix != nil {
+			d["FontMatrix"] = matrix
+		}
+		return Load(newStore(), d)
+	}
+
+	m := func(a float64) objects.Array {
+		return objects.Array{
+			objects.Real(a), objects.Int(0), objects.Int(0),
+			objects.Real(a), objects.Int(0), objects.Int(0),
+		}
+	}
+
+	for _, tc := range []struct {
+		name   string
+		matrix objects.Object
+		want   float64
+		why    string
+	}{
+		{"pdfTeX", m(0.00836), 60 * 0.00836 * 1000, "the matrix's horizontal scale is the glyph space unit"},
+		{"thousandth", m(0.001), 60, "0.001 is the convention every other kind fixes, so it is a no-op"},
+		{"absent", nil, 60, "§9.6.4's default for a missing /FontMatrix is [0.001 0 0 0.001 0 0]"},
+		{"short", objects.Array{objects.Real(0.01)}, 60, "a matrix too short to read is a defective dictionary, not a scale of 0.01"},
+		{"five elements", m(0.01)[:5], 60, "an affine matrix is six numbers; five is malformed, not a readable first element"},
+		{"zero scale", m(0), 60, "a zero scale would stack the whole page at one point"},
+		// A negative horizontal scale is a legal affine transform — a mirrored glyph
+		// space — and the advance it describes really does run leftwards. Carried
+		// through as a negative width rather than clamped, because extract adds the
+		// advance to the pen and a mirrored run that walks backwards is the file's
+		// intent. Clamping to zero would stack the run instead.
+		{"mirrored", m(-0.00836), -60 * 0.00836 * 1000, "a negative scale mirrors glyph space and the pen moves leftwards"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Compared with a tolerance because the assertion and the code reach the
+			// same product by different multiplication orders, and 60*0.00836*1000
+			// is not bit-identical to 60*(0.00836*1000). An exact comparison here
+			// would test IEEE association, not the scaling.
+			if got := load(tc.matrix).Width('a', 'a'); math.Abs(got-tc.want) > 1e-9 {
+				t.Errorf("Width = %v, want %v: %s", got, tc.want, tc.why)
+			}
+		})
+	}
+
+	// A non-Type3 font carrying a /FontMatrix must be left alone: the entry is
+	// meaningless there, and scaling by it would corrupt a font that is correct.
+	f := Load(newStore(), objects.Dict{
+		"Subtype":    objects.Name("Type1"),
+		"FirstChar":  objects.Int('a'),
+		"Widths":     objects.Array{objects.Real(60)},
+		"FontMatrix": m(0.00836),
+	})
+	if got := f.Width('a', 'a'); got != 60 {
+		t.Errorf("Type1 Width = %v, want 60: /FontMatrix applies to Type 3 only", got)
+	}
+}
+
+// TestType3MissingWidthScalesToo covers the fallback path, which is a separate
+// field and so a separate chance to leave one unit behind. A Type 3 font whose
+// /Widths does not cover a code falls back to /MissingWidth, and that number is in
+// the same glyph space as the array it stands in for.
+func TestType3MissingWidthScalesToo(t *testing.T) {
+	f := Load(newStore(), objects.Dict{
+		"Subtype":        objects.Name("Type3"),
+		"FirstChar":      objects.Int('a'),
+		"LastChar":       objects.Int('a'),
+		"Widths":         objects.Array{objects.Real(60)},
+		"FontDescriptor": objects.Dict{"MissingWidth": objects.Real(50)},
+		"FontMatrix": objects.Array{
+			objects.Real(0.01), objects.Int(0), objects.Int(0),
+			objects.Real(0.01), objects.Int(0), objects.Int(0),
+		},
+	})
+	// 'z' is outside /Widths, so it takes /MissingWidth: 50 * 0.01 * 1000.
+	if got, want := f.Width('z', 'z'), 50*0.01*1000.0; got != want {
+		t.Errorf("Width of an uncovered code = %v, want %v", got, want)
+	}
+}
+
+// TestType3DoesNotBorrowStandard14Metrics pins the other fallback shut.
+//
+// An uncovered code in a simple font falls back to the standard-14 metrics, which
+// is why a font may legally omit /Widths at all. A Type 3 font must not take that
+// branch even when its /BaseFont names one of the fourteen, for two reasons that
+// point the same way. Helvetica's advance for a glyph says nothing about a font
+// whose glyph is a content stream in its own /CharProcs. And the branch returns
+// 1/1000 directly, where this font's own widths have been scaled out of a 0.01
+// glyph space — so the uncovered code would advance ten times its neighbours.
+//
+// /BaseFont /Helvetica on a Type 3 font is malformed, which is the point: the test
+// constructs the one dictionary that reaches the branch, because a correct file
+// never will and an unreachable inconsistency stops being unreachable the moment
+// some producer writes it.
+func TestType3DoesNotBorrowStandard14Metrics(t *testing.T) {
+	d := func(subtype objects.Name) objects.Dict {
+		return objects.Dict{
+			"Subtype":   subtype,
+			"BaseFont":  objects.Name("Helvetica"),
+			"FirstChar": objects.Int('a'),
+			"LastChar":  objects.Int('a'),
+			"Widths":    objects.Array{objects.Real(60)},
+			"Encoding":  objects.Name("WinAnsiEncoding"),
+			"FontMatrix": objects.Array{
+				objects.Real(0.01), objects.Int(0), objects.Int(0),
+				objects.Real(0.01), objects.Int(0), objects.Int(0),
+			},
+		}
+	}
+
+	// The control: the same dictionary as a Type 1 font does take the metrics, so a
+	// pass below means Type 3 was excluded rather than the branch being dead.
+	if got := Load(newStore(), d("Type1")).Width('A', 'A'); got == 0 {
+		t.Fatal("Type1 Width of an uncovered code = 0: the standard-14 branch is not being reached, so this test proves nothing")
+	}
+
+	// No /Widths entry for 'A' and no /MissingWidth, so the honest answer is the
+	// zero default. Borrowing Helvetica's 667 here would be a number in the wrong
+	// unit for this font.
+	if got := Load(newStore(), d("Type3")).Width('A', 'A'); got != 0 {
+		t.Errorf("Type3 Width of an uncovered code = %v, want 0: standard-14 metrics do not describe /CharProcs glyphs", got)
+	}
+
+	// A dictionary with no /Subtype at all is the fail-open case, and it is safe for
+	// one reason worth pinning: both the /FontMatrix scaling and this exclusion test
+	// f.Subtype, so neither fires and the font stays wholly in 1/1000 units. It is
+	// the mixture that would corrupt a run — scaled /Widths beside an unscaled
+	// fallback — and that cannot happen while one field gates both. Anyone splitting
+	// the predicate should have to change this test to do it.
+	noSubtype := d("Type3")
+	delete(noSubtype, "Subtype")
+	f := Load(newStore(), noSubtype)
+	if got := f.Width('a', 'a'); got != 60 {
+		t.Errorf("covered code with no /Subtype = %v, want 60 unscaled: the matrix must not apply when the exclusion does not", got)
+	}
+	if got := f.Width('A', 'A'); got == 0 {
+		t.Error("uncovered code with no /Subtype = 0: the standard-14 fallback should apply, in the same 1/1000 unit as the widths beside it")
 	}
 }
 
