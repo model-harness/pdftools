@@ -40,17 +40,35 @@ func newLayout(o *doc.Outline) *layout {
 		file: make(map[*doc.Section]string),
 		dir:  make(map[*doc.Section]string),
 	}
-	l.assign(o.Sections, "/", "")
+	l.assign(o.Sections, "/", "", reserved("/"))
 	return l
 }
 
-func (l *layout) assign(sections []*doc.Section, dir, parentNum string) {
+// reserved seeds a directory's name set with the stems this package writes itself, so that a
+// clause whose title slugs to one of them is renamed rather than silently overwriting it.
+//
+// index.md exists in every directory and log.md and front-matter.md at the root, all written
+// unconditionally by the builder after layout has run — so a clause titled "Index" does not
+// lose a collision, it loses it *afterwards*, when the reserved file is written over the
+// concept document that already landed there. Cheap to prevent here and invisible to detect
+// there.
+func reserved(dir string) map[string]bool {
+	t := map[string]bool{"index": true}
+	if dir == "/" {
+		t["log"] = true
+		t["front-matter"] = true
+	}
+	return t
+}
+
+func (l *layout) assign(sections []*doc.Section, dir, parentNum string, taken map[string]bool) {
 	// Names are deduplicated within a directory, not globally: two sibling clauses named
 	// "General" would otherwise overwrite each other, while "7.5/general.md" and
 	// "7.6/general.md" are distinct paths and must both keep their name.
-	taken := make(map[string]bool, len(sections))
+	bases := make([]string, len(sections))
 	for i, s := range sections {
 		base := unique(taken, fit(dir, candidates(s, parentNum, i)))
+		bases[i] = base
 		if len(s.Kids) == 0 {
 			l.file[s] = path.Join(dir, base+".md")
 			continue
@@ -63,10 +81,19 @@ func (l *layout) assign(sections []*doc.Section, dir, parentNum string) {
 		// that a reader listing the directory sees what it is.
 		l.file[s] = path.Join(sub, base+".md")
 	}
-	for _, s := range sections {
-		if len(s.Kids) > 0 {
-			l.assign(s.Kids, l.dir[s], s.Number)
+	for i, s := range sections {
+		if len(s.Kids) == 0 {
+			continue
 		}
+		// The parent's own document sits in this directory too, and it was named against
+		// the *parent's* sibling set, which the children never see. A child that slugs to
+		// the same stem overwrote it — measured on ISO/TS 32004, where a clause with three
+		// untitled and unnumbered subclauses fell back to "section-2" for both itself and
+		// its second child, and the bundle came out two concept documents short of the
+		// count it reported. Seeding the stem is what makes the children's dedup aware of it.
+		sub := reserved(l.dir[s])
+		sub[bases[i]] = true
+		l.assign(s.Kids, l.dir[s], s.Number, sub)
 	}
 }
 
@@ -91,13 +118,18 @@ const MaxPath = 150
 // so a path made entirely of last resorts stays inside the bound at any depth the corpus
 // contains — see TestLayoutBoundsPaths, which goes deeper than the corpus does.
 //
-// The two extra bytes are the separator this name sits behind and the worst case of the
-// deduplication suffix; the four are ".md" plus the separator before it. The name is counted
-// twice because a parent clause's own document repeats its directory's name one level down,
-// which is the longest path any single name produces.
+// The four extra bytes are the separator this name sits behind plus a deduplication suffix of
+// up to "-999"; the four at the end are ".md" plus the separator before it. The name is
+// counted twice because a parent clause's own document repeats its directory's name one level
+// down, which is the longest path any single name produces.
+//
+// The suffix has to be reserved here because it is appended after this decision — unique()
+// does not know the bound and fit() does not know how many siblings will collide. Four bytes
+// covers a thousand of them, which is three orders of magnitude past the largest collision
+// group the corpus produces (three, on ISO/TS 32004's untitled subclauses).
 func fit(dir string, names []string) string {
 	for _, n := range names {
-		if len(dir)+2+2*len(n)+4 <= MaxPath {
+		if len(dir)+4+2*len(n)+4 <= MaxPath {
 			return n
 		}
 	}

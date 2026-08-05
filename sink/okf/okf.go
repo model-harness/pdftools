@@ -102,6 +102,18 @@ type Stats struct {
 // Write renders the bundle and writes it under dir.
 func Write(dir string, o *doc.Outline, opt Options) (Stats, error) {
 	files, st := Bundle(o, opt)
+	// Two files with one path means the second overwrites the first and the Stats returned
+	// still counts both, so the caller reports a document count the bundle does not contain.
+	// That happened: ISO/TS 32004 reported 56 concept documents and wrote 54. A duplicate is
+	// a layout defect and not a condition a caller can recover from, so it is worth an error
+	// here rather than a silently short bundle — the failure it replaces was invisible.
+	seen := make(map[string]bool, len(files))
+	for _, f := range files {
+		if seen[f.Path] {
+			return st, fmt.Errorf("%s: two documents share this path, which would silently drop one", f.Path)
+		}
+		seen[f.Path] = true
+	}
 	for _, f := range files {
 		// f.Path is "/"-rooted and slash-separated, which is the bundle's own convention
 		// and not this platform's. filepath.FromSlash is what makes the same bundle come

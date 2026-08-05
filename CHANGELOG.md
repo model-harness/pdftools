@@ -5,6 +5,25 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-05
+
+- **An OKF bundle could silently drop concept documents.** A parent clause's own document is
+  written *inside* its children's directory (`index.md` is reserved and cannot hold prose),
+  but that name was chosen against the parent's sibling set and never reserved in the
+  children's, whose deduplication is per-directory. A child slugging to the same stem
+  overwrote it. On ISO/TS 32004 that lost two real clauses — B.2.2.2 *PDF MAC coverage* and
+  B.2.3.3 *External digests* — because a clause with no number and no usable title falls back
+  to its position among its siblings, and `section-2` was both the parent's position among its
+  own siblings and the child's among its. `Stats` still counted both, so the CLI reported 56
+  documents and wrote 54. Found by reconciling the reported counts against files on disk
+  across the whole corpus; the other ten bundles were exact.
+- `okf.Write` now returns an error when two documents resolve to one path instead of writing
+  one over the other and reporting a count the bundle does not contain. The reserved stems
+  (`index` everywhere, `log` and `front-matter` at the root) are seeded into the layout's
+  name set for the same reason — a clause titled "Index" slugs to `index`, so it collided
+  with the navigation file rather than being renamed. No corpus document contains one; it is
+  the same defect one step away.
+
 ## [0.1.0] — 2026-08-05
 
 First tagged release. Phases 1–4 of `docs/DESIGN.md`: extraction, clause reconstruction,

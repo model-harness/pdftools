@@ -1,6 +1,7 @@
 package okf
 
 import (
+	"path"
 	"strings"
 	"testing"
 
@@ -69,6 +70,66 @@ func TestLayoutBoundsPaths(t *testing.T) {
 		return true
 	})
 	t.Logf("deepest path %d characters at 8 levels", deepest)
+}
+
+// TestLayoutGivesEveryClauseADistinctPath is the regression for the collision that made
+// ISO/TS 32004 report 56 concept documents and write 54.
+//
+// The shape is the one that file contains: a clause with no number and no usable title —
+// its heading glyphs are an image with no /Alt — whose subclauses are the same. Both the
+// parent and its second child fall back to their position among their siblings, the parent
+// is "section-2" among its own siblings, the child is "section-2" among its, and the
+// parent's document lives inside the child's directory. Same path, and nothing noticed
+// because the deduplication set was per-directory while the parent was named one level up.
+//
+// Asserted over paths rather than over Stats because a path map is where the defect is; the
+// count mismatch was the symptom that surfaced it. Write also rejects duplicates now, which
+// covers the case where some future name escapes this.
+func TestLayoutGivesEveryClauseADistinctPath(t *testing.T) {
+	untitled := func(n int) []*doc.Section {
+		out := make([]*doc.Section, n)
+		for i := range out {
+			out[i] = &doc.Section{}
+		}
+		return out
+	}
+	// Three unnumbered siblings, the middle two of which have unnumbered children. Before
+	// the fix, "/section-2/section-2.md" was both the parent's document and its child's.
+	sections := untitled(3)
+	sections[1].Kids = untitled(3)
+	sections[2].Kids = untitled(3)
+	// A clause titled "Index" collides with the reserved index.md that every directory gets.
+	sections[0].Kids = []*doc.Section{{Title: "Index"}, {Title: "Log"}}
+
+	o := &doc.Outline{Sections: sections}
+	l := newLayout(o)
+
+	at := make(map[string]int)
+	o.Walk(func(s *doc.Section) bool {
+		p := l.file[s]
+		if p == "" {
+			t.Errorf("section %q/%q got no path", s.Number, s.Title)
+		}
+		at[p]++
+		return true
+	})
+	for p, n := range at {
+		if n > 1 {
+			t.Errorf("%d sections share the path %s: %d documents would be silently overwritten", n, p, n-1)
+		}
+		// Asserted against the same set the layout seeds, since which names are reserved
+		// depends on the directory: index.md is in every one, log.md and front-matter.md
+		// only at the root. A clause titled "Log" three levels down is not a collision.
+		if reserved(path.Dir(p))[strings.TrimSuffix(path.Base(p), ".md")] {
+			t.Errorf("a concept document was given the reserved path %s", p)
+		}
+	}
+	// 3 top-level sections, with 2, 3 and 3 children: 11 sections, so 11 paths. Counted
+	// rather than derived from the outline, because a Walk that skips a section would make a
+	// derived total agree with itself while the bundle is short a document.
+	if len(at) != 11 {
+		t.Errorf("got %d distinct paths for 11 sections", len(at))
+	}
 }
 
 func TestISOID(t *testing.T) {
