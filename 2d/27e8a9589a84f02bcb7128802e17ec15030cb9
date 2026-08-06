@@ -1,0 +1,60 @@
+layout/layout.go
+  s_5cd1b28ed520c1::t_f068d05233996c 58
+  s_5cd1b28ed520c1::t_44a78935bfd35b 281-282,284,295
+  s_5cd1b28ed520c1::t_1aaa4d5386bfb6 230-237
+  s_5cd1b28ed520c1::t_c8370d7f2e6894 298-300,309-314
+  s_5cd1b28ed520c1::t_daffea85569c63 1-13,20-57,59-100,105-229,238-280,283,285-294,296-297,301-308,315-329
+  s_5cd1b28ed520c1::t_055f67513a5903 14-15
+  s_5cd1b28ed520c1::t_d26a5be096e6af 101-104
+  s_5cd1b28ed520c1::t_cecd47f6071340 16-19
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_f7872c838abeee 116-118
+  s_5cd1b28ed520c1::t_23b13bf6c7eefe 139-146
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_b3ecc0cc8a5629 13
+  s_5cd1b28ed520c1::t_4040a171a2c04c 77
+  s_5cd1b28ed520c1::t_9f8a111079f6b9 133-147
+layout/layout_test.go
+  s_5cd1b28ed520c1::t_2c4958eac189be 88-95,101,105-114
+  s_5cd1b28ed520c1::t_bab485b61470fc 1-87,96-100,102-104,115-310
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_7ae79b9da53267 544-547
+  s_5cd1b28ed520c1::t_fce0092e698cbc 231-235
+  s_5cd1b28ed520c1::t_5defbab2554303 591,596-601
+  s_5cd1b28ed520c1::t_f3aafa41916119 604-609
+  s_5cd1b28ed520c1::t_959a396e533abc 288-293
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_d76ca819e6f38b 21-23
+  s_5cd1b28ed520c1::t_0f823ced838985 8-20,24-54
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_1d0e303b225885 60-66
+docs/adr/0008-rank-untagged-headings-by-their-own-numbering.md
+  s_5cd1b28ed520c1::t_e4ae99cdc9e452 1-20,22-49,55-57,59-81,98-112
+  s_5cd1b28ed520c1::t_11a0510d23b8af 21
+  s_5cd1b28ed520c1::t_eada3599c69669 50-54,58
+  s_5cd1b28ed520c1::t_ffec3f396766b2 82-97
+  s_5cd1b28ed520c1::t_bf79c20e6587db 113-121
+sink/markdown/markdown_test.go
+  s_5cd1b28ed520c1::t_4ba2b8d64c4bf6 98-137
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_563cc62c4ae069 320-350
+  s_5cd1b28ed520c1::t_7019554c78ef57 235
+cmd/pdfspec/reference_test.go
+  s_5cd1b28ed520c1::t_14a3b7b4b59d94 121-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2d27e8a9589a84f02bcb7128802e17ec15030cb9",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
