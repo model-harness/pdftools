@@ -110,12 +110,22 @@ Turning a levelled sequence into one means running sectionize's level stack over
 the next step on this path. `pdfspec okf` continues to refuse untagged input, with an
 error that now says which half landed.
 
-**Block segmentation is the blocking gap underneath this, and it is why two of the six
-report zero candidates.** `extract.continues` tests only vertical step, so a heading whose
-next line falls at ordinary leading fuses into the paragraph after it. `autotagPDFInput.pdf`
-and `v110-changes.pdf` yield *no* style-uniform blocks above their body size at all — their
-headings are not separate blocks to promote, so no gate or ranking rule could reach them.
-Fixing it belongs to `extract`, not `layout`, and it is the same defect as DESIGN.md §10's
-paragraph-break gap. It also means the bold-body case above is currently argued from
-measurement rather than from a passing fixture, which is what
-`TestHeadingsBodyBoldCarriesNoSignal` stands in for until segmentation lands.
+**Block segmentation was the blocking gap underneath this, and it is why two of the six
+reported zero candidates.** `extract.continues` tested only vertical step, so a heading
+whose next line fell at ordinary leading fused into the paragraph after it, and
+`autotagPDFInput.pdf` and `v110-changes.pdf` yielded *no* style-uniform blocks above their
+body size at all — their headings were not separate blocks to promote, so no gate or
+ranking rule could reach them. That has since been fixed in `extract` rather than worked
+around in `layout`: `continues` now also breaks where two consecutive lines' dominant type
+sizes differ by more than `Tolerance.SizeFrac`. Their candidate counts went to 12 and 6.
+
+Neither promotes a heading even so, and the reason is the unnumbered limit above rather
+than segmentation. Every one of the 18 recovered candidates is unnumbered: Adobe's are
+"Accessible PDF Demo Document", "Lists", "Simple List", "Simple Table", "Embedded
+Hyperlink" and the like; pymupdf's are "Pixmap", "PyMuPDF Design Decision", "API Change:
+Display List", "API Change: Text Page", "API Change: Links", "Configuration Changes". The
+limit is now reached honestly instead of being masked by a defect one layer down.
+
+The bold-body case remains argued from measurement rather than from a passing fixture —
+`v110-changes.pdf`'s body cluster is 9.96pt plain, so no corpus document actually exercises
+a bold body — which is what `TestHeadingsBodyBoldCarriesNoSignal` stands in for.

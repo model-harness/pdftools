@@ -2,12 +2,16 @@ package extract
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/objects"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
 
 // memStore is a Store over hand-written content streams.
@@ -287,6 +291,151 @@ func TestParagraphBreakSplitsBlocks(t *testing.T) {
 	}
 	if got := p.Blocks[1].Text(); got != "second" {
 		t.Errorf("block 1 = %q", got)
+	}
+}
+
+// TestSizeChangeSplitsBlocks is the case the vertical step cannot see.
+//
+// A heading set at the same leading as the prose under it steps down by exactly one
+// line, so the step test joins them and the heading is resolved as the first words of
+// the following paragraph. adobe-samples/autotagPDFInput.pdf and
+// pymupdf/v110-changes.pdf are both written this way, and before this neither yielded
+// a single promotable heading — layout had no separate block to promote.
+//
+// 18pt against 12pt is a ratio of 1.5, well past SizeFrac, and the 14pt step is under
+// ParaFrac*18 = 27 so nothing else would split them.
+func TestSizeChangeSplitsBlocks(t *testing.T) {
+	stream := `BT /F1 18 Tf 10 700 Td (Heading) Tj /F1 12 Tf 0 -14 Td (Body text.) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2: the heading fused into the paragraph", len(p.Blocks))
+	}
+	if got := p.Blocks[0].Text(); got != "Heading" {
+		t.Errorf("block 0 = %q, want %q", got, "Heading")
+	}
+	if got := p.Blocks[1].Text(); got != "Body text." {
+		t.Errorf("block 1 = %q, want %q", got, "Body text.")
+	}
+}
+
+// TestSmallSizeJitterDoesNotSplit is what stops the size test from splitting prose.
+//
+// OCR output reports one line of type at sizes differing by a few percent, and an ISO
+// cover sets an 11.5pt address line against a 12pt URL. Measured over the corpus,
+// that population tops out at a ratio of 1.057 while real structure starts at 1.067,
+// so SizeFrac sits at 1.06 between them. 12.5 against 12 is 1.042 — jitter.
+func TestSmallSizeJitterDoesNotSplit(t *testing.T) {
+	stream := `BT /F1 12.5 Tf 10 700 Td (first line) Tj /F1 12 Tf 0 -14 Td (second line) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1: a 4%% size difference is jitter, not structure", len(p.Blocks))
+	}
+}
+
+// TestSizeBreakUsesDominantSize: a footnote marker is a legitimately different size
+// inside one line of prose, and taking the largest size per line would make every
+// annotated line look like a heading meeting body text.
+//
+// The marker is set at 20pt — a ratio of 1.67 against the body, well past SizeFrac —
+// so a largest-size-per-line rule breaks the paragraph at it. It is one character
+// against thirty-two of 12pt type, so it loses the tally and the block holds together.
+// The 20pt size is deliberately implausible for a real superscript: a marker at a
+// plausible 7pt would leave 12 as the largest size on its line too, and the test would
+// pass under either rule without distinguishing them.
+func TestSizeBreakUsesDominantSize(t *testing.T) {
+	stream := `BT /F1 12 Tf 10 700 Td (A claim needing a citation) Tj ` +
+		`/F1 20 Tf 0 -14 Td (1) Tj /F1 12 Tf 8 0 Td (and the sentence continues here.) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1: the oversized marker split the paragraph", len(p.Blocks))
+	}
+}
+
+// TestSizeFracOffJoins: a caller that fills some Tolerance fields and not others gets
+// SizeFrac 0, which cannot be applied literally — a ratio at or below 1 splits on any
+// difference at all, and no document survives that. It reads as "off".
+func TestSizeFracOffJoins(t *testing.T) {
+	tol := geom.DefaultTolerance
+	tol.SizeFrac = 0
+	s := onePage(`BT /F1 18 Tf 10 700 Td (Heading) Tj /F1 12 Tf 0 -14 Td (Body text.) Tj ET`)
+	p, err := New(s, Options{Tol: tol, KeepHidden: true}).Page(1)
+	if err != nil {
+		t.Fatalf("Page: %v", err)
+	}
+	if len(p.Blocks) != 1 {
+		t.Errorf("blocks = %d, want 1: SizeFrac 0 must disable the test, not split everything", len(p.Blocks))
+	}
+}
+
+// TestDomSizeCountsRunesNotBytes: "the size most of the line's characters are set in"
+// has to mean the same thing here as in layout.bodyCluster, which counts runes.
+//
+// Weighting by byte length counts a CJK or mathematical character three or four times
+// over a Latin one. The line below is 4 CJK characters at 12pt against 9 ASCII ones at
+// 20pt: 4 runes against 9, so 20pt is dominant, but 12 bytes against 9, so a byte tally
+// picks 12pt and every consumer's idea of which line is the larger inverts.
+func TestDomSizeCountsRunesNotBytes(t *testing.T) {
+	ln := &line{frags: []frag{
+		{text: []byte("日本語文"), style: doc.Style{Size: 12}},
+		{text: []byte("ABCDEFGHI"), style: doc.Style{Size: 20}},
+	}}
+	if got := domSize(ln); got != 20 {
+		t.Errorf("domSize = %v, want 20: 9 ASCII runes outnumber 4 CJK ones, but 12 CJK bytes outnumber 9 ASCII", got)
+	}
+}
+
+// TestDomSizeBreaksTieTowardSmaller pins the tie-break, which is otherwise at the mercy
+// of Go's randomized map iteration: a line split evenly between two sizes would report
+// one size on some runs and the other on the rest, and a block boundary that moves
+// between runs is worse than one in the wrong place.
+//
+// Toward the smaller size, matching layout.bodyCluster, so an evenly split line is
+// treated as body meeting emphasis rather than the reverse.
+func TestDomSizeBreaksTieTowardSmaller(t *testing.T) {
+	for i := 0; i < 64; i++ {
+		ln := &line{frags: []frag{
+			{text: []byte("abc"), style: doc.Style{Size: 18}},
+			{text: []byte("xyz"), style: doc.Style{Size: 12}},
+			{text: []byte("pqr"), style: doc.Style{Size: 24}},
+		}}
+		if got := domSize(ln); got != 12 {
+			t.Fatalf("domSize = %v, want 12: a three-way tie must resolve to the smallest size, not to map order", got)
+		}
+	}
+}
+
+// TestSizeBreakDefersToMarkedContent: where the producer declared two lines to be one
+// element, the size test must not split them.
+//
+// ISO/TS 32003:2023's cover is the case — a 36pt document number over a 17.5pt title,
+// both inside /MCID 3. Splitting it drops the space that joined them, because the wrap
+// space is written onto the second line's leading text and is trimmed when that line
+// starts a block; sectionize then rejoins the two spans on their shared MCID with no
+// separator and the title reads "32003:2023Document management".
+//
+// The sizes here are 36 and 17.5 — a ratio of 2.06, so nothing about the threshold is
+// what holds the block together — and the 20pt step is under ParaFrac*36.
+func TestSizeBreakDefersToMarkedContent(t *testing.T) {
+	stream := `/H1 <</MCID 3>> BDC BT /F1 36 Tf 10 700 Td (ISO/TS 32003:2023) Tj ` +
+		`/F1 17.5 Tf 0 -20 Td (Document management) Tj ET EMC`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1: the size test split one marked-content element", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "ISO/TS 32003:2023 Document management"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+}
+
+// TestSizeBreakSplitsAcrossMarkedContent is the other half: two elements is not a
+// statement that the lines belong together, so the size test still applies. Without
+// this, deferring to marked content would disable the rule on every tagged document.
+func TestSizeBreakSplitsAcrossMarkedContent(t *testing.T) {
+	stream := `/H1 <</MCID 0>> BDC BT /F1 18 Tf 10 700 Td (Heading) Tj ET EMC ` +
+		`/P <</MCID 1>> BDC BT /F1 12 Tf 10 686 Td (Body text.) Tj ET EMC`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2: the heading fused into the paragraph", len(p.Blocks))
 	}
 }
 
@@ -837,4 +986,93 @@ func TestProjectDegenerateMatrix(t *testing.T) {
 	if orient != 0 || along != 50 || cross != 60 {
 		t.Errorf("got (%d, %v, %v), want (0, 50, 60)", orient, along, cross)
 	}
+}
+
+// TestSizeBreakConservesText is the property that makes the size test safe to change.
+//
+// Where a block boundary falls is a judgement, and it is expected to move. Which
+// characters are on the page is not. A segmentation rule that dropped a line, or
+// duplicated one into both blocks, would still satisfy every threshold assertion above
+// while quietly corrupting the output — so this compares the text with the rule on
+// against the text with it off, over every fixture, ignoring whitespace because the
+// join-with-a-space behavior is exactly what a block boundary changes.
+//
+// Measured when the rule landed: of the 34 committed fixtures, 8 have boundaries that
+// move and none loses or gains a character.
+func TestSizeBreakConservesText(t *testing.T) {
+	var files []string
+	for _, g := range []string{
+		filepath.Join("..", "testdata", "*", "*.pdf"),
+		filepath.Join("..", "testdata", "*.pdf"),
+	} {
+		m, _ := filepath.Glob(g)
+		files = append(files, m...)
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		t.Skip("no fixtures found")
+	}
+
+	off := DefaultOptions
+	tol := geom.DefaultTolerance
+	tol.SizeFrac = 0
+	off.Tol = tol
+
+	checked, moved := 0, 0
+	for _, f := range files {
+		on, ok1 := allText(f, DefaultOptions)
+		was, ok2 := allText(f, off)
+		if !ok1 || !ok2 {
+			// An unreadable fixture is another test's failure, not this one's.
+			continue
+		}
+		checked++
+		if squeeze(on) != squeeze(was) {
+			t.Errorf("%s: text changed when block boundaries moved (%d vs %d non-space chars)",
+				filepath.Base(f), len(squeeze(on)), len(squeeze(was)))
+			continue
+		}
+		if on != was {
+			moved++
+		}
+	}
+	if checked == 0 {
+		t.Skip("no fixtures opened")
+	}
+	if moved == 0 {
+		t.Errorf("no fixture's block boundaries moved over %d files: the size test is not reaching real documents", checked)
+	}
+	t.Logf("%d fixtures checked, %d with boundaries moved, none losing text", checked, moved)
+}
+
+func allText(path string, opt Options) (string, bool) {
+	s, err := pcstore.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = s.Close() }()
+	d, err := New(s, opt).Document()
+	if err != nil {
+		return "", false
+	}
+	var sb strings.Builder
+	for pi := range d.Pages {
+		for _, b := range d.Pages[pi].Blocks {
+			sb.WriteString(b.Text())
+			sb.WriteByte('\n')
+		}
+	}
+	return sb.String(), true
+}
+
+// squeeze removes all whitespace. A moved block boundary changes where a newline falls
+// and whether two lines are joined by a space, which is the change being permitted;
+// everything else must be identical.
+func squeeze(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
 }

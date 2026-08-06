@@ -601,12 +601,17 @@ OKF-ified spec.
     bundle still needs a tree rather than a levelled sequence.
   - *Paragraph breaks.* `text-styles`' four paragraphs arrive joined into one line. The words
     and the styling are correct, so this is block segmentation and not extraction: a vertical
-    gap that a tagged document declares with `P` has to be inferred from leading —
-    `extract.continues` tests only vertical step today. This is now the highest-value of the
-    three, because it also blocks the gap above: a heading whose next line falls at ordinary
-    leading fuses into the paragraph after it, which is why `autotagPDFInput.pdf` and
-    `v110-changes.pdf` present *no* style-uniform block above their body size and gain no
-    headings at all.
+    gap that a tagged document declares with `P` has to be inferred from leading. **The
+    heading half of this is closed** — `extract.continues` now also breaks a block where two
+    consecutive lines' dominant type sizes differ by more than `Tolerance.SizeFrac`, which is
+    what a heading set at ordinary leading needs, and `autotagPDFInput.pdf` went from 0 to 12
+    heading candidates and `v110-changes.pdf` from 0 to 6. Neither promotes anything yet,
+    because both set their headings *unnumbered* — that is ADR 0008's recorded limit, reached
+    now rather than hidden behind a segmentation defect. What remains is the same-size case:
+    `text-styles`' four paragraphs are all 9.96pt, so no size ratio separates them and the
+    only remaining evidence is the leading itself. Splitting on style was measured and
+    rejected — those four paragraphs differ only in which word each emphasizes, so a weight
+    test would break blocks at whichever word happened to be bold.
   - *List role.* `lists` emits LaTeX's drawn markers as ordinary text — `•` for the outer
     level and a bold `–` for the nested one, which is genuinely what the page draws — instead
     of `- ` at two spaces per level. The nesting depth is visible in the indent; nothing yet
@@ -614,6 +619,17 @@ OKF-ified spec.
   - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
     the untagged-table research problem named above; the fixture exists so the day it is
     solved is measurable.
+- **A block boundary between two spans of one marked-content element loses the space that
+  joined them.** `extract.appendLine` writes the wrap space onto the *incoming* line's text,
+  so a line that starts a new block has it trimmed, and `sectionize.title` then rejoins spans
+  sharing a `(page, MCID)` across that boundary with no separator. Measured as cross-block
+  same-MCID adjacencies whose join would need a space, over all 47 PDFs: **47 today.** ADR
+  0009's marked-content guard covers the route the size test would have added (which would
+  have made it 74) but not the vertical-step route, which has always been there. It shows on
+  ISO 32000-2 as `𝐷min2𝑛` where the page sets a fraction. The fix is to move the wrap space
+  to the *trailing* end of the previous line, where regrouping keeps it — that changes
+  `doc.Span.Text` for every wrapped line in every document, so it needs its own measurement
+  rather than being folded into a segmentation change.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

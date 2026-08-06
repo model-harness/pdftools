@@ -682,7 +682,116 @@ func continues(prev, ln *line, t geom.Tolerance) bool {
 	if step < 0 {
 		return false
 	}
-	return step <= t.ParaFrac*h
+	if step > t.ParaFrac*h {
+		return false
+	}
+	if sameElement(prev, ln) {
+		// Both lines are inside one marked-content element, so the producer has stated
+		// they are one thing and the size test has nothing to add. ISO/TS 32003's cover
+		// is the case: a 36pt document number and a 17.5pt title, both /MCID 3, which
+		// sizeBreak would otherwise split. Splitting it loses the space between them —
+		// the wrap space lives on the second line's leading text and is dropped when
+		// that line starts a block — and sectionize then rejoins the two spans on their
+		// shared MCID with no separator, yielding "32003:2023Document management".
+		//
+		// Deferring to the declaration is the same rule ADR 0008 applies to roles: where
+		// a producer declared the structure, a heuristic that guesses over it replaces
+		// evidence with inference. Untagged pages carry no MCID at all, so this never
+		// reaches the documents the size test was added for.
+		return true
+	}
+	return !sizeBreak(prev, ln, t)
+}
+
+// sameElement reports whether two lines were drawn entirely inside one marked-content
+// element.
+//
+// Every fragment of both must carry the same identifier. A line spanning two MCIDs is
+// not a statement that the lines belong together, and MCID 0 is valid while -1 means
+// "outside any marked content", so the absent case has to be excluded explicitly.
+func sameElement(prev, ln *line) bool {
+	if len(prev.frags) == 0 || len(ln.frags) == 0 {
+		return false
+	}
+	id := prev.frags[0].mcid
+	if id < 0 {
+		return false
+	}
+	for _, fs := range [][]frag{prev.frags, ln.frags} {
+		for i := range fs {
+			if fs[i].mcid != id {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// sizeBreak reports whether two lines are set in different enough type to be
+// different blocks regardless of how little vertical space separates them.
+//
+// The vertical step cannot see this case. A heading set at the same leading as the
+// prose under it steps down by exactly one line, so the step test joins them and the
+// heading is resolved as the first words of the following paragraph — which is why
+// adobe-samples/autotagPDFInput.pdf and pymupdf/v110-changes.pdf produced no
+// promotable heading at all before this, and why the fix belongs here rather than in
+// layout: there was no separate block to promote.
+//
+// Compared on the dominant size rather than on style, because weight is not evidence
+// of a break. reference/text-styles.pdf sets four consecutive same-size paragraphs
+// that differ only in which word each emphasizes, so their longest fragments differ in
+// weight while the paragraphs themselves are unremarkable; splitting on that would
+// break blocks at whichever word happened to be bold.
+func sizeBreak(prev, ln *line, t geom.Tolerance) bool {
+	if t.SizeFrac <= 1 {
+		// Disabled. A ratio of 1 would split on any difference at all, which no
+		// document survives, so it is read as "off" rather than applied literally —
+		// this is what a caller filling some Tolerance fields and not others gets.
+		return false
+	}
+	a, b := domSize(prev), domSize(ln)
+	if a <= 0 || b <= 0 {
+		return false
+	}
+	if a < b {
+		a, b = b, a
+	}
+	return a > b*t.SizeFrac
+}
+
+// domSize returns the size most of a line's characters are set in.
+//
+// The dominant size, not the largest: a footnote marker or an inline superscript is a
+// legitimately different size within one line of prose, and taking the maximum would
+// make every annotated line look like a heading meeting body text.
+func domSize(ln *line) float64 {
+	by := map[float64]int{}
+	for i := range ln.frags {
+		// Runes, not bytes, so that "characters" means the same thing here as it does in
+		// layout.bodyCluster. Weighting by byte length would count a CJK or mathematical
+		// character three or four times over a Latin one, and a line of body-size CJK
+		// carrying one Latin word would tally as though the CJK were the emphasis.
+		n := utf8.RuneCount(ln.frags[i].text)
+		// Rounded to hundredths of a point, for the same reason layout.quantize
+		// exists: Style.Size is computed through the text matrix and the CTM, so one
+		// run of type differs in the far decimals and would tally as several sizes,
+		// none of them dominant.
+		sz := math.Round(ln.frags[i].style.Size*100) / 100
+		if n == 0 || sz <= 0 {
+			continue
+		}
+		by[sz] += n
+	}
+	// Ties break toward the smaller size so the result does not depend on map order.
+	// bestN starts below zero so the first size seen always wins outright, leaving
+	// best's zero value unread.
+	best, bestN := 0.0, -1
+	for sz, n := range by {
+		if n > bestN || (n == bestN && sz < best) {
+			best, bestN = sz, n
+		}
+	}
+	return best
 }
 
 func lineHeight(ln *line) float64 {

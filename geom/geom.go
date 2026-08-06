@@ -144,6 +144,16 @@ type Tolerance struct {
 	// treated as a paragraph break rather than a line break.
 	ParaFrac float64
 
+	// SizeFrac is the ratio between two consecutive lines' dominant type sizes
+	// above which they are treated as separate blocks even when the vertical step
+	// says otherwise. A heading set at ordinary leading is the case: the step alone
+	// cannot see it, and without this the heading fuses into the paragraph below.
+	//
+	// It is a ratio of larger to smaller, so 1.0 would split on any difference at
+	// all and is not a usable setting — OCR output reports the same line of type at
+	// sizes differing by a few percent. Zero means the default.
+	SizeFrac float64
+
 	// Epsilon is the absolute tolerance for coordinate comparison in user-space
 	// units, absorbing float noise from matrix composition.
 	Epsilon float64
@@ -157,7 +167,15 @@ var DefaultTolerance = Tolerance{
 	WideSpaceFrac: 2.50,
 	LineFrac:      0.50,
 	ParaFrac:      1.50,
-	Epsilon:       1e-6,
+	// 1.06 is measured rather than chosen. Over the 6,023 line pairs the corpus
+	// joins on vertical step alone, 5,769 are at the same dominant size and the
+	// remaining 254 split into two populations with a clear gap: jitter at or below
+	// 1.057 — OCR output reporting one line of type at 27 and 28 points, an ISO
+	// cover's 11.5pt address line against a 12pt URL — and real structure at or
+	// above 1.067, where a 32pt title meets a 30pt subtitle and Adobe's 13.02pt
+	// headings meet 12pt body. Nothing in the corpus falls between.
+	SizeFrac: 1.06,
+	Epsilon:  1e-6,
 }
 
 // NearlyEqual reports whether a and b are within the absolute epsilon.

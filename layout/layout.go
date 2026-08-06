@@ -140,8 +140,11 @@ func Headings(d *doc.Document, opt Options) Stats {
 			if !uniform {
 				// A block mixing sizes or weights is a heading fused to the paragraph
 				// after it, or prose with emphasis in it. Neither is a heading, and
-				// splitting the fused case is block segmentation — extract's continues()
-				// tests only vertical step — not classification. DESIGN.md §10 records it.
+				// splitting the fused case is block segmentation rather than
+				// classification. extract's continues() now breaks on a dominant-size
+				// ratio as well as on the vertical step, which is what recovered the
+				// headings of autotagPDFInput.pdf and v110-changes.pdf (ADR 0009); a
+				// same-size fused block is the case that remains, per DESIGN.md §10.
 				continue
 			}
 			if !distinct(style, size, bold) {

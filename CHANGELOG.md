@@ -51,6 +51,35 @@ All notable changes to this project are documented here, following
   carrying no style at all.
 - `pdfspec okf` still refuses untagged input, but its error now says which half landed —
   a bundle needs a tree, and `layout` produces levels rather than one.
+- **A block now also breaks where the type size changes, not only where the vertical step
+  is large.** A heading set at ordinary leading steps down by exactly one line, so the
+  step test joined it to the prose beneath and the heading was resolved as the first words
+  of the following paragraph — which is why `autotagPDFInput.pdf` and `v110-changes.pdf`
+  had *no* heading candidate for `layout` to promote: no classification rule can recover a
+  boundary segmentation never drew. `Tolerance.SizeFrac` is the threshold, at 1.06 because
+  that is where the corpus is empty: over the 6,023 line pairs joined on step alone, size
+  jitter tops out at a ratio of 1.057 (OCR reporting one line of type at 27 and 28pt) and
+  real structure starts at 1.067 (a 32pt title meeting a 30pt subtitle). Compared on each
+  line's *dominant* size rather than its largest, so an inline superscript does not make
+  every annotated line look like a heading, and never on weight — `text-styles.pdf` sets
+  four same-size paragraphs differing only in which word each emphasizes, so a weight test
+  breaks blocks at whichever word happens to be bold. Candidate counts went 0→12 on
+  `autotagPDFInput.pdf` and 0→6 on `v110-changes.pdf`; neither promotes a heading, because
+  all 18 are unnumbered, which is ADR 0008's recorded limit now reached honestly rather
+  than masked by a defect a layer down. The test does not apply inside a single
+  marked-content element, where the producer has already declared the lines to be one
+  thing. Measured over all 47 convertible PDFs: 17 files changed, and with whitespace
+  squeezed out 46 of the 47 are character-for-character identical — the 47th gains two
+  Markdown emphasis markers and no PDF text. ADR 0009 carries the measurements.
+- **Known defect this surfaced and does not fix:** a block boundary falling between two
+  spans of one marked-content element loses the space that joined them, because
+  `appendLine` writes that space onto the *incoming* line and `sectionize` rejoins
+  same-MCID spans with no separator. It predates this change — 47 instances across the
+  corpus reachable through the vertical-step test alone — and the marked-content guard
+  above keeps the size test from adding 27 more. One instance now shows where it did not
+  before: ISO 32000-2's `𝐷min 2𝑛` reads `𝐷min2𝑛`. DESIGN.md carries it with the
+  measurement and the fix, which changes `doc.Span.Text` for every wrapped line and so
+  needs measuring on its own.
 
 ### Fixed — 2026-08-05
 
