@@ -118,6 +118,18 @@ func TestReferenceExactMatch(t *testing.T) {
 		// grid). Nothing this fixture asserts is waiting on a deferred debt, so a
 		// change that breaks it is a regression and not a known shortfall.
 		"clauses": true,
+
+		// The untagged path's heading rank, which this fixture was written to measure
+		// and for which it logged "**1 First Section**" against "# 1 First Section"
+		// until layout.Headings existed. Three depths, two of them distinguished from
+		// the body by size and the third only by weight.
+		//
+		// Worth enforcing beyond the levels themselves: it also pins the two rules
+		// that make them possible. Ranking by the document's own section numbering
+		// rather than by position in the size ladder — the level-3 heading is *body
+		// size*, so a ladder has no rung for it — and dropping the "**" that a
+		// heading's own promoting emphasis would otherwise restate.
+		"headings": true,
 	}
 
 	for _, f := range referenceFixtures {

@@ -113,6 +113,9 @@ func runOCR(args []string) error {
 		// was consulted and agreed.
 		fmt.Fprintf(os.Stderr, "no pages need recognition: all %d selected page(s) carry text above %.0f%% coverage\n",
 			len(want), *threshold*100)
+		if !d.Meta.Tagged {
+			inferHeadings(d)
+		}
 		return writeWhole(d, *out, mopt)
 	}
 
@@ -132,6 +135,14 @@ func runOCR(args []string) error {
 
 	if err := recognize(ctx, d, routed, eng, r, ropt, *maxTokens); err != nil {
 		return err
+	}
+	if !d.Meta.Tagged {
+		// A partly-scanned document keeps its born-digital pages' extracted text, and
+		// those pages get the same inference `md` would give them. The recognized pages
+		// are already levelled — doctags reads a heading's rank out of the model's
+		// output — and carry no font size for a cluster to be measured from, so they
+		// are not reconsidered here.
+		inferHeadings(d)
 	}
 	return writeWhole(d, *out, mopt)
 }

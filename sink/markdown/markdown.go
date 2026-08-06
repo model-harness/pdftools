@@ -232,7 +232,7 @@ func (w *writer) block(b doc.Block) {
 	case doc.RoleHeading:
 		w.str(strings.Repeat("#", headingLevel(b.Level)))
 		w.str(" ")
-		w.content(b, false)
+		w.content(b, uniformEmphasis(b))
 		w.nl()
 
 	case doc.RoleListItem:
@@ -315,6 +315,37 @@ func (w *writer) content(b doc.Block, plain bool) {
 		return
 	}
 	w.str(inline(b.Spans, plain))
+}
+
+// uniformEmphasis reports whether every visible span in a block carries the same
+// bold-or-italic emphasis, which for a heading means the emphasis is the heading
+// rather than something inside it.
+//
+// "# **1 First Section**" is wrong twice over: the weight is why the block was
+// recognized as a heading in the first place — layout's typographic gate admits a
+// body-size block only when it is bold — and "#" already says heading, so the
+// asterisks restate it in a way no author would write. Emphasis *within* a heading is
+// different and survives: "## The value of `Length`" and a heading with one italic
+// term are both real, and both have spans that disagree.
+//
+// Monospace is not emphasis for this purpose. A heading is not promoted for being
+// monospaced, so backticks in one are always about the text.
+func uniformEmphasis(b doc.Block) bool {
+	var first doc.Span
+	seen := false
+	for _, sp := range b.Spans {
+		if strings.TrimSpace(sp.Text) == "" || sp.Style.Mono {
+			continue
+		}
+		if !seen {
+			first, seen = sp, true
+			continue
+		}
+		if sp.Style.Bold != first.Style.Bold || sp.Style.Italic != first.Style.Italic {
+			return false
+		}
+	}
+	return seen && (first.Style.Bold || first.Style.Italic)
 }
 
 func headingLevel(n int) int {

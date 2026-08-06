@@ -228,8 +228,11 @@ tag/                  Structure tree: StructElem, role map, standard-role
                         normalization, logical-order traversal
 extract/              Text extraction use case. Consumes objects + content +
                         font + geom. Produces doc.Page
-layout/               Geometry-based fallback: column detection, line grouping,
-                        heading inference from font-size clusters
+layout/               Geometry-based fallback for documents that declare no roles.
+                        Heading inference lands first: the body cluster by
+                        character count gates candidates, their own section
+                        numbering ranks them (ADR 0008). Column detection and
+                        line grouping are still ahead of it
 sectionize/           Section reconstruction by heading sequence: each heading
                         runs to the next of equal-or-higher level. Levels come
                         from tag/ when tagged, layout/ when not. Emits
@@ -281,6 +284,12 @@ PDF ─► objects ─┬──►│                                           
                                     ▼                 │            sink/{markdown,okf}
                           render ─► ocr ──────────────┘
 ```
+
+One arm of that diagram is still half-built. `layout` today writes roles and levels back
+onto `doc.Page` — which is enough for `sink/markdown`, since a heading is a block with a
+level — but it does not yet hand `sectionize` a sequence to build a tree from, so `okf`
+still requires a tagged file. ADR 0008 records why, and ADR 0002 records why the builder
+needs nothing more than that sequence when it arrives.
 
 The router is per page and its rule is measurable: if a page's extracted text covers less
 than a threshold of the page area — 5% by default — or yields no text at all, that page goes
@@ -532,7 +541,10 @@ records the rest, including the two things about DocTags that are not guessable 
 output — the 500-unit normalized `<loc_>` grid, and the top-down Y that the parser must flip.
 
 **Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
-sections without paying for inference.
+sections without paying for inference. Heading *rank* has landed (ADR 0008); what remains
+before an untagged file yields sections is block segmentation in `extract` — a heading
+still fuses into the paragraph below it when the leading is ordinary — and running
+sectionize's level stack over `layout`'s levels to get a tree rather than a flat sequence.
 
 **Phase 6 — native replacement.** Rasterizer first, then JBIG2. Driven by the interfaces
 already in place.
@@ -576,18 +588,25 @@ OKF-ified spec.
 - **Table extraction.** Tagged PDFs declare `Table`/`TR`/`TD`, so the tagged path can emit
   real Markdown tables. Untagged table detection is a research problem and is explicitly
   out of scope for Phase 1–5; the VLM path covers it in the interim.
-- **The untagged layout path's four measured gaps.** `TestReferenceExactMatch` in
+- **The untagged layout path's three remaining measured gaps.** `TestReferenceExactMatch` in
   `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
   measured worklist rather than a remembered one. The tagged path has no gaps — `clauses`
   matches exactly and is enforced — and every item here is the layout path lacking a role the
   structure tree would otherwise declare:
-  - *Heading rank.* `headings` emits `**1 First Section**` where the document means
-    `# 1 First Section`. The text and its order are right and its weight is detected; what is
-    missing is the step from "bold, larger" to a level. This is the font-size clustering
-    Phase 5 is for.
+  - *Heading rank* — **closed.** `layout.Headings` levels an untagged file's headings from its
+    own section numbering, gated on typographic distinction from the body cluster; `headings`
+    matches exactly and is enforced. ADR 0008 records why numbering rather than size-ladder
+    position decides the level, and the two limits that remain: an *unnumbered* heading stays a
+    paragraph, because nothing separates "Preface" from a body-size bold table row, and an OKF
+    bundle still needs a tree rather than a levelled sequence.
   - *Paragraph breaks.* `text-styles`' four paragraphs arrive joined into one line. The words
     and the styling are correct, so this is block segmentation and not extraction: a vertical
-    gap that a tagged document declares with `P` has to be inferred from leading.
+    gap that a tagged document declares with `P` has to be inferred from leading —
+    `extract.continues` tests only vertical step today. This is now the highest-value of the
+    three, because it also blocks the gap above: a heading whose next line falls at ordinary
+    leading fuses into the paragraph after it, which is why `autotagPDFInput.pdf` and
+    `v110-changes.pdf` present *no* style-uniform block above their body size and gain no
+    headings at all.
   - *List role.* `lists` emits LaTeX's drawn markers as ordinary text — `•` for the outer
     level and a bold `–` for the nested one, which is genuinely what the page draws — instead
     of `- ` at two spaces per level. The nesting depth is visible in the indent; nothing yet

@@ -10,6 +10,7 @@ import (
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/layout"
 	"github.com/model-harness/pdftools/objects"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/sectionize"
@@ -73,6 +74,7 @@ func runMD(args []string) error {
 		if o != nil {
 			return writeOutline(o, *out, mopt)
 		}
+		inferHeadings(d)
 	}
 	return writeWhole(d, *out, mopt)
 }
@@ -126,6 +128,21 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 	}
 	o, _ := sectionize.Tagged(d, tr, sectionize.DefaultOptions)
 	return o, nil
+}
+
+// inferHeadings promotes headings in a document that declared none.
+//
+// Called on the untagged branch only: where a structure tree exists, sectionize has
+// already assigned every role from what the producer declared, and guessing over a
+// declaration would replace evidence with a heuristic.
+//
+// Shared by md and ocr so the two agree. They have to — ocr on a born-digital document
+// writes what md writes and consults no model, and
+// TestOCRVerbWithoutModelOnDigitalDocument holds them to it. Recognized pages are
+// unaffected either way: doctags assigns RoleHeading itself, and layout considers only
+// paragraphs.
+func inferHeadings(d *doc.Document) {
+	layout.Headings(d, layout.DefaultOptions)
 }
 
 func writeOutline(o *doc.Outline, out string, opt markdown.Options) error {

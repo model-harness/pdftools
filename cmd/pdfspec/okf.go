@@ -57,8 +57,13 @@ func runOKF(args []string) error {
 		// A bundle is one file per clause, and an untagged file has no clauses this
 		// pipeline can name. Reported rather than silently producing a bundle of one
 		// document, which would look like a successful conversion of a specification
-		// into a knowledge base and be the opposite. The layout path will lift this.
-		return fmt.Errorf("%s has no structure tree: an OKF bundle needs clauses, so convert it with `pdfspec md` until the layout path lands", in)
+		// into a knowledge base and be the opposite.
+		//
+		// layout.Headings lifts half of this already — `md` levels an untagged file's
+		// headings — but a bundle needs a tree, and turning a levelled sequence into one
+		// means running sectionize's level stack over layout's output rather than over a
+		// structure tree. That is the next step on this path and it is not taken yet.
+		return fmt.Errorf("%s has no structure tree: an OKF bundle needs clauses, so convert it with `pdfspec md` until the untagged outline lands", in)
 	}
 
 	// The run time comes from here rather than from the sink, so that the sink renders

@@ -5,6 +5,53 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-08-06
+
+- **`layout`, which levels the headings of a document that declares none.** Untagged
+  files got their text and its order right but emitted `**1 First Section**` where the
+  document meant `# 1 First Section` — the missing step was "bold, larger" to a level, and
+  the reference fixture written to measure it had been logging that gap since it landed.
+  `layout.Headings` closes it: the body cluster is the size most of the document's
+  *characters* are set in, typographic distinction from it admits a candidate, and the
+  candidate's own dotted-decimal section number assigns the level. `headings` now matches
+  its gold file byte-for-byte and is enforced rather than logged. Called from `md` and
+  `ocr` on the untagged branch only — where a structure tree exists, `sectionize` has
+  already read every role from what the producer declared.
+- **The rule is derived from the corpus, and the obvious version of it is wrong four
+  ways.** `v110-changes.pdf` sets 8.04pt *bold* as 48.8% of its characters — a hair under
+  the 49.4% at 9.96pt that wins the body on size — so a weight-implies-heading rule marks
+  half of it; arXiv's `2201.00069.pdf` and Adobe's
+  `autotagPDFInput.pdf` set headings *plain* and use bold only as inline emphasis (0.3%
+  and 0.5% of characters), so a rule requiring bold finds nothing in either;
+  `headings.pdf`'s own third level is at *body size*, so a rule requiring a larger size
+  loses the deepest level of the fixture written to test depth. Ranking by position in the
+  size ladder was measured and rejected separately — `mupdf_explored.pdf` has five
+  distinct above-body sizes of which only some are levels, and ladder position disagreed
+  with that document's own numbering on 296 of 296 numbered headings. ADR 0008 carries the
+  measurements and the two limits that remain.
+- **An unnumbered heading stays a paragraph, deliberately.** `dotted-gridlines.pdf` has a
+  41-character table row at body size in bold that no typographic signal separates from a
+  real heading — not even the space above it, which at 1.68 body-sizes sits inside the
+  1.60–1.96 range the reference headings occupy. Promoting "Preface" means promoting that
+  row. Lifting this needs a pass that sees the *sequence* rather than a tuned threshold.
+- Measured across the fixtures: 296 headings on `mupdf_explored.pdf`, 2 on
+  `2201.00069.pdf`, 21 on the untagged `LightOnOCR-2601.14251v1.pdf` paper each at the
+  level its own numbering states, and **zero** on every other untagged fixture. The 11 ISO
+  documents are byte-identical, being tagged.
+
+### Changed — 2026-08-06
+
+- **A heading no longer carries emphasis that covers all of it.** `# **1 First Section**`
+  states the same thing twice — and on the untagged path that emphasis is *why* the block
+  was recognized as a heading, since a body-size block is admitted only when it is bold.
+  Emphasis *within* a heading is a different claim and survives, so "## The value of
+  *Length*" is unaffected; monospace is never treated as emphasis here, because nothing
+  promotes a block for being monospaced. Visible only on the untagged path in practice: the
+  11 tagged corpus documents are byte-identical, because `sectionize` builds title blocks
+  carrying no style at all.
+- `pdfspec okf` still refuses untagged input, but its error now says which half landed —
+  a bundle needs a tree, and `layout` produces levels rather than one.
+
 ### Fixed — 2026-08-05
 
 - **Type 3 glyph advances were read as 1/1000 em, which is the one font kind where that is

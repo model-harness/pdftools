@@ -95,6 +95,46 @@ func TestHeadingLevels(t *testing.T) {
 	}
 }
 
+// TestHeadingWholeBlockEmphasisDropped: "#" already says heading, so the emphasis that
+// covers the whole of one restates it — and on the untagged path that emphasis is
+// *why* the block was recognized as a heading at all, since layout admits a body-size
+// block only when it is bold. "# **1 First Section**" is what nobody writes by hand.
+//
+// Emphasis inside a heading is a different claim and survives: a heading with one
+// italic term means it, and its spans disagree.
+func TestHeadingWholeBlockEmphasisDropped(t *testing.T) {
+	h := func(spans ...doc.Span) doc.Block {
+		return doc.Block{Role: doc.RoleHeading, Level: 2, Spans: spans}
+	}
+	for _, tc := range []struct {
+		name string
+		in   doc.Block
+		want string
+	}{
+		{"all bold", h(span("1.1 A Subsection", bold)), "## 1.1 A Subsection\n"},
+		{"all italic", h(span("A Subsection", italic)), "## A Subsection\n"},
+		{"all bold italic", h(span("A Subsection", bold, italic)), "## A Subsection\n"},
+		{"plain unchanged", h(span("A Subsection")), "## A Subsection\n"},
+		// Bold across the spans, with whitespace between them carrying no style. A
+		// heading arrives split at a marked-content boundary routinely, and the
+		// whitespace-only span must not be read as disagreement.
+		{"bold across spans", h(span("1.1", bold), span(" "), span("A Subsection", bold)),
+			"## 1.1 A Subsection\n"},
+		// Genuine internal emphasis: kept, because the heading is not uniform.
+		{"partial italic", h(span("The value of "), span("Length", italic)),
+			"## The value of *Length*\n"},
+		{"partial bold", h(span("Note ", bold), span("well")), "## **Note** well\n"},
+		// Monospace is not emphasis here: nothing promotes a block for being
+		// monospaced, so backticks in a heading are always about the text.
+		{"all mono", h(span("Length", mono)), "## `Length`\n"},
+		{"bold mono", h(span("Length", bold, mono)), "## `Length`\n"},
+	} {
+		if got := render(t, tc.in); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestEmphasis(t *testing.T) {
 	for _, tc := range []struct {
 		name string
