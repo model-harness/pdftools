@@ -619,17 +619,26 @@ OKF-ified spec.
   - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
     the untagged-table research problem named above; the fixture exists so the day it is
     solved is measurable.
-- **A block boundary between two spans of one marked-content element loses the space that
-  joined them.** `extract.appendLine` writes the wrap space onto the *incoming* line's text,
-  so a line that starts a new block has it trimmed, and `sectionize.title` then rejoins spans
-  sharing a `(page, MCID)` across that boundary with no separator. Measured as cross-block
-  same-MCID adjacencies whose join would need a space, over all 47 PDFs: **47 today.** ADR
-  0009's marked-content guard covers the route the size test would have added (which would
-  have made it 74) but not the vertical-step route, which has always been there. It shows on
-  ISO 32000-2 as `𝐷min2𝑛` where the page sets a fraction. The fix is to move the wrap space
-  to the *trailing* end of the previous line, where regrouping keeps it — that changes
-  `doc.Span.Text` for every wrapped line in every document, so it needs its own measurement
-  rather than being folded into a segmentation change.
+- **A block boundary inside one marked-content element still loses the space that joined
+  its two lines.** The wrap space is inferred only *within* a block, so a boundary there
+  writes no space at all, and `sectionize.title` then rejoins spans sharing a `(page, MCID)`
+  across it with no separator. ADR 0009's marked-content guard closes the route the size
+  test would have opened; the vertical-step route remains and has always been there. It
+  shows on ISO 32000-2 as `𝐷min2𝑛` where the page sets a fraction.
+
+  Moving the wrap space to the previous span's *trailing* end was the fix tried for this
+  and it is not one — with no space written, there is nothing to place. It landed anyway
+  because the measurement found a different, larger defect: span *regrouping*. `sectionize`
+  joins spans in the order a structure element lists its content rather than in page order,
+  so a space on a span's leading edge travels away from the neighbour it was inferred for.
+  Over the 11 tagged documents that emitted "revision" as "re" + "-" + " vision" and 15
+  more the same way, and ran clause numbers into the sentence before them; trailing
+  placement fixed all 29 and broke none. What is left for this item is the block-boundary
+  case, which needs a space *inferred* at the boundary rather than moved — and inferring one
+  wherever two blocks share an MCID is wrong. Enumerated over the corpus, 52 of those 56
+  adjacencies are mathematics: sub- and superscripts, summation limits, and displayed
+  equations, where a space would be a new defect. Only 4 are genuinely a lost space. The
+  signal has to be the page geometry, not the shared identifier.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

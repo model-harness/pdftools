@@ -227,6 +227,59 @@ func TestLineBreakJoinsWithSpace(t *testing.T) {
 	}
 }
 
+// TestWrapSpaceTrailsThePreviousSpan pins *which* span the wrap space lands on, which
+// the test above cannot see: it concatenates the spans, and " second" and "first " read
+// the same way once joined.
+//
+// It has to be the previous span's trailing end, because a consumer regroups spans. Both
+// sectionize.title and doc.Block.Text join them with no separator, and sectionize joins
+// them in the order a structure element lists its content rather than in page order — so
+// a space riding on a span's leading edge travels away from the neighbour it belonged to
+// and reappears somewhere it does not. Measured over the 11 tagged documents: leading
+// placement ran "revision" out as "re" + "-" + " vision", and "surrounding", "structure",
+// "digest", and 12 more the same way, while running clause numbers into the sentence
+// before them ("...an ISO 32000-2 document.-5.5.2.3"). Trailing placement fixes all 29
+// and breaks none.
+func TestWrapSpaceTrailsThePreviousSpan(t *testing.T) {
+	// Two lines in one paragraph, each a distinct style so they cannot merge into one
+	// span: the join has to be visible as span text, not hidden by a concatenation.
+	stream := `BT /F1 12 Tf 10 700 Td (first) Tj /F2 12 Tf 0 -14 Td (second) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	spans := p.Blocks[0].Spans
+	if len(spans) != 2 {
+		t.Fatalf("spans = %d, want 2: the two lines are set in different fonts", len(spans))
+	}
+	if spans[0].Text != "first " {
+		t.Errorf("spans[0].Text = %q, want %q: the wrap space belongs to the outgoing span", spans[0].Text, "first ")
+	}
+	if spans[1].Text != "second" {
+		t.Errorf("spans[1].Text = %q, want %q: the incoming span must not carry a leading space", spans[1].Text, "second")
+	}
+}
+
+// TestWrapSpaceNotDoubledWhereTheLineAlreadyEndsInOne is the endsWithSpace half of the
+// guard above, which trailing placement made load-bearing in a way leading placement was
+// not.
+//
+// A producer that ends a line with a space glyph has already stated the word boundary, so
+// inferring another one doubles it. Under leading placement the guard tested the previous
+// *span's* text; it now tests the string being appended to, and a line ending in its own
+// space is the case that separates the two. Not a synthetic worry: 1,130 lines of the
+// corpus's Markdown end in two or more spaces, which in Markdown is a hard line break.
+func TestWrapSpaceNotDoubledWhereTheLineAlreadyEndsInOne(t *testing.T) {
+	stream := `BT /F1 12 Tf 10 700 Td (one ) Tj 0 -14 Td (two) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "one two"; got != want {
+		t.Errorf("text = %q, want %q: the line's own trailing space is the word boundary", got, want)
+	}
+}
+
 // TestWrapNeedsSpace: the line-break space above is a Latin rule, and applying it to a
 // script written without inter-word spaces splits words that were never divided.
 //

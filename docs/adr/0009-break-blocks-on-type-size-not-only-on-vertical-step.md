@@ -96,23 +96,40 @@ documents the size test was added for; a line spanning two MCIDs is not a declar
 the lines belong together, so the test still applies there.
 
 **That guard also covers one route into a pre-existing defect, and does not close it.**
-`appendLine` writes the space that joins two lines onto the *second* line's leading text,
-so a line that starts a block loses it, and `sectionize.title` then rejoins spans sharing
-a `(page, MCID)` across the block boundary with no separator. ISO/TS 32003:2023's cover is
-the case — a 36pt document number over a 17.5pt title, both `/MCID 3` — which read
+The wrap space is inferred only *within* a block, so where a boundary falls between two
+lines of one element no space is written at all, and `sectionize.title` then rejoins spans
+sharing a `(page, MCID)` across that boundary with no separator. ISO/TS 32003:2023's cover
+is the case — a 36pt document number over a 17.5pt title, both `/MCID 3` — which read
 "ISO/TS 32003:2023Document management" before the guard. But the size test is not the only
 way a block boundary lands between two same-MCID spans: the vertical-step test does it
 too, and always could. Measured as the count of cross-block same-MCID adjacencies where
-the join would need a space, over all 47 PDFs: **47 before this change, 74 after** — so
-the guard removes the route it introduced on tagged covers and leaves the 47 that the step
-test already produced. One of them now manifests where it did not before: ISO 32000-2's
-`𝐷min 2𝑛` becomes `𝐷min2𝑛`, a fraction whose bar was being rendered as a space.
+the two sides are letters or digits, over all 47 PDFs: **33 before this change, 82 with
+the size test and no guard, 56 with the guard.** So the guard removes 26 of the 49 the
+size test would have added and leaves 23, on top of the 33 the step test already produced.
+One instance manifests as ISO 32000-2's `𝐷min2𝑛`.
 
-The root fix is to put the wrap space on the *trailing* end of the previous line instead,
-where any regrouping keeps it. That was not done here: it changes what `doc.Span.Text`
-contains for every wrapped line in every document, which is a public observable needing
-its own measurement, and `appendLine`'s comment records the current placement as
-deliberate. DESIGN.md carries it as a known defect with this measurement.
+Inferring a space at every such adjacency is *not* the fix, and enumerating the 56 is why.
+27 are sub- or superscripts one or two characters per side (`𝑠` over `𝑖`, `3ʳᵈ`, `1ˢᵗ`), 7
+are summation limits (`3` over `j=0`), and most of the remaining 22 are the same thing at
+greater length — a displayed equation's `≤ 0.5` meeting its `𝐷(𝑥) = {`. A space at any of
+those is a new defect rather than a repair. Only 4 are unambiguously a lost space, three of
+them one glyph table splitting words across a column break (`I` + `fraktur`, `a` + `leph`,
+`a` + `ngle`) and one the `𝐷min2𝑛` above. So the population is roughly 13 to 1 against the
+naive rule, and whatever closes this has to read the page geometry rather than the shared
+identifier. DESIGN.md carries it with this enumeration.
+
+**Moving the wrap space to the previous span's trailing end was tried for that defect, is
+not a fix for it, and landed anyway on its own evidence.** With no space written at a
+block boundary there is nothing to place, so the block-boundary case is untouched. The
+measurement found a different and larger defect instead: `sectionize` joins spans in the
+order a structure element lists its content rather than in page order, so a space on a
+span's *leading* edge travels away from the neighbour it was inferred for. Over the 11
+tagged documents that emitted "revision" as "re" + "-" + " vision", and "surrounding",
+"structure", "digest", "requirements" and 12 more the same way, while running clause
+numbers into the sentence before them. Trailing placement fixes all 29 and breaks none;
+the 35 untagged files and all 6 enforced reference fixtures are byte-identical.
+`TestWrapSpaceTrailsThePreviousSpan` pins the placement, which no assertion on joined
+text can see.
 
 **Block counts move for any document with mixed type sizes**, which is a public
 observable for anything reading `doc.Page.Blocks`. Markdown output was diffed over all 47

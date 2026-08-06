@@ -71,15 +71,26 @@ All notable changes to this project are documented here, following
   thing. Measured over all 47 convertible PDFs: 17 files changed, and with whitespace
   squeezed out 46 of the 47 are character-for-character identical — the 47th gains two
   Markdown emphasis markers and no PDF text. ADR 0009 carries the measurements.
-- **Known defect this surfaced and does not fix:** a block boundary falling between two
-  spans of one marked-content element loses the space that joined them, because
-  `appendLine` writes that space onto the *incoming* line and `sectionize` rejoins
-  same-MCID spans with no separator. It predates this change — 47 instances across the
-  corpus reachable through the vertical-step test alone — and the marked-content guard
-  above keeps the size test from adding 27 more. One instance now shows where it did not
-  before: ISO 32000-2's `𝐷min 2𝑛` reads `𝐷min2𝑛`. DESIGN.md carries it with the
-  measurement and the fix, which changes `doc.Span.Text` for every wrapped line and so
-  needs measuring on its own.
+- **Known defect this surfaced and does not fix:** a block boundary falling *inside* one
+  marked-content element loses the space that joined its lines, because the wrap space is
+  inferred only within a block, and `sectionize` then rejoins same-MCID spans with no
+  separator. It predates this change and the marked-content guard above keeps the size test
+  from adding to it; ISO 32000-2's `𝐷min 2𝑛` reads `𝐷min2𝑛`. DESIGN.md carries it, along
+  with why the obvious fix is wrong: of the 56 cross-block same-MCID adjacencies in the
+  corpus, 52 are mathematics — sub- and superscripts, summation limits, displayed equations
+  — where inserting a space would be a new defect, and only 4 are genuinely a lost space.
+- **A wrapped line's space now sits at the end of the line before it, not the start of the
+  line after.** Both ends read the same once the spans are joined, so this looks cosmetic
+  and is not: `sectionize` regroups spans in the order a structure element lists its
+  content rather than in page order, so a space on a span's *leading* edge travels away
+  from the neighbour it was inferred for and lands inside a word somewhere else. Measured
+  over the 11 tagged documents, which are the only ones that regroup: "revision" was
+  emitted as "re" + "-" + " vision", and "surrounding", "structure", "digest",
+  "requirements" and 12 more the same way, while clause numbers ran into the sentence
+  before them ("…an ISO 32000-2 document.-5.5.2.3"). 29 such defects fixed, none
+  introduced; the 35 untagged files and all 6 enforced reference fixtures are
+  byte-identical. Found while measuring the defect above, which it does not fix — where a
+  block boundary falls, no space is written at all, so there is none to move.
 
 ### Fixed — 2026-08-05
 

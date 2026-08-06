@@ -689,10 +689,11 @@ func continues(prev, ln *line, t geom.Tolerance) bool {
 		// Both lines are inside one marked-content element, so the producer has stated
 		// they are one thing and the size test has nothing to add. ISO/TS 32003's cover
 		// is the case: a 36pt document number and a 17.5pt title, both /MCID 3, which
-		// sizeBreak would otherwise split. Splitting it loses the space between them —
-		// the wrap space lives on the second line's leading text and is dropped when
-		// that line starts a block — and sectionize then rejoins the two spans on their
+		// sizeBreak would otherwise split. Splitting it loses the space between them:
+		// the wrap space is inferred only *within* a block, so a boundary here means no
+		// space is written at all, and sectionize then rejoins the two spans on their
 		// shared MCID with no separator, yielding "32003:2023Document management".
+		// Trailing placement above does not cover this — there is nothing to place.
 		//
 		// Deferring to the declaration is the same rule ADR 0008 applies to roles: where
 		// a producer declared the structure, a heuristic that guesses over it replaces
@@ -814,11 +815,25 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 			continue
 		}
 		if i == 0 && len(b.Spans) > 0 {
-			// A line break inside a paragraph is a word boundary. The space goes on the
-			// incoming line so the previous span's own text is unchanged.
-			prev := b.Spans[len(b.Spans)-1].Text
+			// A line break inside a paragraph is a word boundary, and the space goes on the
+			// *trailing* end of the span already there rather than the leading end of the
+			// one arriving.
+			//
+			// Which end is not cosmetic, because consumers regroup spans. sectionize joins
+			// them in the order a structure element lists its content, not in page order,
+			// and joins with no separator — so a space on a span's leading edge travels away
+			// from the neighbour it was inferred for and reappears inside a word somewhere
+			// else. Measured over the 11 tagged documents: leading placement emitted
+			// "revision" as "re" + "-" + " vision", and "surrounding", "structure",
+			// "digest", "requirements" and 12 more the same way, while running a clause
+			// number into the sentence before it ("…an ISO 32000-2 document.-5.5.2.3").
+			// Trailing placement fixed all 29 and broke none. TestWrapSpaceTrailsThe-
+			// PreviousSpan pins it, since text joined from the spans reads identically
+			// either way and no assertion on the joined string can tell them apart.
+			n := len(b.Spans) - 1
+			prev := b.Spans[n].Text
 			if !endsWithSpace(prev) && !strings.HasPrefix(txt, " ") && wrapNeedsSpace(prev, txt) {
-				txt = " " + txt
+				b.Spans[n].Text += " "
 			}
 		}
 
