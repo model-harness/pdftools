@@ -114,10 +114,10 @@ func TestReferenceExactMatch(t *testing.T) {
 		// this is the first independent confirmation that it reads one correctly —
 		// every earlier measurement compared it to its own output.
 		//
-		// Enforced rather than logged because the remaining four gaps are all in the
-		// untagged layout path (heading rank, paragraph breaks, list role, table
-		// grid). Nothing this fixture asserts is waiting on a deferred debt, so a
-		// change that breaks it is a regression and not a known shortfall.
+		// Enforced rather than logged because the one remaining gap is in the untagged
+		// layout path (table grid) — heading rank, paragraph breaks and the list role
+		// have closed since. Nothing this fixture asserts is waiting on a deferred
+		// debt, so a change that breaks it is a regression and not a known shortfall.
 		"clauses": true,
 
 		// The untagged path's heading rank, which this fixture was written to measure
@@ -144,6 +144,18 @@ func TestReferenceExactMatch(t *testing.T) {
 		// centred-text case that split a table header mid-phrase — since a rule loose
 		// enough to fire on jitter would break these three paragraphs into more.
 		"paragraphs": true,
+
+		// The untagged path's list role, which this fixture logged as a literal "•" and a
+		// bold "**–**" until layout.Lists existed. Three items and two nested under the
+		// second, so it pins both halves of the rule: that a marker glyph plus a
+		// separator is what identifies an item, and that depth comes from the left edge.
+		//
+		// Enforced because its two levels are the only genuine list nesting in anything
+		// on disk. Corpus-wide there are eight distinct left-edge gaps inside marker
+		// runs, and exactly one of them — this fixture's 2.403 type sizes — is a real
+		// indent; the rest are float noise at 0.011. A change that broke nesting would
+		// therefore show up nowhere else, and the corpus tests would stay green.
+		"lists": true,
 	}
 
 	for _, f := range referenceFixtures {

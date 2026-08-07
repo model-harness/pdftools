@@ -114,7 +114,7 @@ func runOCR(args []string) error {
 		fmt.Fprintf(os.Stderr, "no pages need recognition: all %d selected page(s) carry text above %.0f%% coverage\n",
 			len(want), *threshold*100)
 		if !d.Meta.Tagged {
-			inferHeadings(d)
+			inferRoles(d)
 		}
 		return writeWhole(d, *out, mopt)
 	}
@@ -142,7 +142,7 @@ func runOCR(args []string) error {
 		// are already levelled — doctags reads a heading's rank out of the model's
 		// output — and carry no font size for a cluster to be measured from, so they
 		// are not reconsidered here.
-		inferHeadings(d)
+		inferRoles(d)
 	}
 	return writeWhole(d, *out, mopt)
 }

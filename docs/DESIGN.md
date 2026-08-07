@@ -588,7 +588,7 @@ OKF-ified spec.
 - **Table extraction.** Tagged PDFs declare `Table`/`TR`/`TD`, so the tagged path can emit
   real Markdown tables. Untagged table detection is a research problem and is explicitly
   out of scope for Phase 1–5; the VLM path covers it in the interim.
-- **The untagged layout path's two remaining measured gaps.** `TestReferenceExactMatch` in
+- **The untagged layout path's one remaining measured gap.** `TestReferenceExactMatch` in
   `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
   measured worklist rather than a remembered one. The tagged path has no gaps — `clauses`
   matches exactly and is enforced — and every item here is the layout path lacking a role the
@@ -626,10 +626,23 @@ OKF-ified spec.
     What is still not inferable: a document setting *neither* extra space *nor* a first-line
     indent leaves no geometric evidence of a boundary, and the rule declines rather than
     guessing.
-  - *List role.* `lists` emits LaTeX's drawn markers as ordinary text — `•` for the outer
-    level and a bold `–` for the nested one, which is genuinely what the page draws — instead
-    of `- ` at two spaces per level. The nesting depth is visible in the indent; nothing yet
-    reads it as a list.
+  - *List role* — **closed.** `layout.Lists` promotes a block whose text opens with a marker
+    glyph followed by whitespace, removes the marker, and takes the depth from the left edge;
+    `lists` matches exactly and is enforced. ADR 0011 records the measurements, of which two
+    matter here. The marker-plus-separator gate is what makes an allowlist of glyphs safe —
+    "opens with punctuation" is hopeless, since 20125 untagged paragraph blocks open with 190
+    distinct non-alphanumeric runes and the common ones are `/`, `(` and a quote — and the
+    1442 promotions it produces across the corpus contain 5 non-items, all of them rows of
+    Annex A and D's glyph tables where a dash *is* the row's subject. Both guards that looked
+    obvious were measured and rejected: requiring a run of two items drops 136 genuine
+    promotions, and rejecting a block whose marker recurs inside it costs 33 to catch 3.
+
+    Two limits remain. An *ordered* list is not recognized — a numbered item is a paragraph
+    opening with a number, which is also what a numbered heading and a table row are, and no
+    fixture separates them. And nesting rests on a single case: `lists.pdf`'s 2.403 type-size
+    indent is the only genuine left-edge gap inside a marker run anywhere on disk, the other
+    seven being 0.011 float noise and one 0.241 glyph-width difference, so `ListStep: 1.0`
+    sits in the middle of an empty band rather than at a fitted point.
   - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
     the untagged-table research problem named above; the fixture exists so the day it is
     solved is measurable.

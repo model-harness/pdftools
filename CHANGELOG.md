@@ -7,6 +7,67 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-08-07
 
+- **The list role on the untagged path, which closes DESIGN.md §10's list item.**
+  `layout.Lists` promotes a paragraph whose text opens with a marker glyph followed by
+  whitespace, removes the marker — it is structure, not content — and takes the nesting
+  depth from the block's left edge, ranked within its run of consecutive marker blocks.
+  `reference/lists.pdf` now converts byte-for-byte to its gold file, `- ` at two spaces per
+  level, where it emitted a literal `•` and a bold `**–**` before. ADR 0011 carries the
+  measurements. Only table grid remains.
+- **The population was measured before the rule was designed, and "opens with punctuation"
+  is hopeless.** 20125 untagged paragraph blocks across the corpus open with a
+  non-alphanumeric rune, and with **190 distinct** ones; the frequent openers are `/` (437,
+  from PDF names quoted in prose), `(` (256) and a quote (134). What carries the
+  discrimination is the *separator*: `•` opens 1302 blocks and is followed by whitespace in
+  **1302 of 1302**, glued in none, while the excluded `-` is glued in **12 of its 13**
+  block-initial occurrences because those are command-line flags. With the twelve-glyph
+  allowlist and that gate the rule promotes 1442 blocks, of which **5** are not list items
+  — all rows of Annex A and D's glyph tables, where a dash is the row's subject. 288:1 in
+  favour, the inverse of the ratio that made the lost-space defect not worth a rule.
+- **Both obvious guards were implemented, scored against the blocks they rejected, and
+  dropped.** A minimum run of two consecutive items costs **136** promotions and reading
+  them shows they are overwhelmingly genuine — single-item lists, plus multi-item lists that
+  `extract` fused into one block. Rejecting a block whose marker recurs inside it trades
+  **33** genuine items for 3 of the 5 table rows. Counting the rejections would have made
+  both look cheap; reading them is what settled it.
+- **A defect found while measuring, recorded rather than papered over.** The run minimum's
+  136 victims include `■ machine-readable text presented in a declared language; ■
+  appropriate…` — several list items arriving as one block on `Well-Tagged-PDF-WTPDF-1.0.pdf`
+  and `PDF20_AN003`. That is segmentation, not classification, and a role rule that
+  declined to promote its victims would hide it.
+- **`ListStep` is a statement, not a fitted threshold.** A marker run contains only
+  **eight** distinct left-edge gaps corpus-wide, as multiples of type size: six at 0.011
+  (float noise, and Annex A rows opening with an em dash and an en dash of different
+  widths), one at 0.241 (the same effect, larger), and one at **2.403** — `lists.pdf`'s
+  `itemize` nesting. Anything from 0.3 to 2.4 gives identical results everywhere, so the
+  default of 1.0 says "nesting indents by about a character" and sits in the middle of an
+  empty band. That one positive case is also why `lists` is enforced exactly: a change that
+  broke nesting would show up nowhere else on disk.
+- **The rule is mutation-tested at 18 of 19 caught, and the survivor is stated rather than
+  papered over.** It is `listTiers` taking the run's smallest type size instead of its
+  largest — equivalent on everything measured, since the 52 mixed-size runs get identical
+  tier counts either way, so no case on disk divides them and the choice is recorded in the
+  function's comment as a conservative-end preference rather than a measured one.
+- **Three mutations survived earlier passes and all three were real defects.** `listMarker`
+  carried an "and content follows" condition that no test could reach — on trimmed text a
+  marker followed by whitespace must have something after it, so the clause was
+  unreachable; it is gone, and the trim moved inside the function where the invariant it
+  rests on is visible. `stripMarker`'s branch for a leading whitespace-only span had no case
+  at all: such a block is admitted on a marker further along, and a strip that stopped at
+  the first non-empty span left the marker in the text. `tierEpsilon` guarded a comparison
+  that needs no tolerance, and is deleted.
+- **Review returned zero findings on 291 lines, and sending it back deleted a constant.**
+  Pressed for traces on named code paths rather than verdicts, it raised three quantities,
+  each of which was then measured: the tier denominator is the run's largest type size, and
+  ranking the 52 mixed-size runs by their smallest instead changes the tier count on **0**
+  of them; `inferRoles`' Headings-then-Lists order could in principle shift `bodyCluster`,
+  which counts runes of span text that `stripMarker` shortens, and run both ways over all
+  48 PDFs the two orders agree on every role, level, heading count and body size — **0**
+  files differ. The third was a real defect: `tierEpsilon` guarded nothing. A tier value is
+  a copy of some block's own `Box.X0` with no arithmetic applied, so the comment claiming
+  the tolerance had to survive that arithmetic described arithmetic that does not happen;
+  of 1447 tier comparisons, 1404 are exact equality and **0** land within 0.01pt below a
+  tier. The constant is gone and the comparison is exact.
 - **Paragraph breaks in documents that mark them with nothing but a first-line indent.**
   A book or a specification setting `\parskip` to zero steps down by exactly one line at a
   paragraph boundary, so the vertical test that segments prose cannot see the boundary at
@@ -108,6 +169,15 @@ All notable changes to this project are documented here, following
   `2201.00069.pdf`, 21 on the untagged `LightOnOCR-2601.14251v1.pdf` paper each at the
   level its own numbering states, and **zero** on every other untagged fixture. The 11 ISO
   documents are byte-identical, being tagged.
+
+### Changed — 2026-08-07
+
+- **`inferHeadings` is now `inferRoles`**, since the untagged branch runs two inferences.
+  Headings goes first and the order is load-bearing: both passes consider only
+  `RoleParagraph` blocks, so whichever runs second cannot reclassify what the first
+  promoted, and a section number the document states outright is stronger evidence than a
+  marker glyph. Shared by `md` and `ocr` as before, which
+  `TestOCRVerbWithoutModelOnDigitalDocument` holds them to.
 
 ### Changed — 2026-08-06
 
