@@ -34,7 +34,7 @@ All notable changes to this project are documented here, following
   136 victims include `■ machine-readable text presented in a declared language; ■
   appropriate…` — several list items arriving as one block on `Well-Tagged-PDF-WTPDF-1.0.pdf`
   and `PDF20_AN003`. That is segmentation, not classification, and a role rule that
-  declined to promote its victims would hide it.
+  declined to promote its victims would hide it. Investigated since — see below.
 - **`ListStep` is a statement, not a fitted threshold.** A marker run contains only
   **eight** distinct left-edge gaps corpus-wide, as multiples of type size: six at 0.011
   (float noise, and Annex A rows opening with an em dash and an en dash of different
@@ -169,6 +169,43 @@ All notable changes to this project are documented here, following
   `2201.00069.pdf`, 21 on the untagged `LightOnOCR-2601.14251v1.pdf` paper each at the
   level its own numbering states, and **zero** on every other untagged fixture. The 11 ISO
   documents are byte-identical, being tagged.
+
+### Documented — 2026-08-07
+
+- **Prior art on list segmentation, surveyed while chasing the fusion defect, and the
+  survey is a negative result.** No mature extractor uses a marker glyph to decide a block
+  boundary: pdfminer.six segments on `LAParams.line_margin` — a fraction of line height,
+  the same shape as our `ParaFrac` — with no lexical signal anywhere; pdfplumber wraps it
+  and leaves list detection to the caller explicitly; MuPDF's `fz_stext` offers
+  `paragraph-break` and `segment` but no bullet option. So `layout.Lists` reading the glyph
+  is a step past the field rather than catching up to it, which is only defensible because
+  it was scored against the corpus. What *is* worth copying is Docling's data model, which
+  keeps `marker` and `enumerated` as fields beside `text` rather than as a prefix of it —
+  that is what makes an ordered list representable at all. `oar-ocr` (Apache-2.0, Rust) was
+  evaluated and belongs to the OCR path, not this one: ONNX plus downloaded weights puts it
+  in the same subprocess category as `llama.cpp`. Recorded in DESIGN.md §5.
+- **The fusion defect was measured and does not reach the output; both fixes for it are
+  dead.** 98 line pairs across 6 files join a bullet-opening line onto the line before it
+  inside `extract`, but exactly one survives to the emitted Markdown — every other affected
+  file is tagged, and `sectionize` splits those items from the structure tree first
+  (`Well-Tagged-PDF-WTPDF-1.0.pdf` emits 92 separate items, not one block). Geometry cannot
+  separate the case: the step before a bullet line spans 1.220–1.486 line heights against
+  ordinary wraps' 1.100–1.500 over 41849 pairs, complete overlap, and the bullet's outdent
+  from its block margin is **0.000** space widths at the 25th through 90th percentile
+  because these producers set the marker flush. Breaking where the marked-content
+  identifier changes would cost 6911 splits to buy 8. ADR 0011's rejected run minimum
+  therefore stands on its own 136-to-3 arithmetic rather than pending a segmentation fix.
+- **A larger, better-evidenced defect on the *tagged* path, which that investigation
+  found.** 1403 list items across 7 files render as `- ■ text` — the sink's `- ` followed by
+  the marker still sitting in the item's text, 1242 of them in ISO 32000-2 alone. PDF
+  declares the marker as its own element (`LI → {Lbl → Span, LBody}`) and `sectionize`'s
+  `blockRole` maps neither, so `gather`'s transparent default appends the label's spans to
+  the item indistinguishably from its content. Of the 147 `Lbl` elements on disk, **132 hold
+  a single marker glyph, 13 hold a number or letter (`[1]`, `a.`), 2 are other, and 0 would
+  empty the item if dropped** — so the fix rests on declared evidence and reaches the
+  ordered lists ADR 0011 records as unreachable from glyphs. DESIGN.md §10 carries it, and
+  the previous claim there that the tagged path has no gaps is corrected: `clauses` matches
+  exactly, but that fixture has no lists.
 
 ### Changed — 2026-08-07
 

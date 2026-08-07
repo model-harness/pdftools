@@ -235,8 +235,20 @@ func Headings(d *doc.Document, opt Options) Stats {
 // much: it drops 136 promotions across the corpus, and reading them shows they are
 // overwhelmingly genuine — single-item lists, and multi-item lists that extract fused
 // into one block ("■ machine-readable text presented in a declared language; ■
-// appropriate…"), which is a segmentation defect that a role rule must not paper over.
-// It would have rejected 136 to catch about 3.
+// appropriate…"). It would have rejected 136 to catch about 3.
+//
+// The fusion in that second group is a segmentation defect in extract rather than
+// anything a role rule should paper over, and it was investigated rather than left as a
+// suspicion: 98 line pairs across 6 files, of which exactly one reaches the emitted
+// output, because every other affected file is tagged and sectionize splits its items
+// from the structure tree before a sink sees them. Both fixes that suggest themselves are
+// dead — the vertical step before a bullet line (1.220 to 1.486 line heights) overlaps
+// ordinary wraps (1.100 to 1.500) completely, the bullet sits flush with the block margin
+// rather than outdented from it at the 25th through 90th percentile, and breaking a block
+// where the marked-content identifier changes would cost 6911 splits to buy 8. So the run
+// minimum stays rejected on the 136-to-3 arithmetic and not pending a segmentation fix.
+// DESIGN.md §10 carries the numbers and the larger defect the measurement did find, which
+// is on the tagged path.
 func Lists(d *doc.Document, opt Options) ListStats {
 	if d == nil {
 		return ListStats{}

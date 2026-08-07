@@ -179,8 +179,22 @@ role, which is why it is confined to the rune `listMarker` matched and the white
 after it, and why it empties a span rather than removing it — span indices a caller holds
 stay valid, and `Span.MCID` survives for diagnosis.
 
-**It found a defect it must not paper over.** Measuring the run minimum surfaced blocks
-where `extract` fused several `■`-marked items into one, on `Well-Tagged-PDF-WTPDF-1.0.pdf`
-and `PDF20_AN003`. That is block segmentation, not classification, and it is recorded in
-`Lists`' own comment so the next person to reach for a run minimum sees what it would be
-hiding.
+**It found a defect it must not paper over — and the defect turned out to be somewhere
+else.** Measuring the run minimum surfaced blocks where `extract` fused several `■`-marked
+items into one, on `Well-Tagged-PDF-WTPDF-1.0.pdf` and `PDF20_AN003`, and that is recorded
+in `Lists`' own comment so the next person to reach for a run minimum sees what it would be
+hiding. Investigated afterwards, the fusion is real inside `extract` — 98 line pairs across
+6 files — but reaches the emitted output in exactly one place on disk, because every
+affected file is tagged and `sectionize` splits those items from the structure tree first.
+Neither candidate fix survives measurement: the step before a bullet line (1.220–1.486 line
+heights) overlaps ordinary wraps (1.100–1.500) completely, the bullet's left edge is flush
+with the block margin at the 25th through 90th percentile, and breaking on a marked-content
+change would cost 6911 splits to buy 8. So the run minimum stays rejected on its own merits
+rather than pending a segmentation fix.
+
+What the investigation did find is a larger defect on the *tagged* path: 1403 items across
+7 files emit their marker glyph literally, because `sectionize` treats `Lbl` as transparent
+and appends the label's spans to the item's text. PDF declares that label — 132 of the 147
+`Lbl` elements on disk hold a single marker glyph and 13 hold a number or letter — so the
+fix there rests on evidence rather than on this ADR's allowlist, and it reaches the ordered
+lists this rule cannot. DESIGN.md §10 records it.

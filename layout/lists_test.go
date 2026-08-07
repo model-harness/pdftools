@@ -150,6 +150,10 @@ func TestListsRequiresASeparator(t *testing.T) {
 // row, and it costs 136 promotions across the corpus — overwhelmingly genuine ones:
 // single-item lists, and multi-item lists that extract fused into one block. It would
 // reject 136 to catch about 3, so a run of one is a list.
+//
+// The fusion is real but reaches the output once on disk, and neither geometry nor the
+// marked-content identifier separates a fused join from an ordinary wrap — see Lists'
+// comment. The guard is rejected on its own arithmetic, so this test stands on that.
 func TestListsPromotesASingleItem(t *testing.T) {
 	d := pageDoc(
 		body(10, false),

@@ -358,6 +358,39 @@ because that is where every existing library falls down.
   study. Its value was confirming that a pure-Go rasterizer is achievable and that the
   sub-problem boundaries above match what a mature implementation converges on.
 
+#### On list segmentation: what the field does, and what it declines to do
+
+Surveyed while investigating the block-fusion defect §10 recorded. The finding is
+uniform and worth stating, because it is a negative result that saved a rule:
+
+| Library | How lines become blocks | List handling |
+|---|---|---|
+| **pdfminer.six** | `LAParams.line_margin`, a fraction "relative to the height of a line" — the same shape as our `ParaFrac` | none. No lexical or bullet signal anywhere |
+| **pdfplumber** | wraps pdfminer; `x_tolerance` / `y_tolerance` / `use_text_flow` | none, explicitly left to the caller |
+| **MuPDF** `fz_stext` | geometric lines and blocks; `paragraph-break` breaks blocks at paragraph boundaries, `segment` attempts page segmentation | no bullet or list option. `structured` collects structure markup — the tagged path, separately |
+| **Docling** | ML layout model | `ListItem` stores **`marker`** separately from **`text`**, plus **`enumerated`** for ordered lists, and `GroupLabel.LIST` / `ORDERED_LIST` |
+| **oar-ocr** (Apache-2.0, Rust) | ONNX layout models, needs downloaded weights | region-level layout analysis, not marker semantics |
+
+Two conclusions, both acted on:
+
+**No mature extractor uses a bullet glyph to decide a block boundary.** They all
+segment on geometry alone and leave markers in the text. So `layout.Lists` reading the
+glyph is not a missing feature we lag on — it is a step past what pdfminer, pdfplumber
+and MuPDF do, and the reason it is defensible here is that it was scored against the
+corpus (1442 promotions, 5 false) rather than assumed.
+
+**Docling's data model is the one to copy, and it is a model rather than a heuristic.**
+Keeping the marker as its own field instead of a prefix of the text is what makes
+ordered lists representable at all — ADR 0011 records that a numbered item is
+indistinguishable from a numbered heading *given only the glyphs*, and a `marker` +
+`enumerated` pair is where that stops being true, because a tagged PDF declares both.
+That is the shape §10's remaining list work should take.
+
+`oar-ocr` is worth revisiting for the OCR path rather than this one: Apache-2.0 and
+native Rust matches §9's linkage rule, but it is ONNX-plus-weights, which puts it in
+the same subprocess category as `llama.cpp` and not in the deterministic core. Reading
+a marker out of a structure tree we already parse costs nothing and needs no model.
+
 ---
 
 ## 6. CLI
@@ -590,9 +623,10 @@ OKF-ified spec.
   out of scope for Phase 1–5; the VLM path covers it in the interim.
 - **The untagged layout path's one remaining measured gap.** `TestReferenceExactMatch` in
   `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
-  measured worklist rather than a remembered one. The tagged path has no gaps — `clauses`
-  matches exactly and is enforced — and every item here is the layout path lacking a role the
-  structure tree would otherwise declare:
+  measured worklist rather than a remembered one. Every item in this sub-list is the layout
+  path lacking a role the structure tree would otherwise declare. `clauses` matches exactly
+  and is enforced, but that is not the same as the tagged path being gapless — it has no
+  list fixture, and the item after this one is a tagged-path defect that measurement found:
   - *Heading rank* — **closed.** `layout.Headings` levels an untagged file's headings from its
     own section numbering, gated on typographic distinction from the body cluster; `headings`
     matches exactly and is enforced. ADR 0008 records why numbering rather than size-ladder
@@ -643,9 +677,56 @@ OKF-ified spec.
     indent is the only genuine left-edge gap inside a marker run anywhere on disk, the other
     seven being 0.011 float noise and one 0.241 glyph-width difference, so `ListStep: 1.0`
     sits in the middle of an empty band rather than at a fitted point.
+
+    **The "extract fused several items into one block" defect this recorded does not reach
+    the output, and chasing it would have been wasted work.** Measured at the line level
+    inside `extract`, 98 line pairs across 6 files join a bullet-opening line onto the line
+    before it. None of them survives to the emitted Markdown: every affected file is
+    *tagged*, and `sectionize` splits those items from the structure tree before any sink
+    sees them — `Well-Tagged-PDF-WTPDF-1.0.pdf` emits 92 separate list items, not one fused
+    block, and `PDF20_AN003` emits 8. Only one fused line survives anywhere on disk, in
+    `LightOnOCR-2601.14251v1.pdf`.
+
+    Two candidate fixes were scored and both are dead, which is why the run-minimum guard
+    ADR 0011 rejected must stay rejected rather than being revisited alongside a fix:
+    - *Geometry cannot see it.* The step before a bullet line spans 1.220–1.486 line
+      heights; an ordinary wrap spans 1.100–1.500 across 41849 pairs. Complete overlap, so
+      no `ParaFrac` separates them at any value. Nor does the left edge: at the 25th
+      through 90th percentile the bullet line's outdent from its block's margin is exactly
+      **0.000** space widths, because these producers set the marker flush with the
+      continuation text rather than hanging it.
+    - *"Different marked-content element breaks the block" costs 6911 splits to buy 8.* Of
+      the 41947 currently-joined line pairs, 6911 join lines carrying different MCIDs, and
+      only 8 of those are the bullet case — the other 77 bullet joins have one line spanning
+      several MCIDs, so an equality test does not even classify them.
   - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
     the untagged-table research problem named above; the fixture exists so the day it is
     solved is measurable.
+- **The tagged path emits its list markers literally, and the producer declared them.** This
+  is the defect the fusion investigation actually found, and it is larger than the one it
+  was looking for: 1403 list items across 7 files render as `- ■ text` — the sink's own `- `
+  followed by the marker glyph still sitting in the item's text. 1242 of them are in ISO
+  32000-2 alone. The tagged path was previously described here as having no gaps; it has
+  this one, and `clauses` matching exactly did not catch it because that fixture has no
+  lists.
+
+  It is a gap in `sectionize`, not in `layout`. PDF declares the marker as its own element:
+  the structure is `LI → {Lbl → Span, LBody}`, where `Lbl` *is* the label and `LBody` is the
+  content. `blockRole` maps neither, so both fall into `gather`'s transparent default and the
+  marker's spans are appended to the item indistinguishably from its text. Measured over
+  every `LI` on disk, 147 declare a `Lbl`: **132 hold a single marker glyph, 13 hold a number
+  or letter (`[1]`, `a.`), 2 are other, and 0 would leave the item empty if dropped.**
+
+  That is declared evidence, and it is strictly better than the glyph allowlist `layout`
+  runs on — the 13 numbered labels are exactly the ordered-list case ADR 0011 records as
+  unreachable from glyphs alone, and here the producer states it outright. Docling's data
+  model is the one to follow (`marker` and `enumerated` as fields beside `text`, per the
+  prior-art survey in §5) rather than stripping the marker into nothing, because a sink that
+  wants to render `[1]` needs to know it existed. The remaining 1256 marker-emitting items
+  declare no `Lbl`, so they need the `layout.Lists` heuristic to run on the tagged path too,
+  which is a second decision: today `inferRoles` is untagged-only, deliberately, because
+  guessing over a declaration replaces evidence with a heuristic. A block that *is* declared
+  `RoleListItem` and still opens with a marker glyph is not that case.
 - **A block boundary inside one marked-content element still loses the space that joined
   its two lines.** The wrap space is inferred only *within* a block, so a boundary there
   writes no space at all, and `sectionize.title` then rejoins spans sharing a `(page, MCID)`
