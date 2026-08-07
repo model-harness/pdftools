@@ -1,0 +1,75 @@
+docs/adr/0009-break-blocks-on-type-size-not-only-on-vertical-step.md
+  s_5cd1b28ed520c1::t_f730265659b3fb 7-16
+  s_5cd1b28ed520c1::t_59cea88c72e601 101-104
+cmd/pdfspec/reference_test.go
+  s_5cd1b28ed520c1::t_6855bd35bf32f4 39
+  s_5cd1b28ed520c1::t_290f8f55f40df4 50
+  s_5cd1b28ed520c1::t_a60a3602f55249 134-146
+  s_5cd1b28ed520c1::t_ba42cbc13f5b74 24
+testdata/reference/paragraphs.gold.md
+  s_5cd1b28ed520c1::t_019cbacca7ece0 1-5
+extract/extract_test.go
+  s_5cd1b28ed520c1::t_786927bedd3b05 1044-1086,1094,1099-1108,1211-1214,1220-1259
+  s_5cd1b28ed520c1::t_8c125243afd96f 1312-1331
+  s_5cd1b28ed520c1::t_120166f2955a64 1109-1142
+  s_5cd1b28ed520c1::t_4ff16cbc2d8af1 1143-1210
+  s_5cd1b28ed520c1::t_a74c2f34029eaa 1087-1093,1095-1098
+  s_5cd1b28ed520c1::t_627c3a2947a463 1215-1219
+  s_5cd1b28ed520c1::t_120aaa74baece1 1269-1273
+  s_5cd1b28ed520c1::t_62984efbd1df5b 1275
+docs/adr/0010-break-paragraphs-on-a-repeated-first-line-indent.md
+  s_5cd1b28ed520c1::t_b53cc6852dc007 1-120,131-141
+  s_5cd1b28ed520c1::t_75c8654e58b94f 121-130
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_5f3ecf51d65d22 591
+  s_5cd1b28ed520c1::t_ebebdaa9992a3d 602-603,607-628
+testdata/reference/paragraphs.tex
+  s_5cd1b28ed520c1::t_267d53e20ca95e 33-45
+  s_5cd1b28ed520c1::t_fce0de28a0e80c 1-32,46-62
+testdata/reference/README.md
+  s_5cd1b28ed520c1::t_d70c6d4d1ca45d 41
+  s_5cd1b28ed520c1::t_39a4039a3ed0dc 65
+  s_5cd1b28ed520c1::t_8af22fbda3c4f4 3
+geom/geom.go
+  s_5cd1b28ed520c1::t_7b3968605e2582 157-172,205-207
+  s_5cd1b28ed520c1::t_4d17bc039116e9 194-204
+extract/run.go
+  s_5cd1b28ed520c1::t_7b3968605e2582 608,628,632,635-637,768-789,795-806,815-816,823,828-835,846-853,868-870,872-876,878-904
+  s_5cd1b28ed520c1::t_12d65c6b9d7358 864-865
+  s_5cd1b28ed520c1::t_67cf50b49cde4e 809-814
+  s_5cd1b28ed520c1::t_cb4208e7bbd70c 854-863,866-867
+  s_5cd1b28ed520c1::t_29c7726a29ef19 836-845
+  s_5cd1b28ed520c1::t_2e361a6313d75b 821
+  s_5cd1b28ed520c1::t_3025b1d7a2fa58 790-794,807-808,817-820,824-827
+  s_f6c0b1ac81cb95::t_0fad7bd0ab1276 822,871,877,905
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_95d9d2fce25800 53-60
+  s_5cd1b28ed520c1::t_1615f92d9b7728 8-52,61-68
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_33309da59580f4 22
+  s_5cd1b28ed520c1::t_ec474c01aa273b 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "530aa4877e5e56e05f644edda5733fbf848a25d5",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_f6c0b1ac81cb95": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "151935e3-d249-47ab-b987-1ee88cf9798f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
