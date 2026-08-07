@@ -57,7 +57,16 @@ All notable changes to this project are documented here, following
   corpus instead of 3. Tightening either tolerance to exact equality survived too.
   `TestIndentMatchesTheBlocksOwnFirstLine` closes all three with a hanging-indented block
   where only the own-line comparison declines, plus two near-misses at the scale of
-  producer rounding. All ten mutations of the rule are now caught.
+  producer rounding.
+- **The last surviving mutation needed a case no corpus could supply.** Replacing
+  `observe`'s rebasing `+=` with a plain `max` survived every test and every reference
+  fixture, and re-running the driver is what showed it — an earlier version of this entry
+  claimed all ten were caught before that was true. The reason it lasted: measured over the
+  corpus the two forms disagree on 111 of 30328 indent decisions and the spread guard's
+  verdict differs on **none** of them, so no document on disk could have killed it. A fifth
+  synthetic case does — a margin walking left in two 0.36 space-width steps whose 0.72
+  total clears the guard, where `max` reports one step and admits a block that has no
+  margin. All ten mutations of the rule are now caught.
 - **Text is conserved, and the test cannot pass by the rule never firing.**
   `TestIndentBreakConservesText` compares page text with the rule on against the same text
   with it off over every PDF present, ignoring whitespace because a boundary change is

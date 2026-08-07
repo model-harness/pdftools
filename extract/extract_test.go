@@ -1206,6 +1206,32 @@ func TestIndentMatchesTheBlocksOwnFirstLine(t *testing.T) {
 			t.Errorf("blocks = %d, want 2: a 0.015 space-width margin disagreement is noise, not a wandering centre", len(p.Blocks))
 		}
 	})
+
+	// spread must be the *total* disagreement between the widest and narrowest edge
+	// seen, and this is the only case on record that says so. Replacing observe's
+	// rebasing += with a plain max survives every other test here and every reference
+	// fixture: measured over the corpus the two forms disagree on 111 of 30328 indent
+	// decisions and the guard's verdict differs on none of them, so no document on disk
+	// can distinguish them and this case has to be built.
+	//
+	// A margin that walks left in two 1.2pt steps disagrees with itself by 2.4pt in
+	// total, which is 0.72 space widths and past the guard, while neither single step is
+	// (0.36 each). Under-reporting it as one step admits a block that has no margin,
+	// which is what the guard exists to refuse. The edges are 14.4, 13.2 and 12.0, so
+	// spread is 14.4 - 12.0 throughout; the incoming line at x=22 against the final
+	// margin of 12.0 is a 3.00 space-width indent that matches the block's own first
+	// line exactly, so every other condition of the rule is satisfied and only this one
+	// declines.
+	t.Run("a margin that walks left has no margin", func(t *testing.T) {
+		stream := `BT /F1 12 Tf 22 700 Td (indented first line) Tj ` +
+			`1 0 0 1 14.4 688.045 Tm (margin starts here) Tj ` +
+			`1 0 0 1 13.2 676.09 Tm (then drifts left) Tj ` +
+			`1 0 0 1 12 664.135 Tm (and drifts again) Tj ` +
+			`1 0 0 1 22 652.18 Tm (matches the first line) Tj ET`
+		if p := extractPage(t, stream); len(p.Blocks) != 1 {
+			t.Errorf("blocks = %d, want 1: the continuations disagree by 0.72 space widths in total, so the block has no margin to be indented past", len(p.Blocks))
+		}
+	})
 }
 
 // TestIndentBreakConservesText is TestSizeBreakConservesText for the indent rule, and

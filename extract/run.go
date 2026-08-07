@@ -812,6 +812,11 @@ func newIndent(ln *line) indent {
 // edge, so adding the shift rebases it onto the new one rather than accumulating noise.
 // Following edges of 12, 20, 10 and 8 gives 8, 10 and then 12, which is 20 - 8 at every
 // step. A max there would silently under-report every block whose margin moved.
+//
+// No document on disk proves that: measured over the corpus, += and max disagree on 111
+// of 30328 indent decisions and change the guard's verdict on none of them. The case that
+// divides them is synthetic and lives in TestIndentMatchesTheBlocksOwnFirstLine — a margin
+// walking left in two sub-tolerance steps that sum past the guard.
 func (in *indent) observe(ln *line) {
 	lo, _ := lineExtent(ln)
 	if math.IsNaN(in.edge) {

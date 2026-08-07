@@ -4,7 +4,17 @@ Date: 2026-08-07
 
 ## Status
 
-Accepted
+Accepted. **Corrected on 2026-08-07** on one point of fact: the Consequences claim that
+"all ten mutations of the rule are now caught" was premature when written. Re-running the
+driver showed the tenth — replacing `observe`'s rebasing `+=` with a plain `max` —
+surviving. It is now caught, by a fifth case in
+`TestIndentMatchesTheBlocksOwnFirstLine`, and the correction is recorded inline below
+rather than edited away because *why* it survived is the finding: **no document on disk
+can distinguish the two forms.** Measured over the corpus they disagree on 111 of 30328
+indent decisions and the spread guard's verdict differs on none of them, so the case had
+to be constructed — a margin walking left in two sub-tolerance steps that sum past the
+guard. A corpus, however large, is not a substitute for a case built to divide two
+implementations.
 
 ## Context
 
@@ -127,6 +137,16 @@ exact equality also survived. `TestIndentMatchesTheBlocksOwnFirstLine` closes al
 a hanging-indented block where only the own-line comparison declines, and two near-misses
 at the scale of producer rounding that must still be treated as agreement. All ten
 mutations of the rule are now caught.
+
+> **Corrected.** That last sentence was not true when written — the tenth mutation,
+> `observe`'s rebasing `+=` replaced by a plain `max`, still survived. It is caught now by
+> a fifth case in that test, and the reason it lasted is worth more than the fix: the two
+> forms diverge on 111 of 30328 corpus indent decisions and change the guard's verdict on
+> **none** of them, so no fixture could have killed it. The case is synthetic by necessity
+> — a margin walking left in two 0.36 space-width steps whose 0.72 total clears the guard
+> — and it is the standing example that corpus breadth does not substitute for a case
+> built to divide two implementations. `max` under-reports every block whose margin moves;
+> see `observe`'s comment for the hand-trace.
 
 **The fixture pins the measurement, not just the output.** Enforcing `paragraphs`
 exactly is what keeps the 1.200-ratio finding from being re-lost: anything that makes
