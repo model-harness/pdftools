@@ -1,0 +1,58 @@
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_75be5a66fcbc40 591,629-645
+layout/layout.go
+  s_5cd1b28ed520c1::t_26541ab31cb78c 214-225
+  s_5cd1b28ed520c1::t_39df1e533d21fd 393-399
+  s_5cd1b28ed520c1::t_2c406fae9122f3 368,372,384,386-389,416,418-422
+  s_5cd1b28ed520c1::t_c24160f8799ff0 203-213,226-265,275-276,278-285,287-310,319,321-325,337-365
+  s_5cd1b28ed520c1::t_428bbcd309d895 443-452
+  s_5cd1b28ed520c1::t_386a1e037c5025 110-123
+  s_5cd1b28ed520c1::t_3be90484177170 286
+  s_5cd1b28ed520c1::t_21ef6f442e9552 311-318
+  s_5cd1b28ed520c1::t_cf2ec50fb7c4f1 56
+  s_5cd1b28ed520c1::t_bc075a0655c86d 85-94
+  s_5cd1b28ed520c1::t_76e347186e2631 266-274,277
+  s_5cd1b28ed520c1::t_326402af96c281 66-70
+  s_5cd1b28ed520c1::t_bb764a9b481427 326-336
+  s_5cd1b28ed520c1::t_20418baaad52db 366-367,369-371,373-383,385,390-392,400-415,417
+  s_5cd1b28ed520c1::t_a94abad52e7f52 423-442,455-458,470,472-474,476-480
+  s_5cd1b28ed520c1::t_6745af8d355070 320,459-469,471,475
+  s_5cd1b28ed520c1::t_674c37b0a6ed57 453-454
+docs/adr/0011-recognize-untagged-list-items-by-marker-glyph-and-left-edge.md
+  s_5cd1b28ed520c1::t_ada674a214823d 118-120,122-125,128-143
+  s_5cd1b28ed520c1::t_333073630b2d1e 1-117,121,126-127,144-155,177-186
+  s_5cd1b28ed520c1::t_9a1e8bf872a910 156-176
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_e4a13c6f6740fb 117,145
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_90e775f2d51d2b 173-181
+  s_5cd1b28ed520c1::t_4f11bdb5d85a42 10-45
+  s_5cd1b28ed520c1::t_9a1e8bf872a910 59-70
+  s_5cd1b28ed520c1::t_ada674a214823d 46-58
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_e4a13c6f6740fb 77,133,150,154-156,158
+  s_5cd1b28ed520c1::t_bb764a9b481427 139-149
+cmd/pdfspec/reference_test.go
+  s_5cd1b28ed520c1::t_6985440bc8e82e 117-120
+  s_5cd1b28ed520c1::t_8f78ebd11a271e 147-158
+layout/lists_test.go
+  s_5cd1b28ed520c1::t_b42d282f19062c 97-121
+  s_5cd1b28ed520c1::t_1d51c45d744f7f 129-132
+  s_5cd1b28ed520c1::t_33a5d76f71658e 1-96,122-128,133-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c5b56ea9c07c140a6f8db5eee9ecc9565aa3d911",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
