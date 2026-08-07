@@ -1,6 +1,6 @@
 # Reference fixtures — the yardstick
 
-Six small PDFs, each exercising one thing, each beside the Markdown it *should*
+Seven small PDFs, each exercising one thing, each beside the Markdown it *should*
 produce. Everything here is ours: generated from the `.tex` sources in this
 directory, licensed MIT with the rest of the repo, and therefore committable —
 unlike the sponsored ISO documents in `docs/`, which are the corpus we measure
@@ -38,7 +38,7 @@ with the dialect would fail on formatting and tell us nothing about fidelity.
 
 ## Why untagged, and why `lmodern`
 
-Four of the six are deliberately untagged, because most PDFs are and the layout
+All but one are deliberately untagged, because most PDFs are and the layout
 path is what reads them. `clauses.tex` is tagged, because a structure tree is the
 thing it exists to test.
 
@@ -62,6 +62,7 @@ were learned the hard way:
 |---|---|---|
 | `headings.tex` | Heading sequence at three depths, in order | no |
 | `text-styles.tex` | Bold, italic, bold-italic, monospace | no |
+| `paragraphs.tex` | Paragraph breaks carried by the first-line indent alone | no |
 | `lists.tex` | Bulleted and nested list items | no |
 | `table.tex` | A ruled table's cell text | no |
 | `image.tex` | A page whose only content is an image | no |

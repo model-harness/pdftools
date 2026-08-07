@@ -588,7 +588,7 @@ OKF-ified spec.
 - **Table extraction.** Tagged PDFs declare `Table`/`TR`/`TD`, so the tagged path can emit
   real Markdown tables. Untagged table detection is a research problem and is explicitly
   out of scope for Phase 1–5; the VLM path covers it in the interim.
-- **The untagged layout path's three remaining measured gaps.** `TestReferenceExactMatch` in
+- **The untagged layout path's two remaining measured gaps.** `TestReferenceExactMatch` in
   `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
   measured worklist rather than a remembered one. The tagged path has no gaps — `clauses`
   matches exactly and is enforced — and every item here is the layout path lacking a role the
@@ -599,19 +599,33 @@ OKF-ified spec.
     position decides the level, and the two limits that remain: an *unnumbered* heading stays a
     paragraph, because nothing separates "Preface" from a body-size bold table row, and an OKF
     bundle still needs a tree rather than a levelled sequence.
-  - *Paragraph breaks.* `text-styles`' four paragraphs arrive joined into one line. The words
-    and the styling are correct, so this is block segmentation and not extraction: a vertical
-    gap that a tagged document declares with `P` has to be inferred from leading. **The
-    heading half of this is closed** — `extract.continues` now also breaks a block where two
+  - *Paragraph breaks* — **closed**, in two halves, and the second one corrected the first's
+    account of it. The heading half is ADR 0009: `extract.continues` breaks a block where two
     consecutive lines' dominant type sizes differ by more than `Tolerance.SizeFrac`, which is
     what a heading set at ordinary leading needs, and `autotagPDFInput.pdf` went from 0 to 12
     heading candidates and `v110-changes.pdf` from 0 to 6. Neither promotes anything yet,
-    because both set their headings *unnumbered* — that is ADR 0008's recorded limit, reached
-    now rather than hidden behind a segmentation defect. What remains is the same-size case:
-    `text-styles`' four paragraphs are all 9.96pt, so no size ratio separates them and the
-    only remaining evidence is the leading itself. Splitting on style was measured and
-    rejected — those four paragraphs differ only in which word each emphasizes, so a weight
-    test would break blocks at whichever word happened to be bold.
+    because both set their headings *unnumbered* — ADR 0008's recorded limit, reached now
+    rather than hidden behind a segmentation defect.
+
+    The same-size half is ADR 0010, and getting there meant discarding what ADR 0009 said
+    about it. That the "only remaining evidence is the leading itself" is false: measured
+    over the purpose-built `reference/paragraphs.pdf`, a same-size paragraph boundary steps
+    down 1.200 line heights and so does an ordinary wrap, so no `ParaFrac` separates them at
+    any value. `text-styles` is also not the fixture for the case — its paragraphs are one
+    line each, so every pair in it is a boundary and a rule that split unconditionally would
+    score perfectly. The evidence is horizontal: `extract` starts a block where a line
+    repeats the indent its block's own first line was set with, three space widths in that
+    fixture. Requiring the match against the block's *own* first line rather than any indent
+    is what makes it safe — 441 naive firings over the corpus down to 11 — and a spread guard
+    declining blocks whose continuations disagree on a left edge takes it to 3, after centred
+    table headers in `pymupdf/dotted-gridlines.pdf` were split mid-phrase. Splitting on style
+    was measured and rejected earlier for the same class of reason: `text-styles`' paragraphs
+    differ only in which word each emphasizes, so a weight test breaks blocks at whichever
+    word happened to be bold.
+
+    What is still not inferable: a document setting *neither* extra space *nor* a first-line
+    indent leaves no geometric evidence of a boundary, and the rule declines rather than
+    guessing.
   - *List role.* `lists` emits LaTeX's drawn markers as ordinary text — `•` for the outer
     level and a bold `–` for the nested one, which is genuinely what the page draws — instead
     of `- ` at two spaces per level. The nesting depth is visible in the indent; nothing yet

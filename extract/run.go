@@ -605,6 +605,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	var out []doc.Block
 	var cur *doc.Block
 	var prev *line
+	var shape indent
 
 	for i := range r.lines {
 		ln := &r.lines[i]
@@ -624,12 +625,16 @@ func (r *run) blocks(opt Options) []doc.Block {
 			// thousand times in the middle of prose. The line still ended the current
 			// paragraph, because on the page it did.
 			cur, prev = nil, nil
+			shape = indent{}
 			continue
 		}
 
-		if cur == nil || !continues(prev, ln, r.tol) {
+		if cur == nil || !continues(prev, ln, r.tol) || shape.startsParagraph(ln, r.tol) {
 			out = append(out, doc.Block{Role: roleOf(art)})
 			cur = &out[len(out)-1]
+			shape = newIndent(ln)
+		} else {
+			shape.observe(ln)
 		}
 		appendLine(cur, ln, r.tol)
 		prev = ln
@@ -758,6 +763,144 @@ func sizeBreak(prev, ln *line, t geom.Tolerance) bool {
 		a, b = b, a
 	}
 	return a > b*t.SizeFrac
+}
+
+// indent tracks the horizontal shape of the block being built, so that a paragraph
+// break with no vertical evidence at all can still be seen.
+//
+// Neither of the other two tests can see this case, and reference/paragraphs.pdf is
+// the measurement that says so. Three paragraphs, each wrapped over three or four
+// lines, all set in one size at one leading: every consecutive line pair steps down
+// 11.955pt against a 9.963pt line height, a ratio of 1.200 to three decimals, whether
+// the pair is an ordinary wrap or a paragraph boundary. So no ParaFrac separates them
+// at any value, and SizeFrac has nothing to compare. The only signal left is
+// horizontal — the first line of each paragraph starts three space widths right of
+// the margin its own continuations sit at.
+//
+// text-styles.pdf was documented as this case and is not: measured, its four
+// paragraphs are one line each, so every pair in it is a boundary, there is no wrap
+// to contrast against, and a rule that split unconditionally would score perfectly.
+// That is why paragraphs.pdf exists.
+type indent struct {
+	// first is the left edge of the block's opening line, and edge the leftmost edge
+	// its continuation lines have shown. NaN for edge means the block has no
+	// continuation line yet and there is nothing to measure an indent against.
+	first, edge float64
+	space       float64
+
+	// spread is how far the widest continuation line's left edge sits right of edge.
+	// A left-aligned block's continuations share an edge, so this stays at float
+	// noise; a centred one's wander, and that is what disqualifies it below.
+	spread float64
+}
+
+func newIndent(ln *line) indent {
+	lo, _ := lineExtent(ln)
+	return indent{first: lo, edge: math.NaN(), space: lineSpace(ln)}
+}
+
+// observe records a line that stayed in the block, which is what establishes the
+// margin later lines are judged against.
+//
+// The minimum rather than the mean: a paragraph's continuation lines all start at the
+// measure's left edge, and taking the smallest is what makes one stray positioned
+// fragment unable to drag the margin rightward. spread then records how much they
+// disagreed, which is the only thing separating an indent from centred type.
+//
+// spread is maintained as (widest edge seen - narrowest), and the += below is what keeps
+// it that when the margin moves left: the running value was measured against the old
+// edge, so adding the shift rebases it onto the new one rather than accumulating noise.
+// Following edges of 12, 20, 10 and 8 gives 8, 10 and then 12, which is 20 - 8 at every
+// step. A max there would silently under-report every block whose margin moved.
+func (in *indent) observe(ln *line) {
+	lo, _ := lineExtent(ln)
+	if math.IsNaN(in.edge) {
+		in.edge = lo
+		return
+	}
+	if lo < in.edge {
+		in.spread += in.edge - lo
+		in.edge = lo
+		return
+	}
+	if d := lo - in.edge; d > in.spread {
+		in.spread = d
+	}
+}
+
+// startsParagraph reports whether ln repeats the indent this block's own first line
+// was set with, which is a new paragraph in a document that separates them by nothing
+// else.
+//
+// Matching the block's *own* first line is what makes the rule safe, and it is the
+// whole design. An indent alone is far too common to act on: with each variant run as
+// the live rule over the corpus, "indented past the block's margin" fires 441 times
+// across 19 files, and reading them shows they are mostly C source listings in
+// mupdf_explored.pdf, where the indent is syntax, and hanging-indented bullets in
+// ISO 32000-2, where the continuation is indented and the marker line is not.
+// Requiring the incoming indent to equal the one the block opened with rejects both —
+// a bullet's own first line sits left of its continuations, not right of them — and
+// takes 441 firings down to 11. The spread guard below removes 8 of those 11, leaving
+// 3 across 2 files: the two real boundaries in paragraphs.pdf and one in
+// mupdf_explored.pdf.
+func (in *indent) startsParagraph(ln *line, t geom.Tolerance) bool {
+	if t.IndentFrac <= 0 || math.IsNaN(in.edge) || in.space <= 0 {
+		// Disabled, or the block has no continuation line to establish a margin. The
+		// second case is the common one and it is why a two-line paragraph followed by
+		// an indented third line is left alone: with one continuation line the margin
+		// is a guess.
+		return false
+	}
+	if in.spread > 0.5*in.space {
+		// The block's continuation lines do not agree on a left edge, so it has no
+		// margin and an "indent" past it is meaningless. Centred type is the case, and
+		// pymupdf/dotted-gridlines.pdf is why the guard exists: its centred table
+		// headers set "COMUNI / SUPERIORI / 15.000 / abitanti / (SUP)" at left edges of
+		// 285.53, 282.53, 286.73, 285.65 and 287.45, wandering about two points around
+		// a centre. Against that document's 1.335pt space advance, two points is 1.35
+		// space widths, which cleared the threshold below and split the cell mid-phrase
+		// into "COMUNI SUPERIORI 15.000" and "abitanti (SUP)". A left-aligned block's
+		// continuations agree to within float noise, so half a space width separates
+		// the two without needing to recognize centring as such. Measured: that file
+		// fires twice with the check above alone and not at all with this one.
+		return false
+	}
+	lo, _ := lineExtent(ln)
+	in2 := (lo - in.edge) / in.space
+	own := (in.first - in.edge) / in.space
+	if in2 < t.IndentFrac || in2 > t.IndentMax {
+		return false
+	}
+	// Half a space width of agreement. Tighter than it looks: the two indents come
+	// from the same \parindent through the same text matrix, so they agree to within
+	// float noise when they agree at all — 3.00 against 3.00 in paragraphs.pdf.
+	return math.Abs(in2-own) <= 0.5
+}
+
+// lineExtent returns a line's leftmost and rightmost edges along its baseline.
+func lineExtent(ln *line) (lo, hi float64) {
+	lo, hi = math.Inf(1), math.Inf(-1)
+	for i := range ln.frags {
+		lo = math.Min(lo, ln.frags[i].along0)
+		hi = math.Max(hi, ln.frags[i].along1)
+	}
+	return lo, hi
+}
+
+// lineSpace returns the widest nominal space advance among a line's fragments, the
+// unit every horizontal threshold here is expressed in.
+//
+// In space widths rather than points for the same reason sizeBreak compares a ratio:
+// a 7pt footnote and a 28pt heading are indented by different numbers of points and
+// by the same number of spaces.
+func lineSpace(ln *line) float64 {
+	sp := 0.0
+	for i := range ln.frags {
+		if ln.frags[i].space > sp {
+			sp = ln.frags[i].space
+		}
+	}
+	return sp
 }
 
 // domSize returns the size most of a line's characters are set in.

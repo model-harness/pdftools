@@ -154,6 +154,22 @@ type Tolerance struct {
 	// sizes differing by a few percent. Zero means the default.
 	SizeFrac float64
 
+	// IndentFrac is the number of space widths a line must be indented past its
+	// block's own margin, while repeating the indent that block's first line was set
+	// with, before it is read as starting a new paragraph.
+	//
+	// This is the paragraph break that has no vertical evidence: a document setting
+	// no space between paragraphs steps down by exactly one line at a boundary, so
+	// ParaFrac cannot see it and SizeFrac has nothing to compare. Expressed in space
+	// widths rather than points so a footnote and a heading are judged alike. Zero
+	// means off, which is a usable setting — the rule is the least certain of the
+	// three and a caller who wants only vertical evidence can have it.
+	IndentFrac float64
+
+	// IndentMax is the number of space widths beyond which an indent is column or
+	// cell placement rather than a paragraph's first line, and is ignored.
+	IndentMax float64
+
 	// Epsilon is the absolute tolerance for coordinate comparison in user-space
 	// units, absorbing float noise from matrix composition.
 	Epsilon float64
@@ -175,7 +191,20 @@ var DefaultTolerance = Tolerance{
 	// above 1.067, where a 32pt title meets a 30pt subtitle and Adobe's 13.02pt
 	// headings meet 12pt body. Nothing in the corpus falls between.
 	SizeFrac: 1.06,
-	Epsilon:  1e-6,
+	// 1.0 and 6.0 bracket what a first-line indent is, in space widths, and the two
+	// bounds are load-bearing to very different degrees. Swept over the corpus with
+	// the shipping rule, the floor is flat: 0.75, 1.0, 1.25, 1.5, 2.0 and 3.0 all
+	// yield the same 3 extra blocks, so it is a floor stating that an indent of under
+	// one space width is not one, and not a threshold tuned to a trough. The ceiling
+	// does real work — unbounded it admits 28 extra blocks, at 6 it admits 3, and it
+	// plateaus across 4 to 10, so 6 sits inside a stable band rather than on an edge.
+	// What it excludes is placement rather than indentation: reference/paragraphs.pdf
+	// indents by 3.00 space widths (LaTeX's 15pt \parindent against a 4.981pt space),
+	// while the offsets rejected above 6 run to 17, 63 and 94 and are table cells and
+	// addresses.
+	IndentFrac: 1.0,
+	IndentMax:  6.0,
+	Epsilon:    1e-6,
 }
 
 // NearlyEqual reports whether a and b are within the absolute epsilon.

@@ -4,7 +4,16 @@ Date: 2026-08-06
 
 ## Status
 
-Accepted
+Accepted. **Corrected by [ADR 0010](0010-break-paragraphs-on-a-repeated-first-line-indent.md)
+on one point of fact.** The Consequences section below states that in the same-size case
+"the only remaining evidence is the leading itself", and names `text-styles` as the
+fixture for it. Measured, both are wrong: the vertical step at a same-size paragraph
+boundary is *identical* to an ordinary wrap's — 1.200 line heights either way, so no
+`ParaFrac` separates them at any value — and `text-styles`' paragraphs are one line
+each, so every pair in it is a boundary and it cannot discriminate a rule at all. The
+decision this ADR records is unaffected: the size test stands as measured, and what was
+wrong was the account of the case it left open. ADR 0010 closes that case on horizontal
+evidence.
 
 ## Context
 
@@ -88,6 +97,10 @@ gaining a character. The gate also requires that at least one fixture's boundari
 size ratio separates them and the only remaining evidence is the leading itself — a
 paragraph break in a document that sets no extra space between paragraphs. That is the
 rest of DESIGN.md §10's paragraph-break item and this ADR does not address it.
+
+> **Corrected.** "The only remaining evidence is the leading itself" is false, and so is
+> the choice of fixture. See the Status section above and ADR 0010, which closes the case
+> on the first-line indent after measuring that the leading carries no signal here.
 
 **The size test does not apply inside a single marked-content element.** Where a producer
 declared two lines to be one thing, a layout heuristic has nothing to add — the same rule

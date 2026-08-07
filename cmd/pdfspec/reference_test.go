@@ -21,7 +21,7 @@ import (
 // Acrobat export would have been the wrong yardstick. The chain from intent to
 // assertion does not pass through a PDF reader, including ours.
 //
-// Two tiers, because a single exact-match test over six fixtures would have to be
+// Two tiers, because a single exact-match test over every fixture would have to be
 // either aspirational and permanently red, or weakened until it asserts nothing:
 //
 //   - TestReferenceFidelity is the tier that must always pass. Every word of the
@@ -36,7 +36,7 @@ import (
 // tier would hide known defects; making it fail the build would gate every commit
 // on a documented debt (grid table emission, DESIGN.md §10).
 
-// referenceFixtures are the six single-concern documents and what each one is for.
+// referenceFixtures are the single-concern documents and what each one is for.
 //
 // Each PDF is generated from the .tex beside it and licensed MIT with the rest of
 // the repo, so unlike the sponsored specifications in docs/ these are committed and
@@ -47,6 +47,7 @@ var referenceFixtures = []struct {
 }{
 	{"headings", "heading sequence at three depths, in order"},
 	{"text-styles", "bold, italic, bold-italic, and monospace mid-sentence"},
+	{"paragraphs", "paragraph breaks carried by the indent alone, at one size and one leading"},
 	{"lists", "bulleted items including a nested level"},
 	{"table", "every cell's text, rows kept together"},
 	{"image", "a page with one image: no prose is the honest answer"},
@@ -130,6 +131,19 @@ func TestReferenceExactMatch(t *testing.T) {
 		// size*, so a ladder has no rung for it — and dropping the "**" that a
 		// heading's own promoting emphasis would otherwise restate.
 		"headings": true,
+
+		// The paragraph break with no vertical evidence, which this fixture was written
+		// to make measurable and which it logged as three paragraphs fused into one
+		// until the indent rule existed. Three multi-line paragraphs, one size, one
+		// leading, LaTeX's default \parskip of zero.
+		//
+		// Enforced because the fixture pins the measurement the rule rests on rather
+		// than the rule's output: the vertical step here is 1.200 line heights whether
+		// a pair wraps or breaks, so anything that makes this pass by reading the step
+		// is reading noise. It is also the guard on the rule's own failure mode — the
+		// centred-text case that split a table header mid-phrase — since a rule loose
+		// enough to fire on jitter would break these three paragraphs into more.
+		"paragraphs": true,
 	}
 
 	for _, f := range referenceFixtures {

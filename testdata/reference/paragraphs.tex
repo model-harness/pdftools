@@ -1,0 +1,62 @@
+% paragraphs — two paragraph breaks that carry no vertical evidence at all.
+%
+% One concern: where does one paragraph end and the next begin, when the producer
+% sets no extra space between them? This is the case text-styles.pdf was assumed to
+% cover and does not. Measured, its four paragraphs are one line each, so every
+% consecutive pair is a paragraph boundary and there is no intra-paragraph wrap to
+% contrast against — the fixture has no negative case, and a rule that split every
+% pair would score full marks on it.
+%
+% Each paragraph here is deliberately wrapped over three or more lines, which is
+% what makes the fixture discriminating: two of the five line pairs are boundaries
+% and the other three are ordinary wraps, all at one type size and one leading.
+%
+% The measurement that motivates the shape. Extracting this document, every
+% consecutive line pair steps down 11.955pt against a 9.963pt line height, a ratio
+% of 1.200 — identical within a paragraph and between paragraphs, to three decimal
+% places. So Tolerance.ParaFrac cannot separate them at any value, and neither can
+% Tolerance.SizeFrac, since every line is set at 9.96pt. The only signal left on
+% the page is horizontal: a paragraph's first line starts at x=148.712 and its
+% continuations at x=133.768, a 14.944pt indent that is exactly three space widths
+% of the body font. LaTeX's \parindent is the evidence, and it is the only evidence.
+%
+% article's default \parskip is 0pt, which is the point rather than an oversight:
+% a document that sets space between paragraphs is already handled by the vertical
+% step, and would test nothing this fixture is for.
+%
+% No \noindent anywhere, and the first paragraph is indented like the others.
+% \parindent is suppressed on a paragraph immediately after a heading, so a fixture
+% that opened with one would hide the signal on the very first boundary.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+
+% Hyphenation off, so the fixture tests one thing. Left on, LaTeX broke "contains"
+% across a line and the extracted text read "con- tains" — a real defect, and a
+% different one: rejoining a hyphenated word is about what a line ending in a hyphen
+% means, not about where a paragraph starts. A fixture asserting both would fail for
+% either reason and distinguish neither. \sloppy because forbidding hyphenation
+% leaves TeX no way to justify some lines and it would otherwise report overfull
+% boxes; loose word spacing is invisible to an extractor that measures gaps against
+% the font's own space advance.
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\sloppy
+
+\begin{document}
+
+The first paragraph runs long enough to wrap across three lines of type, because a
+paragraph of one line offers nothing to compare a boundary against. Its second and
+third lines begin at the left margin, and that is what makes the indent below
+legible as a boundary rather than as ordinary variation.
+
+The second paragraph is indented on its first line and flush on the rest, exactly
+as the one above it, and the vertical step between it and the line before is the
+same step that separates any two lines here. A reader with only the leading to go
+on cannot tell this line from a wrap.
+
+The third paragraph closes the fixture and exists so that the document contains
+more paragraph boundaries than it does paragraphs that could be confused for a
+heading, since nothing here differs in size or weight from anything else.
+
+\end{document}

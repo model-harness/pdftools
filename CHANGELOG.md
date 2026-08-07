@@ -5,6 +5,67 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-08-07
+
+- **Paragraph breaks in documents that mark them with nothing but a first-line indent.**
+  A book or a specification setting `\parskip` to zero steps down by exactly one line at a
+  paragraph boundary, so the vertical test that segments prose cannot see the boundary at
+  all and every paragraph on the page arrives fused into one block. `extract` now also
+  starts a block where a line *repeats the indent its current block's own first line was
+  set with*. `reference/paragraphs.pdf` converts byte-for-byte to its gold file and is
+  enforced rather than logged, which closes DESIGN.md §10's paragraph-break item. ADR 0010
+  carries the measurements.
+- **The two premises this was supposed to rest on were both false, and measuring them is
+  what produced the rule.** ADR 0009 recorded that in the same-size case "the only
+  remaining evidence is the leading itself" and named `text-styles` as the fixture for it.
+  Measured, the leading is *no* evidence: every consecutive line pair in
+  `reference/paragraphs.pdf` steps down 11.955pt against a 9.963pt line height — a ratio
+  of 1.200 to three decimals — whether the pair is an ordinary wrap or a paragraph
+  boundary, so no `ParaFrac` separates them at any value. And `text-styles.pdf` cannot
+  discriminate any rule here, because its four paragraphs are one line each: every pair in
+  it is a boundary, there is no wrap to contrast against, and a rule that split
+  unconditionally would score perfectly on it. ADR 0009's Status now records the
+  correction; the decision it made is unaffected.
+- **A new reference fixture, because the case was not measurable without one.**
+  `reference/paragraphs.tex` sets three paragraphs wrapped over three or four lines at one
+  size and one leading, with hyphenation suppressed — left on, LaTeX broke "contains"
+  across a line and the extracted text read "con- tains", a real defect but a *different*
+  one, and a fixture failing for either reason distinguishes neither.
+- **The safety of the rule is structural, not tuned.** An indent by itself fires **441
+  times across 19 files** — C source listings in `mupdf_explored.pdf` where the indent is
+  syntax, hanging-indented bullets in ISO 32000-2 where the *continuation* is indented and
+  the marker line is not. Requiring the incoming indent to match the block's *own* first
+  line rejects both by construction, since a bullet's first line sits left of its
+  continuations rather than right of them, and takes 441 down to **11**. A spread guard
+  declining blocks whose continuation lines disagree on a left edge takes it to **3 across
+  2 files**, and exists because of a real regression: `pymupdf/dotted-gridlines.pdf` sets
+  centred table headers at 285.53, 282.53, 286.73, 285.65 and 287.45, and against that
+  file's 1.335pt space advance the two-point wander cleared the window and split `COMUNI
+  SUPERIORI 15.000 abitanti (SUP)` mid-phrase.
+- **Both new thresholds were swept against the shipping rule, and they are load-bearing to
+  very different degrees** — recorded in `geom.Tolerance` so neither reads as a tuned
+  constant. `IndentFrac`'s floor is flat: 0.75 through 3.0 all yield the same 3 extra
+  blocks, so it states that an indent under one space width is not one. `IndentMax`'s
+  ceiling does real work: unbounded it admits 28 extra blocks and at 6 it admits 3, with a
+  plateau across 4 to 10, so 6 sits inside a stable band. What it excludes is placement
+  rather than indentation — the rejected offsets run to 17, 63 and 94 space widths and are
+  table cells and addresses.
+- **Review caught that both half-space tolerances were unpinned, and mutation testing is
+  what showed it.** Widening the own-first-line agreement to a vacuous 99 space widths left
+  every test passing — the check ADR 0010 calls the whole design had its direction
+  constrained and its magnitude not, and made vacuous the rule fires 226 times over the
+  corpus instead of 3. Tightening either tolerance to exact equality survived too.
+  `TestIndentMatchesTheBlocksOwnFirstLine` closes all three with a hanging-indented block
+  where only the own-line comparison declines, plus two near-misses at the scale of
+  producer rounding. All ten mutations of the rule are now caught.
+- **Text is conserved, and the test cannot pass by the rule never firing.**
+  `TestIndentBreakConservesText` compares page text with the rule on against the same text
+  with it off over every PDF present, ignoring whitespace because a boundary change is
+  exactly what alters the join-with-a-space behavior: 47 fixtures, 2 with boundaries moved,
+  none losing or gaining a character. It also requires that at least one fixture's
+  boundaries *move* — the blind spot a conservation test otherwise has. Extending the same
+  corpus glob to `TestSizeBreakConservesText` raised its coverage from 8 moved files to 20.
+
 ### Added — 2026-08-06
 
 - **`layout`, which levels the headings of a document that declares none.** Untagged

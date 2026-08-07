@@ -1041,6 +1041,222 @@ func TestProjectDegenerateMatrix(t *testing.T) {
 	}
 }
 
+// TestIndentBreaksParagraphAtOneLeading is the case neither of the other two block
+// rules can see: a paragraph boundary where the vertical step and the type size are
+// both identical to an ordinary line wrap.
+//
+// The stream is reference/paragraphs.pdf's geometry in miniature — a 9.963pt line
+// height and an 11.955pt step throughout, so every pair has the same 1.200 ratio and
+// no ParaFrac separates them, at any value. What marks the boundary is that line 3
+// starts 15pt right of where lines 2 and 3 of the first paragraph sit, repeating the
+// indent line 1 was set with.
+func TestIndentBreaksParagraphAtOneLeading(t *testing.T) {
+	// x=25 for both paragraphs' first lines, x=10 for the continuations: a 15pt
+	// indent, which is three space widths of 12pt Helvetica.
+	stream := `BT /F1 12 Tf 25 700 Td (first para line one) Tj ` +
+		`1 0 0 1 10 688.045 Tm (continues here) Tj ` +
+		`1 0 0 1 10 676.09 Tm (and here) Tj ` +
+		`1 0 0 1 25 664.135 Tm (second para line one) Tj ` +
+		`1 0 0 1 10 652.18 Tm (continues too) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 2 {
+		var got []string
+		for _, b := range p.Blocks {
+			got = append(got, b.Text())
+		}
+		t.Fatalf("blocks = %d, want 2: the indent is the only evidence of the break\n%q", len(p.Blocks), got)
+	}
+	if got, want := p.Blocks[0].Text(), "first para line one continues here and here"; got != want {
+		t.Errorf("blocks[0] = %q, want %q", got, want)
+	}
+	if got, want := p.Blocks[1].Text(), "second para line one continues too"; got != want {
+		t.Errorf("blocks[1] = %q, want %q", got, want)
+	}
+}
+
+// TestIndentIgnoredWhereLinesAreCentred is the spread guard, and it is load-bearing
+// rather than defensive.
+//
+// Centred type has no left margin, so "indented past the margin" is not a question
+// that can be asked of it — but the arithmetic still produces an answer, and without
+// this guard it produced a wrong one. pymupdf/dotted-gridlines.pdf is the case: a
+// centred table header whose lines start within about two points of each other, which
+// against that document's 1.335pt space advance reads as 1.35 space widths and split
+// "COMUNI SUPERIORI 15.000 abitanti (SUP)" in half mid-phrase.
+//
+// Reproduced here rather than asserted on that fixture so the failure is legible, and
+// with the same shape the defect had: the fourth line repeats the first line's offset
+// exactly, so every other part of the rule agrees it is a paragraph start and only the
+// wandering left edge says otherwise. 12pt Helvetica's space advance is 3.336pt, so the
+// 2pt jitter below is 0.6 space widths — just past the half-space the guard allows, and
+// the offset of 20 against a 10 margin is 3.00 space widths, squarely inside the indent
+// window.
+func TestIndentIgnoredWhereLinesAreCentred(t *testing.T) {
+	stream := `BT /F1 12 Tf 20 700 Td (centred one) Tj ` +
+		`1 0 0 1 10 688.045 Tm (centred two) Tj ` +
+		`1 0 0 1 12 676.09 Tm (centred three) Tj ` +
+		`1 0 0 1 20 664.135 Tm (centred four) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		var got []string
+		for _, b := range p.Blocks {
+			got = append(got, b.Text())
+		}
+		t.Fatalf("blocks = %d, want 1: centred lines have no margin to be indented past\n%q", len(p.Blocks), got)
+	}
+}
+
+// TestIndentWindowBounds pins the two ends of the indent window, which no other test
+// reaches — mutation-checked, and both bounds survived removal until this existed.
+//
+// Both cases are a line repeating its block's first-line offset exactly, so the rest of
+// the rule agrees and only the width of the offset decides. 12pt Helvetica's space
+// advance is 3.336pt.
+func TestIndentWindowBounds(t *testing.T) {
+	// A line's own left sidebearing and a producer's rounding both move a left edge by
+	// a fraction of a point, so an offset under one space width is noise rather than an
+	// indent. 2pt is 0.6 space widths: inside the half-space agreement the same-indent
+	// check allows, but below the floor.
+	t.Run("below the floor is not an indent", func(t *testing.T) {
+		stream := `BT /F1 12 Tf 12 700 Td (para one line one) Tj ` +
+			`1 0 0 1 10 688.045 Tm (continues here) Tj ` +
+			`1 0 0 1 10 676.09 Tm (and here) Tj ` +
+			`1 0 0 1 12 664.135 Tm (not a new para) Tj ET`
+		if p := extractPage(t, stream); len(p.Blocks) != 1 {
+			t.Errorf("blocks = %d, want 1: a 0.6 space-width offset is noise, not an indent", len(p.Blocks))
+		}
+	})
+
+	// Past the ceiling the offset is column or cell placement. 30pt is 8.99 space
+	// widths, against a corpus whose rejected offsets run to 17, 63 and 94.
+	t.Run("past the ceiling is column placement", func(t *testing.T) {
+		stream := `BT /F1 12 Tf 40 700 Td (para one line one) Tj ` +
+			`1 0 0 1 10 688.045 Tm (continues here) Tj ` +
+			`1 0 0 1 10 676.09 Tm (and here) Tj ` +
+			`1 0 0 1 40 664.135 Tm (a second column) Tj ET`
+		if p := extractPage(t, stream); len(p.Blocks) != 1 {
+			t.Errorf("blocks = %d, want 1: a 9 space-width offset is a column, not a first line", len(p.Blocks))
+		}
+	})
+}
+
+// TestIndentMatchesTheBlocksOwnFirstLine pins the discriminator the rule rests on, and
+// it exists because mutation testing showed nothing else did.
+//
+// Widening the half-space agreement to a vacuous 99 space widths left every other test
+// in this file passing, which is the worst kind of gap: ADR 0010 calls matching the
+// block's own first line "the whole design" — it is what takes the corpus from 441
+// firings to 11 — and its magnitude was unconstrained. Made vacuous, the rule fires 226
+// times over the corpus instead of 3, and only the conservation test's whitespace-blind
+// comparison would have seen it, which by construction it forgives.
+//
+// 12pt Helvetica's space advance is 3.336pt throughout.
+func TestIndentMatchesTheBlocksOwnFirstLine(t *testing.T) {
+	// The population the rule was built to decline, and the reason the check is a
+	// *match* rather than a threshold: a hanging-indented bullet, where the marker line
+	// sits left of the margin its own continuations establish and a following line is
+	// indented to that margin's right. ISO 32000-2's lists are full of these.
+	//
+	// Every other part of the rule agrees here — the offset is 3.00 space widths, inside
+	// the window, and the continuation lines share an edge exactly — so this is the one
+	// case where only the own-line comparison decides. The block opens at x=10 against a
+	// margin of 20, so its own indent is -3.00 while the incoming line's is +3.00: six
+	// space widths apart, which no tolerance worth having admits.
+	t.Run("a hanging indent is not a first-line indent", func(t *testing.T) {
+		stream := `BT /F1 12 Tf 10 700 Td (bullet marker line) Tj ` +
+			`1 0 0 1 20 688.045 Tm (hanging continuation) Tj ` +
+			`1 0 0 1 20 676.09 Tm (and another) Tj ` +
+			`1 0 0 1 30 664.135 Tm (indented past the margin) Tj ET`
+		p := extractPage(t, stream)
+		if len(p.Blocks) != 1 {
+			var got []string
+			for _, b := range p.Blocks {
+				got = append(got, b.Text())
+			}
+			t.Fatalf("blocks = %d, want 1: the block's own first line is left of its margin, so an indent past that margin does not repeat it\n%q",
+				len(p.Blocks), got)
+		}
+	})
+
+	// The other end: the agreement is a tolerance and not an equality, so a boundary
+	// whose indent is *nearly* the first line's must still be found. 0.5pt is 0.15 space
+	// widths, which is the scale a producer's rounded Tm operands disagree on — the
+	// coordinates in reference/paragraphs.pdf are written to three decimals, and nothing
+	// guarantees two paragraphs' first lines round identically.
+	t.Run("a near-match still starts a paragraph", func(t *testing.T) {
+		stream := `BT /F1 12 Tf 25 700 Td (first para line one) Tj ` +
+			`1 0 0 1 10 688.045 Tm (continues here) Tj ` +
+			`1 0 0 1 10 676.09 Tm (and here) Tj ` +
+			`1 0 0 1 25.5 664.135 Tm (second para line one) Tj ET`
+		if p := extractPage(t, stream); len(p.Blocks) != 2 {
+			t.Errorf("blocks = %d, want 2: a 0.15 space-width disagreement is producer rounding, not a different indent", len(p.Blocks))
+		}
+	})
+
+	// The spread guard is a tolerance for the same reason, and tightening it to exact
+	// agreement was the third surviving mutation. Left-aligned continuations agree to
+	// within float noise rather than exactly: 0.05pt here is 0.015 space widths, which
+	// must not be read as the wandering edge of centred type.
+	t.Run("float noise in the margin is not centred type", func(t *testing.T) {
+		stream := `BT /F1 12 Tf 25 700 Td (first para line one) Tj ` +
+			`1 0 0 1 10 688.045 Tm (continues here) Tj ` +
+			`1 0 0 1 10.05 676.09 Tm (and here) Tj ` +
+			`1 0 0 1 25 664.135 Tm (second para line one) Tj ET`
+		if p := extractPage(t, stream); len(p.Blocks) != 2 {
+			t.Errorf("blocks = %d, want 2: a 0.015 space-width margin disagreement is noise, not a wandering centre", len(p.Blocks))
+		}
+	})
+}
+
+// TestIndentBreakConservesText is TestSizeBreakConservesText for the indent rule, and
+// exists for the same reason: where a boundary falls is a judgement that may move,
+// which characters are on the page is not.
+//
+// Measured when the rule landed: 48 PDFs on this machine — 35 committed fixtures plus
+// the 12 gitignored documents in docs/ and this rule's own new fixture — of which 47
+// open and two have boundaries that move, with none losing or gaining a character. The
+// count is logged rather than asserted because a fresh clone has only the committed
+// ones; what is asserted is the property and the moved > 0 floor below.
+func TestIndentBreakConservesText(t *testing.T) {
+	files := corpusPDFs()
+	if len(files) == 0 {
+		t.Skip("no fixtures found")
+	}
+
+	off := DefaultOptions
+	tol := geom.DefaultTolerance
+	tol.IndentFrac = 0
+	off.Tol = tol
+
+	checked, moved := 0, 0
+	for _, f := range files {
+		on, ok1 := allText(f, DefaultOptions)
+		was, ok2 := allText(f, off)
+		if !ok1 || !ok2 {
+			continue
+		}
+		checked++
+		if squeeze(on) != squeeze(was) {
+			t.Errorf("%s: text changed when block boundaries moved (%d vs %d non-space chars)",
+				filepath.Base(f), len(squeeze(on)), len(squeeze(was)))
+			continue
+		}
+		if on != was {
+			moved++
+		}
+	}
+	if checked == 0 {
+		t.Skip("no fixtures opened")
+	}
+	// Without this the test passes trivially if IndentFrac stops firing entirely,
+	// which is the regression most likely to go unnoticed: the rule is off by default
+	// nowhere and silent everywhere would look like success.
+	if moved == 0 {
+		t.Errorf("no fixture's block boundaries moved over %d files: the indent test is not reaching real documents", checked)
+	}
+	t.Logf("%d fixtures checked, %d with boundaries moved, none losing text", checked, moved)
+}
+
 // TestSizeBreakConservesText is the property that makes the size test safe to change.
 //
 // Where a block boundary falls is a judgement, and it is expected to move. Which
@@ -1050,18 +1266,13 @@ func TestProjectDegenerateMatrix(t *testing.T) {
 // against the text with it off, over every fixture, ignoring whitespace because the
 // join-with-a-space behavior is exactly what a block boundary changes.
 //
-// Measured when the rule landed: of the 34 committed fixtures, 8 have boundaries that
-// move and none loses or gains a character.
+// Measured when the rule landed: of the 34 committed fixtures then reachable, 8 had
+// boundaries that move and none lost or gained a character. Sharing corpusPDFs with the
+// indent test widened this to every PDF on the machine, and the same property now holds
+// over 47 files with 20 moving — the rule was always reaching those documents, and the
+// narrower glob was under-reporting rather than the rule under-firing.
 func TestSizeBreakConservesText(t *testing.T) {
-	var files []string
-	for _, g := range []string{
-		filepath.Join("..", "testdata", "*", "*.pdf"),
-		filepath.Join("..", "testdata", "*.pdf"),
-	} {
-		m, _ := filepath.Glob(g)
-		files = append(files, m...)
-	}
-	sort.Strings(files)
+	files := corpusPDFs()
 	if len(files) == 0 {
 		t.Skip("no fixtures found")
 	}
@@ -1096,6 +1307,26 @@ func TestSizeBreakConservesText(t *testing.T) {
 		t.Errorf("no fixture's block boundaries moved over %d files: the size test is not reaching real documents", checked)
 	}
 	t.Logf("%d fixtures checked, %d with boundaries moved, none losing text", checked, moved)
+}
+
+// corpusPDFs returns every PDF on this machine, committed fixture or not.
+//
+// The sponsored specifications in docs/ are gitignored and absent from a fresh clone,
+// which is why every caller treats an empty result as a skip: these tests measure a
+// property over whatever documents are present rather than asserting a count.
+func corpusPDFs() []string {
+	var files []string
+	for _, g := range []string{
+		filepath.Join("..", "testdata", "*", "*.pdf"),
+		filepath.Join("..", "testdata", "*", "*", "*.pdf"),
+		filepath.Join("..", "testdata", "*.pdf"),
+		filepath.Join("..", "docs", "*.pdf"),
+	} {
+		m, _ := filepath.Glob(g)
+		files = append(files, m...)
+	}
+	sort.Strings(files)
+	return files
 }
 
 func allText(path string, opt Options) (string, bool) {
