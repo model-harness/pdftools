@@ -57,6 +57,24 @@ All notable changes to this project are documented here, following
   declared nor drawn, and 98 nested. The `a)`–`f)` labels visible in the output are item text
   rather than markers, which is what that 623 accounts for.
 
+### Documentation — 2026-08-08
+
+- **`reference/text-styles.pdf` is recorded as unreachable rather than pending, which is the
+  result of investigating it.** Its emphasis markers are already byte-correct; the whole
+  difference against its gold file is four one-line paragraphs arriving as one block. With
+  every line set at the same x and one line height apart, `\parindent` cancels — every line
+  *is* a first line — so the only signal left is that three of the four end short of the
+  measure, by 69.6, 28.6 and 33.6 against 343.1. Scored over all 37 committed testdata PDFs
+  plus the 11 corpus documents, "the line before ends short" fires on **16072 of 28231 line
+  pairs (57%)** at a tenth of the measure; 0.02 through 0.30 differ by six points, and even at
+  four fifths it fires 4735 times. The reason no threshold works is that **nothing on disk is
+  justified**: counting lines ending at the page's widest extent, the best real document is
+  `mupdf_explored` at 44.1% and the specifications are 5.4%, 7.3% and 13.1%, where justified
+  type would sit near 90%. In ragged-right setting a short line is what every line looks like.
+  `DESIGN.md` §10 and the `exactFixtures` comment now name this, and name `table`'s blocker as
+  the stroke-path extraction `content/lexer.go` tokenizes and nothing consumes — so neither
+  logged fixture is unexamined debt.
+
 ## [0.2.0] — 2026-08-08
 
 The untagged layout path, and the tagged path's list markers. `docs/DESIGN.md` §10 opened

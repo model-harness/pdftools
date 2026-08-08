@@ -173,6 +173,14 @@ func TestReferenceExactMatch(t *testing.T) {
 		// This fixture holds the only arabic markers anywhere, and without it a change
 		// to either branch would show up nowhere.
 		"tagged-lists": true,
+
+		// Not here, and measured rather than assumed: "table" waits on stroke-path
+		// extraction that does not exist — content/lexer.go tokenizes m/l/re and nothing
+		// consumes them — and "text-styles" is not a styling gap at all. Every emphasis
+		// marker it emits is already byte-correct; its four one-line paragraphs arrive as
+		// one block, and DESIGN.md §10 records why no rule can separate them: the only
+		// signal left is that a line ends short of the measure, which fires on 57% of all
+		// line pairs on disk because nothing on disk is justified.
 	}
 
 	for _, f := range referenceFixtures {

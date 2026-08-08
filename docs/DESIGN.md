@@ -659,7 +659,21 @@ OKF-ified spec.
 
     What is still not inferable: a document setting *neither* extra space *nor* a first-line
     indent leaves no geometric evidence of a boundary, and the rule declines rather than
-    guessing.
+    guessing. **`text-styles` is that document, and measuring the one remaining candidate
+    closed it as unreachable rather than pending.** Its four paragraphs are one line each set
+    at the same x and one line height apart, so `\parindent` cancels — every line *is* a first
+    line — and the only signal left is that three of the four end short of the measure, by
+    69.6, 28.6 and 33.6 against a 343.1 measure. Scored over all 37 committed testdata PDFs
+    plus the 11 corpus documents, "the line before ends short" fires on **16072 of 28231 line
+    pairs (57%)** at a tenth of the measure, and 0.02 through 0.30 differ by only six points;
+    even at four fifths — a line filling barely a fifth of the column — it still fires 4735
+    times. No threshold sits in an empty band because there is no band: **nothing on disk is
+    justified.** Counting lines that end at the page's widest extent, the best real document
+    is `mupdf_explored` at 44.1% and the specifications are 5.4% (ISO 32000-2), 7.3% (WTPDF)
+    and 13.1% (PDF-Declarations), where justified type would sit near 90%. In ragged-right
+    setting every line ends short, so a short line carries no information about what follows
+    it. `text-styles` stays logged, and it stays logged for a reason that no threshold, guard
+    or fixture can change — closing it needs evidence the file does not contain.
   - *List role* — **closed.** `layout.Lists` promotes a block whose text opens with a marker
     glyph followed by whitespace, removes the marker, and takes the depth from the left edge;
     `lists` matches exactly and is enforced. ADR 0011 records the measurements, of which two
@@ -760,7 +774,13 @@ OKF-ified spec.
   document's own number — a list starting at 3 is continuing one something interrupted, and
   CommonMark reads only the first item's number anyway, so preserving each item's costs
   nothing. `tagged-lists` now matches its gold file byte-for-byte and is enforced rather than
-  logged, leaving `table` and `text-styles` as the only two fixtures still logged.
+  logged, leaving `table` and `text-styles` as the only two fixtures still logged — and both
+  now for named reasons rather than as unexamined debt. `table` waits on stroke-path
+  extraction that does not exist: `content/lexer.go` tokenizes `m`, `l` and `re` and nothing
+  consumes them, so there is no grid to emit. `text-styles` is not a styling gap at all —
+  every emphasis marker in it is already byte-correct, and the whole difference is its four
+  one-line paragraphs arriving as one block, which the paragraph-break bullet above records
+  as measured and unreachable.
 
   What the measurement changed is the scope: **none of the corpus's own ordered labels can
   use it.** All 13 are `[1]`–`[7]` and `a.`/`b.`, and Markdown's ordered marker is digits then
