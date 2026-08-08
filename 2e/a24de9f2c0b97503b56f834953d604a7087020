@@ -1,0 +1,79 @@
+docs/adr/0011-recognize-untagged-list-items-by-marker-glyph-and-left-edge.md
+  s_5cd1b28ed520c1::t_c28036c2d46e53 195-209
+doc/marker.go
+  s_5cd1b28ed520c1::t_4261e6cabedd46 1-143,145-204
+  s_5cd1b28ed520c1::t_decb51d427c8f1 144
+testdata/reference/tagged-lists.gold.md
+  s_5cd1b28ed520c1::t_463be45d25b415 1-7
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_45fb63e002f472 77-85
+  s_5cd1b28ed520c1::t_758326da5a6eed 8-76,86
+  s_5cd1b28ed520c1::t_fd9236a79178e8 278,280-286
+sectionize/marker_test.go
+  s_5cd1b28ed520c1::t_fc3cf945e2bc9e 395-396,398-429,431-436
+  s_5cd1b28ed520c1::t_98784c3b581ef7 229-331
+  s_5cd1b28ed520c1::t_19ed3158fe025e 479-486,489,491,493,497,501-503,506
+  s_5cd1b28ed520c1::t_93a92b8f04775b 332-345,353,368,372,377,381,385,389,391-394
+  s_5cd1b28ed520c1::t_39244494c857ef 1-28,33-35,38-228,397,430,437-478,487-488,490,492,494-496,498-500,504,507-508
+  s_5cd1b28ed520c1::t_bdee102d5d65ca 346-352,354-367,369-371,373-376,378-380,382-384,386-388,390
+  s_5cd1b28ed520c1::t_4ba21310cc7760 505
+  s_5cd1b28ed520c1::t_31db1cbe5ff1f9 37
+  s_5cd1b28ed520c1::t_b5d81a9ae123b4 29-32,36
+cmd/pdfspec/reference_test.go
+  s_5cd1b28ed520c1::t_e26a3d7f903077 55
+layout/lists_test.go
+  s_5cd1b28ed520c1::t_01003f2222e7b3 50,52-54,56-60,62,66-67,69-70
+  s_5cd1b28ed520c1::t_c25007e636c407 83
+testdata/reference/README.md
+  s_5cd1b28ed520c1::t_acde61d585e34d 3,41-50,77,87-89,92,107-108
+cmd/pdfspec/sectionize_test.go
+  s_5cd1b28ed520c1::t_028bfef505c488 442-448,452,459,465-467
+  s_5cd1b28ed520c1::t_1792f0d8316adf 347,349-351,354,359,365-367
+  s_5cd1b28ed520c1::t_d20ae90e4052fa 131-138
+  s_5cd1b28ed520c1::t_8e8368c4a99980 331-336
+doc/block.go
+  s_5cd1b28ed520c1::t_4261e6cabedd46 77-91
+testdata/reference/tagged-lists.tex
+  s_5cd1b28ed520c1::t_16ba9c0600a6c2 1-47
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_4261e6cabedd46 246-258
+.gitignore
+  s_5cd1b28ed520c1::t_c438f8cf3e7e17 107-117
+layout/layout.go
+  s_5cd1b28ed520c1::t_4261e6cabedd46 208,217-227,300,334
+  s_5cd1b28ed520c1::t_c25007e636c407 326
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_3f7d7dc0d60cf0 705-746,758-761
+  s_5cd1b28ed520c1::t_59bba11892917a 747-757
+doc/marker_test.go
+  s_5cd1b28ed520c1::t_dc822a2dbb3ca3 1-149,151-162
+  s_5cd1b28ed520c1::t_780be2a20788cd 150
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_4261e6cabedd46 316-320,322,324,330-344,349,356-370,448-454,474-476,507-542
+  s_5cd1b28ed520c1::t_1ff5b63d5d0ef3 345-348
+  s_5cd1b28ed520c1::t_4bb016d98bb0f8 210,323
+  s_5cd1b28ed520c1::t_e1bf11ee07714d 321
+  s_5cd1b28ed520c1::t_bcb1d076a7b765 380-392,405,416,420
+  s_5cd1b28ed520c1::t_8e7b220200325c 469-473
+  s_5cd1b28ed520c1::t_8e24d81045e5ae 393-404
+  s_5cd1b28ed520c1::t_35c3fa38aa1a7f 350-355
+  s_5cd1b28ed520c1::t_daa482b1170ac1 371,543
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_a1a1157490468f 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2ea24de9f2c0b97503b56f834953d604a7087020",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
