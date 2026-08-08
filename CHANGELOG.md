@@ -5,6 +5,85 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-08
+
+- **The tagged path's list markers, which closes DESIGN.md §10's largest open item: 1363
+  doubled markers → 0.** `sectionize` now reads a list item's declared `/Lbl` (ISO 32000-2
+  §14.8.4.5.3) out of the item and into `doc.Block.Marker`, and falls back to the glyph the
+  item's text opens with where no label is declared. Per file: ISO 32000-2 1242→0, WTPDF 92→0,
+  AN002 15→0, AN003 8→0, PDF-Declarations 23→0, ISO/TS 32001 and 32002 3→0 each.
+
+  Measured against a binary built from the previous commit rather than asserted. Prose is
+  intact: alphanumeric word counts identical on every file (ISO 32000-2 396598/396598, WTPDF
+  19904/19904), line counts identical, and every one of the 1391 changed lines classified —
+  1386 markers removed, 5 ordered labels losing a doubled space, **0 unexplained**.
+- **A list item whose body is a wrapped paragraph, found by the new fixture on its first
+  run.** LaTeX's tagging writes `LI → LBody → Part → P`, legal under Table 364 and a shape no
+  corpus document uses. `gather` detached that `P`, so the item had no spans and `IsEmpty`
+  dropped it while the body was emitted as a bare paragraph — six items became six paragraphs
+  and the marker each had just been given went with the discarded block. A paragraph is now
+  transparent *inside a list item only*: a `Figure` in an `LBody` (the 1 such case on disk)
+  still detaches, and a nested list still detaches because its `LI` has a block role of its
+  own. Zero change across all 19 corpus files, as the shape census predicted.
+
+### Added — 2026-08-08
+
+- **`doc.Block.Marker`, and `doc/marker.go` to fill it.** A list item's label as a field
+  beside its text, which is Docling's arrangement and the reason an ordered label is
+  representable at all: a marker left inside the text has to be re-found by every sink using
+  an allowlist each would re-derive, and on the one sink that exists it doubles. `Enumerated()`
+  is derived from `Marker` rather than stored, so the two cannot disagree.
+
+  The vocabulary lives in `doc` rather than `layout` because both producers need it and
+  neither may depend on the other — `sectionize` importing `layout` would invert declared
+  structure onto inferred geometry. `layout.stripMarker`/`listMarkers`/`listMarker` (114
+  lines) moved there as `Block.StripMarker` and `ListMarker`; `SetMarker` is the declared
+  path's separate operation, because taking the label's spans leaves whitespace where the
+  marker was in **133 of 147** items and a sink writing its own `- ` renders that as two
+  spaces.
+- **`testdata/reference/tagged-lists.pdf`, the first fixture covering a tagged list.** Its
+  absence is why the defect above shipped: `clauses` is the only other tagged fixture and has
+  no lists, `lists` is untagged and exercises the glyph path, so nothing compared a declared
+  marker to an expectation. Bulleted *and* numbered, because the two failures differ — a
+  dropped bullet reads correctly anyway since Markdown writes one, where a dropped `1.` has
+  lost text the document says. Built with `lualatex` for the reason `clauses.tex` records.
+  It found a second, independent defect on its first run (above).
+- **13 tests in `sectionize/marker_test.go` and 7 in `doc/marker_test.go`**, each verified by
+  mutation rather than by passing: every mutation of the new code is caught, except three
+  recorded in the code as unmeasurable — no `LI` on disk declares two labels (147 declare
+  exactly one, 1915 none), and `ListMarker` requires content after the separator so a strip
+  cannot empty a block.
+
+### Changed — 2026-08-08
+
+- **The `/Lbl` figures, re-measured.** The 08-07 entry's `132 / 2 / 1256` came from a probe
+  that read spans through `index.take`, which marks them claimed — so the labels it tallied
+  had already been consumed. Corrected: of **1407** declared items whose text opens with a
+  marker glyph, **121** also declare a `/Lbl` and the label's first rune is that glyph in
+  **121 of 121, 0 disagreeing**; **1286** declare no label; **13** declare an ordered one
+  (`a.`, `b.`, `[1]`–`[7]`, all in WTPDF); and **14 of 147** `/Lbl` elements declare empty
+  text, so "a label exists" is not "a marker is declared". The 121/121 agreement is the
+  strongest available check on ADR 0011's glyph allowlist and is recorded there.
+- **A declaration outranks a glyph, always.** The declared label is taken whenever it exists
+  and the glyph is never consulted then — the same precedence `md.go` states for not running
+  `inferRoles` over a structure tree. The glyph rule reaching the tagged path is not that
+  case: the block is *already* declared `RoleListItem`, and the only question is which of its
+  runes is the label it was declared to have.
+- **`sink/markdown` re-emits an ordered label after its bullet**, escaped like any other
+  text, and never re-emits a bullet glyph — the `- ` already is one. Markdown has no syntax
+  that restates `[1]` or a nested `a.`, so the alternative is dropping a reference the prose
+  points at. `TestReferenceExactMatch` logs the remaining gap: an ordered item emits
+  `- 1\. text` where Markdown's own ordered syntax is `1. text`.
+- **The two character-conservation tests count `Block.Marker`,** which made them stricter
+  rather than looser. They failed on the three tagged list-bearing corpus files, and the
+  deficit was exactly the markers — WTPDF 124 of 100519, ISO/TS 32001 3, ISO 32000-2 1242,
+  each equal to the recorded marker total to the character, with every lost rune a `•` or
+  `■`. Nothing was lost; the accounting was reading one of two places a character can now
+  live. Counting both makes `TestOutlineConservesCharacters` an exact-sum guard against the
+  doubling this whole field exists to stop, and both directions are verified by mutation: a
+  marker recorded *and* left in the text comes out +92/+1239 over the document's own total,
+  and one stripped but never recorded comes out −92/−1239.
+
 ### Added — 2026-08-07
 
 - **The list role on the untagged path, which closes DESIGN.md §10's list item.**
@@ -196,16 +275,15 @@ All notable changes to this project are documented here, following
   identifier changes would cost 6911 splits to buy 8. ADR 0011's rejected run minimum
   therefore stands on its own 136-to-3 arithmetic rather than pending a segmentation fix.
 - **A larger, better-evidenced defect on the *tagged* path, which that investigation
-  found.** 1403 list items across 7 files render as `- ■ text` — the sink's `- ` followed by
+  found.** 1363 list items across 6 files render as `- ■ text` — the sink's `- ` followed by
   the marker still sitting in the item's text, 1242 of them in ISO 32000-2 alone. PDF
-  declares the marker as its own element (`LI → {Lbl → Span, LBody}`) and `sectionize`'s
-  `blockRole` maps neither, so `gather`'s transparent default appends the label's spans to
-  the item indistinguishably from its content. Of the 147 `Lbl` elements on disk, **132 hold
-  a single marker glyph, 13 hold a number or letter (`[1]`, `a.`), 2 are other, and 0 would
-  empty the item if dropped** — so the fix rests on declared evidence and reaches the
-  ordered lists ADR 0011 records as unreachable from glyphs. DESIGN.md §10 carries it, and
-  the previous claim there that the tagged path has no gaps is corrected: `clauses` matches
-  exactly, but that fixture has no lists.
+  declares the marker as its own element (`LI → {Lbl, LBody}`) and `sectionize`'s `blockRole`
+  maps neither, so `gather`'s transparent default appends the label's spans to the item
+  indistinguishably from its content. Fixed 2026-08-08, below, with the figures re-measured:
+  the counts quoted here on 08-07 came from a probe whose span-claiming `take` consumed the
+  spans it was reading, so the label texts it tallied were partly empty. DESIGN.md §10 carries
+  it, and the previous claim there that the tagged path has no gaps is corrected: `clauses`
+  matches exactly, but that fixture has no lists.
 
 ### Changed — 2026-08-07
 

@@ -205,7 +205,7 @@ func Headings(d *doc.Document, opt Options) Stats {
 // A block is a list item when it opens with a marker glyph as its own token. That is a
 // weaker signal than the section number Headings runs on, and the reason it is usable
 // anyway is that a bullet is not a character anyone sets in prose: measured over the
-// corpus, of 1442 blocks opening with one of listMarkers, reading every ambiguous case
+// corpus, of 1442 blocks opening with one of doc's marker glyphs, reading every ambiguous case
 // leaves 5 that are not list items — all of them rows of ISO 32000-2's glyph tables in
 // Annex A and D, where an em dash or en dash *is* the row's subject ("— 132 0x84 0204
 // U+2014 EM DASH"). At 5 in 1442 the population is 288:1 in favour of promoting, which is
@@ -214,15 +214,17 @@ func Headings(d *doc.Document, opt Options) Stats {
 // # The marker is removed, here and not in the sink
 //
 // Promoting a block to RoleListItem is the statement that its marker is structure
-// rather than text, so the marker leaves the spans with it. Leaving it for the sink
-// would mean every sink re-deriving this package's allowlist to know which leading rune
-// was the marker — the same split doc.Block warns against for space inference, half the
-// policy in the model and half in the producer. It would also double the marker on the
-// one sink that exists: markdown writes its own "- ".
+// rather than text, so the marker leaves the spans with it — into Block.Marker, which is
+// where a sink that can render a label finds it. Leaving it in the text would mean every
+// sink re-deriving the glyph allowlist to know which leading rune was the marker — the
+// same split doc.Block warns against for space inference, half the policy in the model
+// and half in the producer. It would also double the marker on the one sink that exists:
+// markdown writes its own "- ".
 //
-// This is the only place in the package that edits a block's text rather than its role,
-// which is why it is confined to removing exactly the rune listMarker matched and the
-// whitespace after it.
+// Block.StripMarker does it, in doc rather than here, because this is no longer the only
+// producer of a list item's marker: sectionize reads one the structure tree declares, and
+// two copies of the allowlist is the same split one package further out. This is still
+// the only place in *this* package that edits a block's text rather than its role.
 //
 // # Levels, and what was rejected
 //
@@ -295,7 +297,7 @@ func Lists(d *doc.Document, opt Options) ListStats {
 				}
 				b.Role = doc.RoleListItem
 				b.Level = level
-				stripMarker(b)
+				b.StripMarker()
 				st.Items++
 				if level > st.MaxLevel {
 					st.MaxLevel = level
@@ -321,7 +323,7 @@ type ListStats struct {
 
 // isListItem reports whether a block is an unpromoted paragraph opening with a marker.
 //
-// Reading Text() and not Alt is why stripMarker can edit the spans alone. A block with
+// Reading Text() and not Alt is why StripMarker can edit the spans alone. A block with
 // Alt set emits that instead of its spans, so stripping a marker out of spans nothing
 // reads would promote the block and leave the marker in the output. It cannot happen
 // today: extract never sets Alt, and doctags sets it only on RoleFigure, which the
@@ -329,7 +331,7 @@ type ListStats struct {
 // other packages — a producer that starts setting Alt on a paragraph breaks this, and the
 // symptom would be a "- • item" in the output rather than a test failure.
 func isListItem(b *doc.Block) bool {
-	return b.Role == doc.RoleParagraph && listMarker(b.Text()) != 0
+	return b.Role == doc.RoleParagraph && doc.ListMarker(b.Text()) != 0
 }
 
 // listTiers returns the run's distinct left edges, ascending, each at least step type
@@ -373,121 +375,6 @@ func listTiers(run []doc.Block, step float64, nest bool) []float64 {
 		}
 	}
 	return tiers
-}
-
-// stripMarker removes the leading marker and the whitespace after it, which is not
-// necessarily all in one span.
-//
-// It starts at the first non-empty span rather than the first, because a producer can
-// open a block with an empty span and Text() skips those — the rune listMarker matched
-// may not be in Spans[0] at all.
-//
-// It then keeps trimming leading whitespace across spans until it reaches text, because
-// a producer that sets the marker in a span of its own puts the separator in the *next*
-// one. lists.pdf does exactly that at its nested level, where the en dash is a bold span
-// and " Nested item…" is the roman span after it; stopping at the marker's span left the
-// separator behind and the sink wrote "-  Nested", with two spaces. Text() joins spans
-// with no separator, so the leading space of a later span is inside the block's text and
-// has to go the same way.
-//
-// Only the marker and that whitespace. A span the strip empties stays in place rather
-// than being removed, so the span indices a caller holds stay valid and Span.MCID
-// survives for diagnosis; an empty span writes nothing.
-func stripMarker(b *doc.Block) {
-	found := false
-	for i := range b.Spans {
-		s := &b.Spans[i]
-		if s.Text == "" {
-			continue
-		}
-		if !found {
-			rest := strings.TrimLeftFunc(s.Text, unicode.IsSpace)
-			if rest == "" {
-				// All whitespace. listMarker read the block's text with its leading
-				// space trimmed, so the marker is in a later span and this one is
-				// part of the separator: empty it and keep looking.
-				s.Text = ""
-				continue
-			}
-			r, n := utf8.DecodeRuneInString(rest)
-			if !listMarkers[r] {
-				// Not this span's job, and no later span's either: listMarker
-				// matched the first rune of the block's text, so if that rune is
-				// not here the block's text is not what this function was told
-				// it was. Leave it alone.
-				return
-			}
-			// unicode.IsSpace rather than a byte cutset: producers separate a
-			// marker from its text with U+00A0 routinely, and listMarker admitted
-			// the block on that basis, so the strip must accept the same
-			// separators the gate did.
-			s.Text = strings.TrimLeftFunc(rest[n:], unicode.IsSpace)
-			found = true
-		} else {
-			s.Text = strings.TrimLeftFunc(s.Text, unicode.IsSpace)
-		}
-		if s.Text != "" {
-			return
-		}
-	}
-}
-
-// listMarkers are the glyphs a producer sets as an unordered list's bullet.
-//
-// An allowlist rather than a character class, because "starts with punctuation" is
-// hopeless: 20125 untagged paragraph blocks across the corpus open with 190 distinct
-// non-alphanumeric runes, and the common ones are not markers at all — 437 open with
-// "/", 256 with "(", 134 with a quote. The glyphs below are what a survey of that tally
-// leaves once each candidate's own occurrences are read.
-//
-// The two U+F0xx entries are Private Use Area codepoints, which look like a mistake and
-// are not: Symbol and Wingdings have no Unicode mapping for their bullet, so a producer
-// setting one emits a PUA codepoint and the extractor faithfully reports it. F0B7 is
-// Symbol's bullet and F06E is Wingdings' filled square, both measured in the corpus.
-// This is the same glyph-set debt DESIGN.md records for ZapfDingbats.
-//
-// Deliberately excluded: "*", "-", "·" and ">". Each occurs block-initially in the
-// corpus and every occurrence read was something else — C code (`*/ fz_stream *…`),
-// command-line flags (`-o - output file name`), and Annex D's glyph-name table rows
-// (`*  asterisk  052  052`). A hyphen especially is a Markdown marker but not a PDF one;
-// producers set a real bullet glyph.
-var listMarkers = map[rune]bool{
-	'•':      true, // BULLET
-	'‣':      true, // TRIANGULAR BULLET
-	'⁃':      true, // HYPHEN BULLET
-	'■':      true, // BLACK SQUARE
-	'▪':      true, // BLACK SMALL SQUARE
-	'○':      true, // WHITE CIRCLE
-	'●':      true, // BLACK CIRCLE
-	'◦':      true, // WHITE BULLET
-	'–':      true, // EN DASH
-	'—':      true, // EM DASH
-	'\uf06e': true, // Wingdings filled square, via the PUA
-	'\uf0b7': true, // Symbol bullet, via the PUA
-}
-
-// listMarker returns the marker rune a block opens with, or zero.
-//
-// It trims the text itself rather than trusting a caller to, which is what makes the two
-// conditions below sufficient: on trimmed text a marker followed by whitespace must have
-// something after that whitespace, since the last rune is not one. A separate "and
-// content follows" check reads like the third requirement and is unreachable — a
-// mutation removing it survives every test, which is how it was found.
-//
-// The separator is what distinguishes a marker from the same glyph used as a character:
-// every one of the 1302 bullet-initial blocks in the corpus has it and none is glued to
-// its text, while the excluded "-" is glued in 12 of its 13 occurrences. The length
-// requirement is the other measured case — mupdf_explored.pdf has blocks that are a lone
-// Wingdings square with no text, which are decoration and not items.
-func listMarker(txt string) rune {
-	rs := []rune(strings.TrimSpace(txt))
-	if len(rs) < 2 || !listMarkers[rs[0]] {
-		return 0
-	}
-	if !unicode.IsSpace(rs[1]) {
-		return 0
-	}
-	return rs[0]
 }
 
 // bodyCluster returns the size and weight of the dominant text cluster, by character

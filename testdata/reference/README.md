@@ -1,6 +1,6 @@
 # Reference fixtures — the yardstick
 
-Seven small PDFs, each exercising one thing, each beside the Markdown it *should*
+Eight small PDFs, each exercising one thing, each beside the Markdown it *should*
 produce. Everything here is ours: generated from the `.tex` sources in this
 directory, licensed MIT with the rest of the repo, and therefore committable —
 unlike the sponsored ISO documents in `docs/`, which are the corpus we measure
@@ -38,9 +38,16 @@ with the dialect would fail on formatting and tell us nothing about fidelity.
 
 ## Why untagged, and why `lmodern`
 
-All but one are deliberately untagged, because most PDFs are and the layout
-path is what reads them. `clauses.tex` is tagged, because a structure tree is the
-thing it exists to test.
+All but two are deliberately untagged, because most PDFs are and the layout
+path is what reads them. `clauses.tex` and `tagged-lists.tex` are tagged, because a
+structure tree is the thing each exists to test.
+
+`lists.tex` and `tagged-lists.tex` look like duplicates and are not. They cover the
+same document feature through two different code paths that share no logic: the
+untagged one infers an item from the bullet glyph a page draws, the tagged one reads
+the `/Lbl` element a producer declares. Having only the untagged fixture is why the
+tagged path shipped emitting `- ■ text` on 1363 items across six corpus files — a gap
+no gold file was in a position to see.
 
 Every source loads `lmodern` and none loads `[T1]{fontenc}`. Both matter, and both
 were learned the hard way:
@@ -67,6 +74,7 @@ were learned the hard way:
 | `table.tex` | A ruled table's cell text | no |
 | `image.tex` | A page whose only content is an image | no |
 | `clauses.tex` | Numbered clause hierarchy via the structure tree | yes |
+| `tagged-lists.tex` | Declared list markers, bulleted and numbered | yes |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
 The `.tex` is committed beside the `.pdf` so the fixture can be rebuilt and so the
@@ -76,11 +84,12 @@ assertion nobody can check.
 ## Rebuilding
 
 ```sh
-pdflatex -interaction=nonstopmode <name>.tex   # the five untagged fixtures
-lualatex -interaction=nonstopmode clauses.tex  # the tagged one — see below
+pdflatex -interaction=nonstopmode <name>.tex        # the six untagged fixtures
+lualatex -interaction=nonstopmode clauses.tex       # the tagged ones — see below
+lualatex -interaction=nonstopmode tagged-lists.tex
 ```
 
-`clauses.tex` needs both a new enough kernel and the right engine.
+The tagged fixtures need both a new enough kernel and the right engine.
 
 A kernel older than its `latex-lab` fails with `\DebugTemplatesOff` undefined,
 whichever engine runs it. That is a toolchain version skew and it is loud. On MiKTeX
@@ -95,7 +104,8 @@ stream that draws 0 through 9. Nine of the ten structure elements then join to
 nothing: the clause titles survive because they come from `/T`, and every body
 paragraph falls out of the tree. Extracting that build gave five headings with no
 bodies. `lualatex` writes 0 through 9 and the same source extracts byte-for-byte
-identical to `clauses.gold.md`.
+identical to `clauses.gold.md`. The same applies to `tagged-lists.tex`, whose whole
+subject is the `/Lbl` elements a broken `/MCID` would detach.
 
 That build is not a fixture worth keeping: no reader can distinguish it from a
 document whose paragraphs are genuinely untagged, so it would pin our behaviour

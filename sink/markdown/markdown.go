@@ -243,6 +243,19 @@ func (w *writer) block(b doc.Block) {
 			w.str(strings.Repeat("  ", n))
 		}
 		w.str("- ")
+		// An ordered label is text the document says and Markdown has no syntax that
+		// says it: "1." would renumber from the parser's own count, and a nested "a."
+		// or a bracketed "[1]" has no representation at all. So it is written into the
+		// line, after the bullet, escaped like any other text — the alternative is
+		// dropping a reference the prose points at. A bullet glyph is *not* written:
+		// the "- " above already is one, and restating it is the doubling that this
+		// whole marker field exists to stop.
+		if b.Enumerated() {
+			var sb strings.Builder
+			escapeInto(&sb, oneLine(b.Marker), true)
+			w.str(sb.String())
+			w.str(" ")
+		}
 		w.content(b, false)
 		w.nl()
 

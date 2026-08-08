@@ -128,6 +128,14 @@ func TestSectionizeCorpus(t *testing.T) {
 // Character multisets rather than substrings, because the outline reorders content
 // relative to the page and what matters is whether a character survived, not where it
 // moved to.
+//
+// A list item's marker is one of those characters and it is no longer in the block's
+// text: doc.Block.Marker holds it, because a marker kept in the text is re-derived by
+// every sink and doubled by the one that writes its own "- ". So outlineText reads the
+// field alongside the spans. That is conservation in the sense this test means it —
+// every character the extractor drew is reachable from the outline — and it is a
+// stronger statement than counting the text alone, since a marker both stripped from
+// the text *and* left unrecorded would fail here rather than pass quietly.
 func TestSectionizeLosesNoText(t *testing.T) {
 	for _, file := range []string{
 		"Well-Tagged-PDF-WTPDF-1.0.pdf",
@@ -320,6 +328,12 @@ func TestSectionPagesAreOrdered(t *testing.T) {
 // verbatim under "Issue #379 — Change the first bulleted list of subclause 7.3.10 as
 // follows". Any assertion phrased as "no unplaced block repeats a placed one" flags that
 // quotation, which is a property of the document and not of this join.
+//
+// Markers count once, in the field. Being an exact sum rather than a floor, this is where
+// the doubled marker that Block.Marker exists to stop would be caught from the other
+// side: an item whose glyph stayed in its text *and* was recorded as its marker would
+// come out one character over the document's own total, per item, and reading the marker
+// nowhere would come out under it. Measured exact on all four files, over 1,350 markers.
 func TestOutlineConservesCharacters(t *testing.T) {
 	for _, file := range []string{
 		"Well-Tagged-PDF-WTPDF-1.0.pdf",
@@ -330,22 +344,27 @@ func TestOutlineConservesCharacters(t *testing.T) {
 		t.Run(file, func(t *testing.T) {
 			d, out, st := outlineOf(t, file)
 
-			// Titles and block spans only. Alt is excluded because /Alt text is not
+			// Titles, block spans, and markers. Alt is excluded because /Alt text is not
 			// drawn on the page, so counting it would exceed the document's own total
-			// for a reason that has nothing to do with duplication.
+			// for a reason that has nothing to do with duplication. A marker is the
+			// opposite case: the page does draw it, so it is counted, once, wherever the
+			// model now holds it.
 			placed := 0
 			for _, b := range out.Preamble {
-				placed += nonSpaceLen(b.Text())
+				placed += nonSpaceLen(b.Marker) + nonSpaceLen(b.Text())
 			}
 			out.Walk(func(s *doc.Section) bool {
 				placed += nonSpaceLen(s.Title)
 				for _, b := range s.Blocks {
-					placed += nonSpaceLen(b.Text())
+					placed += nonSpaceLen(b.Marker) + nonSpaceLen(b.Text())
 				}
 				return true
 			})
 			unplaced := 0
 			for i := range out.Unplaced {
+				for _, b := range out.Unplaced[i].Blocks {
+					unplaced += nonSpaceLen(b.Marker)
+				}
 				unplaced += nonSpaceLen(out.Unplaced[i].Text())
 			}
 
@@ -420,21 +439,32 @@ func documentText(d *doc.Document) string {
 }
 
 // outlineText is everything reachable from an outline: titles, section bodies, the
-// preamble, and the unplaced remainder.
+// preamble, the unplaced remainder, and every block's marker.
+//
+// Markers are included because Block.Text() no longer holds them, and a conservation
+// test that read only the text would report a stripped marker as a lost character. The
+// marker is written beside the block rather than in place of it, since what is being
+// counted is a multiset — where a character sits in this string is not part of the
+// claim.
 func outlineText(o *doc.Outline) string {
 	var sb strings.Builder
 	for _, b := range o.Preamble {
+		sb.WriteString(b.Marker)
 		sb.WriteString(b.Text())
 	}
 	o.Walk(func(s *doc.Section) bool {
 		sb.WriteString(s.Title)
 		sb.WriteString(s.Text())
 		for _, b := range s.Blocks {
+			sb.WriteString(b.Marker)
 			sb.WriteString(b.Alt)
 		}
 		return true
 	})
 	for i := range o.Unplaced {
+		for _, b := range o.Unplaced[i].Blocks {
+			sb.WriteString(b.Marker)
+		}
 		sb.WriteString(o.Unplaced[i].Text())
 	}
 	return sb.String()

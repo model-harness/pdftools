@@ -104,6 +104,17 @@ go.work.sum
 *.pfx
 credentials.json
 
+# --- LaTeX, from building testdata/reference ---
+#
+# The .pdf beside each .tex is committed on purpose (see that directory's README);
+# these are the byproducts of regenerating one, and a stale .aux is worse than no
+# .aux because it is a build input.
+*.aux
+*.log
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
 # --- Tooling / OS ---
 .DS_Store
 Thumbs.db

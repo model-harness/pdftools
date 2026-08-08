@@ -1,0 +1,47 @@
+% tagged-lists — a list whose markers the structure tree declares, both bulleted and
+% numbered.
+%
+% One concern: does a declared label leave the item's text? lists.pdf is untagged, so
+% it exercises the glyph rule in layout and says nothing about this path — and this path
+% is the one every document in the corpus takes. The defect it was written for reached
+% the output as "- ■ text" on 1363 items across six corpus files, 1242 of them in
+% ISO 32000-2, because sectionize mapped neither Lbl nor LBody and folded the label's
+% spans into the item's own text where the sink then wrote its own bullet in front.
+%
+% The numbered list is not a second copy of the same case. A bullet is losable: Markdown
+% writes one itself, so an item that drops "•" reads correctly anyway and the defect is
+% only a doubled glyph. A number is not — "1." is text the document says, Markdown has no
+% syntax that restates it (a parser would renumber from its own count), and an item that
+% drops it has lost a reference the prose points at. Those two failures need separate
+% assertions, and only the tagged path can make the second one at all: a leading number
+% is also what a heading and a table row open with, which is why ADR 0011 records ordered
+% lists as unreachable from the glyph side. Here the producer declares it.
+%
+% Nesting is deliberately absent. lists.pdf covers depth, and mixing it in here would
+% mean a single gold file asserting depth and marker together — so a regression in either
+% one reads as the same failure.
+%
+% Build this one with lualatex, not pdflatex, for the reason clauses.tex records at
+% length: pdfTeX's tagging backend writes /MCID 1 into every /MCR while the content
+% stream draws an increasing sequence, so all but one structure element joins to nothing
+% and the paragraphs fall out of the tree. The committed PDF means a clone never builds
+% either.
+\DocumentMetadata{pdfstandard=ua-2, tagging=on}
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+
+\begin{itemize}
+  \item First bulleted item.
+  \item Second bulleted item.
+  \item Third bulleted item.
+\end{itemize}
+
+\begin{enumerate}
+  \item First numbered item.
+  \item Second numbered item.
+  \item Third numbered item.
+\end{enumerate}
+
+\end{document}

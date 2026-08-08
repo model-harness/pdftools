@@ -207,7 +207,7 @@ func (b *builder) heading(e *tag.Elem) {
 	var spans []*doc.Span
 	var nested []*tag.Elem
 	var pg span
-	b.gather(e, &spans, &nested, &pg)
+	b.gather(e, &spans, &nested, &pg, false)
 
 	title := b.title(e, spans)
 	sec := &doc.Section{
@@ -313,11 +313,60 @@ func (b *builder) block(e *tag.Elem, role doc.Role) {
 	var spans []*doc.Span
 	var nested []*tag.Elem
 	var pg span
-	b.gather(e, &spans, &nested, &pg)
-	b.emit(e, role, spans, pg)
+	// A list item's label is read before its body is gathered, and taking its spans is
+	// what keeps them out of the body — index.take marks a span claimed, so gathering
+	// first would leave the label with nothing to take and fold it into the text.
+	marker := ""
+	if role == doc.RoleListItem {
+		marker = b.label(e)
+	}
+	b.gather(e, &spans, &nested, &pg, role == doc.RoleListItem)
+	b.emitItem(e, role, spans, pg, marker)
 	for _, n := range nested {
 		b.visit(n)
 	}
+}
+
+// label takes a list item's declared /Lbl out of the item and returns it.
+//
+// PDF declares a list's marker as its own structure element — ISO 32000-2 §14.8.4.5.3,
+// where an LI holds a Lbl for the label and an LBody for the content. sectionize used to
+// map neither, so both fell into gather's transparent default and the label's spans were
+// appended to the item's text indistinguishably from its content. The result reached the
+// output as "- ■ text": the sink's own bullet, then the producer's, then the item.
+//
+// It is not handled by giving Lbl a block role, which is the fix that first suggests
+// itself and is wrong — a role would emit the label as a block of its own, turning one
+// item into two. The label is not a block; it is a field of one.
+//
+// Only a direct child, and only the first. Measured over every tagged list item on disk
+// that declares one, the Lbl is a direct kid of its LI in 147 of 147 — so a recursive
+// search would buy nothing and would risk reaching into a nested list's items, whose
+// labels belong to them. "The first" is unmeasurable rather than measured: no item on disk
+// declares two, 147 declare exactly one and 1915 declare none, so taking the last instead
+// is a change no input distinguishes. First, because a second Lbl is a producer error and
+// the first is the one the item opens with.
+//
+// The label's pages still reach the item's range, and not from here: Lbl has no block
+// role, so the gather that follows recurses into it and adds its pages the way it does for
+// any transparent element. Only the *spans* are claimed here. Adding the pages here as
+// well would be a second copy of that bookkeeping which no input could distinguish from
+// the first.
+func (b *builder) label(e *tag.Elem) string {
+	for _, k := range e.Kids {
+		if k.Role != tag.RoleLbl {
+			continue
+		}
+		var sb strings.Builder
+		for _, sp := range b.index.take(k.Content) {
+			sb.WriteString(sp.Text)
+		}
+		// A Lbl with no text of its own, which 14 of the 147 on disk are: the producer
+		// declared the element and drew the marker outside it, or drew no marker at all.
+		// An empty string is the honest answer and leaves the glyph rule below to decide.
+		return strings.TrimSpace(sb.String())
+	}
+	return ""
 }
 
 // gather collects e's spans together with those of its transparent descendants,
@@ -328,7 +377,32 @@ func (b *builder) block(e *tag.Elem, role doc.Role) {
 // element's own marked content and its children is not preserved by tag.Elem. An
 // element that has both is a tagging defect, and the ones that matter here — a TD
 // wrapping a P, a Figure wrapping a Caption — have children only.
-func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span) {
+//
+// item says the block being built is a list item, which makes a paragraph inside it
+// transparent. ISO 32000-2 Table 364 lets an LBody hold any block-level element, and
+// LaTeX's tagging backend uses that: it writes LI > LBody > Part > P, so the item's whole
+// body is a wrapped paragraph. Detaching it emits the item with no spans — dropped by
+// IsEmpty — and the body as a paragraph of its own, which loses the list entirely: six
+// items became six bare paragraphs, and the marker they had just been given went with the
+// block that was thrown away.
+//
+// Only a paragraph, and only for an item. A Figure in an LBody is a picture and belongs in
+// its own block, which is the one such case on disk; a nested list detaches because its LI
+// has a block role of its own, so the recursion below reaches it through the transparent L
+// and stops there.
+//
+// "A paragraph" is doc.RoleParagraph, which blockRole also gives a Formula — so a Formula
+// wrapped in an item's LBody is transparent too, which is wider than this rule was written
+// for and is unobservable: no corpus document declares a Formula at all, against 1742 LI
+// and 29400 P on ISO 32000-2 alone. Left as it is rather than narrowed to tag.RoleP,
+// because an item whose body is a formula is an item, and detaching it is the defect above
+// with a different element name.
+//
+// item does not survive a block boundary, which is what keeps this narrow: every element
+// with a block role is detached here and re-entered through block, where the flag is set
+// from that element's own role. So a TD inside an item — or a nested LI, or a TOCI inside a
+// TOC inside a TOCI — gathers with item false, and a paragraph inside it detaches normally.
+func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span, item bool) {
 	*spans = append(*spans, b.index.take(e.Content)...)
 	pg.add(e.Page)
 	for _, r := range e.Content {
@@ -339,11 +413,11 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 			*nested = append(*nested, k)
 			continue
 		}
-		if _, ok := blockRole(k.Role); ok {
+		if r, ok := blockRole(k.Role); ok && !(item && r == doc.RoleParagraph) {
 			*nested = append(*nested, k)
 			continue
 		}
-		b.gather(k, spans, nested, pg)
+		b.gather(k, spans, nested, pg, item)
 	}
 }
 
@@ -371,6 +445,13 @@ func (s *span) add(page int) {
 // pages. Taking e.Page instead would report only where the element was anchored, and
 // a section's LastPage would then stop short of its own final paragraph.
 func (b *builder) emit(e *tag.Elem, role doc.Role, spans []*doc.Span, pg span) {
+	b.emitItem(e, role, spans, pg, "")
+}
+
+// emitItem is emit with a list item's declared label. Separate so that emit's four other
+// callers — a heading's body, a transparent element's own content, a table cell — cannot
+// pass one by accident.
+func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg span, marker string) {
 	blk := doc.Block{
 		Role: role,
 		Lang: e.Lang,
@@ -384,6 +465,14 @@ func (b *builder) emit(e *tag.Elem, role doc.Role, spans []*doc.Span, pg span) {
 		blk.Spans = append(blk.Spans, *s)
 		blk.Box = blk.Box.Union(s.Box)
 		blk.MCIDs = append(blk.MCIDs, s.MCID)
+	}
+	// Before IsEmpty, though on this corpus it makes no difference: ListMarker requires
+	// content after the separator, so a strip cannot empty a block, and all 13 declared
+	// ordered labels leave content behind. Ordered this way because the reverse asks
+	// IsEmpty about text that still holds a marker, and a block whose only content is its
+	// marker would then be emitted as a bullet with nothing after it.
+	if role == doc.RoleListItem {
+		markItem(&blk, marker)
 	}
 	if blk.IsEmpty() {
 		return
@@ -413,6 +502,43 @@ func alt(e *tag.Elem) string {
 		return e.ActualText
 	}
 	return e.Alt
+}
+
+// markItem records a list item's marker, from the producer's declaration where there is
+// one and from the glyph the item's text opens with where there is not.
+//
+// Two sources for one field, and the order between them is the whole rule: a declaration
+// is evidence and a glyph is a guess, so the declaration is taken whenever it exists and
+// the glyph is never consulted then. That is the same precedence md.go states for not
+// running inferRoles over a structure tree.
+//
+// # Why the glyph rule runs here at all
+//
+// It is reached only for a block the producer already declared RoleListItem, which is
+// what makes it a different act from inferring a role. Nothing is being guessed about
+// what the block *is*; the question is only which of its runes is the label it was
+// declared to have, and a marker glyph followed by whitespace at the start of a declared
+// list item is not a coincidence anyone has to weigh.
+//
+// The measurement says so directly. Of 1407 declared list items on disk whose text opens
+// with a marker glyph, 121 also declare a /Lbl saying what their label is — and the
+// label's first rune is that glyph in 121 of 121, with 0 disagreeing. So on every case
+// where a declaration exists to check the glyph against, the glyph is right. The
+// remaining 1286 declare no label, and without this they emit "- ■ text".
+//
+// # What the declaration adds that no glyph could
+//
+// 13 of the declared labels are not bullets: "a.", "b.", "[1]" through "[7]". An ordered
+// label is unreachable from the glyph side — ADR 0011 records why, a leading number being
+// also what a heading and a table row open with — and it is exactly the case where
+// dropping the marker instead of keeping it would lose text the page says. Stripping all
+// 13 leaves the item's own content non-empty, so none is a label masquerading as content.
+func markItem(blk *doc.Block, marker string) {
+	if marker != "" {
+		blk.SetMarker(marker)
+		return
+	}
+	blk.StripMarker()
 }
 
 // listDepth returns how deeply a list item is nested, 1-based, by counting enclosing

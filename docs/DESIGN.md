@@ -702,31 +702,63 @@ OKF-ified spec.
   - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
     the untagged-table research problem named above; the fixture exists so the day it is
     solved is measurable.
-- **The tagged path emits its list markers literally, and the producer declared them.** This
-  is the defect the fusion investigation actually found, and it is larger than the one it
-  was looking for: 1403 list items across 7 files render as `- ■ text` — the sink's own `- `
-  followed by the marker glyph still sitting in the item's text. 1242 of them are in ISO
-  32000-2 alone. The tagged path was previously described here as having no gaps; it has
-  this one, and `clauses` matching exactly did not catch it because that fixture has no
-  lists.
+- **~~The tagged path emits its list markers literally~~ — fixed, and the fix found a second
+  defect.** *Closed. Kept because the two figures either side of it are the measurement, and
+  because the second defect is the argument for the fixture that now guards both.*
 
-  It is a gap in `sectionize`, not in `layout`. PDF declares the marker as its own element:
-  the structure is `LI → {Lbl → Span, LBody}`, where `Lbl` *is* the label and `LBody` is the
-  content. `blockRole` maps neither, so both fall into `gather`'s transparent default and the
-  marker's spans are appended to the item indistinguishably from its text. Measured over
-  every `LI` on disk, 147 declare a `Lbl`: **132 hold a single marker glyph, 13 hold a number
-  or letter (`[1]`, `a.`), 2 are other, and 0 would leave the item empty if dropped.**
+  The original: 1363 list items across 6 files rendered as `- ■ text` — the sink's own `- `
+  followed by the marker glyph still sitting in the item's text, 1242 of them in ISO 32000-2
+  alone. It was a gap in `sectionize`, not in `layout`. PDF declares the marker as its own
+  element (`LI → {Lbl, LBody}`, ISO 32000-2 §14.8.4.5.3), `blockRole` mapped neither, so both
+  fell into `gather`'s transparent default and the label's spans were appended to the item
+  indistinguishably from its content. The tagged path was described here as having no gaps;
+  `clauses` matching exactly did not catch it because that fixture has no lists.
 
-  That is declared evidence, and it is strictly better than the glyph allowlist `layout`
-  runs on — the 13 numbered labels are exactly the ordered-list case ADR 0011 records as
-  unreachable from glyphs alone, and here the producer states it outright. Docling's data
-  model is the one to follow (`marker` and `enumerated` as fields beside `text`, per the
-  prior-art survey in §5) rather than stripping the marker into nothing, because a sink that
-  wants to render `[1]` needs to know it existed. The remaining 1256 marker-emitting items
-  declare no `Lbl`, so they need the `layout.Lists` heuristic to run on the tagged path too,
-  which is a second decision: today `inferRoles` is untagged-only, deliberately, because
-  guessing over a declaration replaces evidence with a heuristic. A block that *is* declared
-  `RoleListItem` and still opens with a marker glyph is not that case.
+  **The declaration is read where there is one, the glyph where there is not.** Of 1407
+  declared list items whose text opens with a marker glyph, 121 also declare a `Lbl` — and
+  the label's first rune is that glyph in **121 of 121, with 0 disagreeing**, which is the
+  strongest available check on the `layout` allowlist. 1286 declare no label at all, so the
+  glyph rule has to run on this path too. That is not `inferRoles` over a declaration: the
+  block is *already* declared `RoleListItem` and the only question is which of its runes is
+  the label it was declared to have. What the declaration adds that no glyph could is 13
+  ordered labels — `a.`, `b.`, `[1]`–`[7]` — exactly the case ADR 0011 records as unreachable
+  from glyphs alone. It also reaches 11 items in PDF-Declarations whose bold Wingdings square
+  is *glued* to its text with no separator, which `ListMarker` rejects outright.
+
+  Docling's model, followed: `Marker` as a field beside the text, `Enumerated()` derived from
+  it rather than stored, so the two cannot disagree. `doc/marker.go` rather than `layout`,
+  because both producers need the vocabulary and neither may depend on the other.
+
+  Result: **doubled markers 1363 → 0** with prose intact — alphanumeric word counts and line
+  counts identical on every corpus file, and all 1391 changed lines classified (1386 markers
+  removed, 5 ordered labels losing a doubled space, 0 unexplained).
+
+  **The second defect, which only the new fixture could find.** `testdata/reference/tagged-lists.pdf`
+  is tagged by LaTeX, which writes `LI → LBody → Part → P` — legal under Table 364, and a
+  shape no corpus document uses. `gather` detached that `P`, so the item had no spans, was
+  dropped by `IsEmpty`, and its body was emitted as a bare paragraph: six list items became
+  six paragraphs and the marker each had just been given went with the discarded block. Worse
+  than the doubled glyph beside it — a doubled glyph is ugly, a lost role is a list that is no
+  longer a list. Fixed by making a paragraph transparent *inside a list item only*; a `Figure`
+  in an `LBody` (1 on disk) still detaches, and a nested list still detaches because its `LI`
+  has a block role of its own. Zero change across all 19 corpus files, as the shape census
+  predicted.
+
+  **Moving the marker out of the text moved it out of the accounting too**, which the two
+  character-conservation tests caught on exactly the three tagged list-bearing corpus files.
+  The deficit was the markers to the character — 124 on WTPDF, 3 on ISO/TS 32001, 1242 on ISO
+  32000-2, every lost rune a `•` or `■`, each total equal to the recorded markers — so nothing
+  was lost and the tests were reading one of the two places a character can now live. Both now
+  count `Marker` alongside `Text()`, which makes them stricter: `TestOutlineConservesCharacters`
+  is an exact sum, so an item whose glyph stayed in its text *and* was recorded as its marker
+  comes out over the document's own total. Verified both ways by mutation — recorded-and-left
+  gives +92/+1239, stripped-but-unrecorded gives −92/−1239 — so the invariant that started this
+  section is now enforced by the accounting rather than only by a fixture.
+
+  Remaining gap, logged by `TestReferenceExactMatch` rather than fixed: an ordered item emits
+  `- 1\. text` where Markdown's own syntax is `1. text`. The marker survives and is escaped
+  correctly — dropping the escape would make a parser read a nested ordered list — but the
+  sink does not yet switch list syntax on `Enumerated()`.
 - **A block boundary inside one marked-content element still loses the space that joined
   its two lines.** The wrap space is inferred only *within* a block, so a boundary there
   writes no space at all, and `sectionize.title` then rejoins spans sharing a `(page, MCID)`

@@ -192,9 +192,18 @@ with the block margin at the 25th through 90th percentile, and breaking on a mar
 change would cost 6911 splits to buy 8. So the run minimum stays rejected on its own merits
 rather than pending a segmentation fix.
 
-What the investigation did find is a larger defect on the *tagged* path: 1403 items across
-7 files emit their marker glyph literally, because `sectionize` treats `Lbl` as transparent
-and appends the label's spans to the item's text. PDF declares that label — 132 of the 147
-`Lbl` elements on disk hold a single marker glyph and 13 hold a number or letter — so the
-fix there rests on evidence rather than on this ADR's allowlist, and it reaches the ordered
-lists this rule cannot. DESIGN.md §10 records it.
+What the investigation did find is a larger defect on the *tagged* path: 1363 items across
+6 files emitted their marker glyph literally, because `sectionize` treated `Lbl` as
+transparent and appended the label's spans to the item's text. Since fixed, and the fix
+supplies the strongest check this ADR's allowlist has: of the 1407 declared list items whose
+text opens with one of these glyphs, 121 also declare a `Lbl` saying what their label is, and
+the label's first rune is that glyph in **121 of 121, with 0 disagreeing**. A producer's own
+declaration agrees with the allowlist everywhere the two can be compared.
+
+It also reaches what this rule cannot. 13 of the declared labels are ordered — `a.`, `b.`,
+`[1]`–`[7]` — which is the case ruled out above, and 11 more are a bold Wingdings square
+*glued* to its text, which the separator requirement rejects. Neither is a reason to loosen
+this rule: those items are reachable because a producer declared them, not because a glyph
+was guessed at. The declaration is taken whenever it exists and the glyph is never consulted
+then. DESIGN.md §10 records the result, and the marker vocabulary now lives in `doc` so both
+paths read one copy of it.

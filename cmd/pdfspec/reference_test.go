@@ -52,6 +52,7 @@ var referenceFixtures = []struct {
 	{"table", "every cell's text, rows kept together"},
 	{"image", "a page with one image: no prose is the honest answer"},
 	{"clauses", "numbered clause hierarchy from the structure tree"},
+	{"tagged-lists", "list markers the structure tree declares, bulleted and numbered"},
 }
 
 // TestReferenceFidelity is the assertion that must hold: the words the document

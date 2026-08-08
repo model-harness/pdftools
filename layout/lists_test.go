@@ -47,75 +47,27 @@ func TestListsNestsByLeftEdge(t *testing.T) {
 }
 
 // TestListsStripsTheMarker is the other half of the promotion: the marker is structure,
-// so it leaves the text with the role.
+// so it leaves the text with the role and lands in Block.Marker.
 //
-// Leaving it would double it on the one sink that exists — markdown writes its own "- "
-// — and would make every future sink re-derive listMarkers to know which leading rune to
-// drop.
+// Leaving it in the text would double it on the one sink that exists — markdown writes
+// its own "- " — and would make every future sink re-derive the glyph allowlist to know
+// which leading rune to drop.
 //
-// U+00A0 as the separator rather than a plain space: producers set one routinely and
-// listMarker admits the block on that basis, so a byte cutset of " \t" here would accept
-// a block it then failed to strip.
+// The strip itself is doc.Block.StripMarker's and is tested there, across spans and past a
+// leading whitespace span, because sectionize needs the same rules for the list items
+// whose producer declared the role without declaring the label. What this asserts is that
+// promoting a block invokes it — a Lists that assigned the role and left the text alone
+// would pass every other test in this file.
 func TestListsStripsTheMarker(t *testing.T) {
-	d := pageDoc(item("• First item.", 100))
-	Lists(d, DefaultOptions)
-
-	if got := d.Pages[0].Blocks[0].Text(); got != "First item." {
-		t.Errorf("text = %q, want %q", got, "First item.")
-	}
-}
-
-// TestListsStripsAcrossSpans is lists.pdf's nested item, where the en dash is a bold span
-// of its own and the separator opens the roman span after it.
-//
-// Text() joins spans with no separator, so that leading space is inside the block's text
-// and reaches the output: stopping the strip at the marker's span emitted "-  Nested
-// item", with two spaces, against the gold file's one.
-func TestListsStripsAcrossSpans(t *testing.T) {
-	b := doc.Block{
-		Role: doc.RoleParagraph,
-		Box:  geom.Rect{X0: 100, X1: 300, Y1: 10},
-		Spans: []doc.Span{
-			{Text: "–", MCID: -1, Style: doc.Style{Size: 10, Bold: true}},
-			{Text: " Nested item.", MCID: -1, Style: doc.Style{Size: 10}},
-		},
-	}
-	d := pageDoc(b)
+	d := pageDoc(item("• First item.", 100))
 	Lists(d, DefaultOptions)
 
 	got := d.Pages[0].Blocks[0]
-	if txt := got.Text(); txt != "Nested item." {
-		t.Errorf("text = %q, want %q", txt, "Nested item.")
+	if txt := got.Text(); txt != "First item." {
+		t.Errorf("text = %q, want %q", txt, "First item.")
 	}
-	// The emptied span stays: a caller's span indices stay valid and Span.MCID survives
-	// for diagnosis, and an empty span emits nothing.
-	if len(got.Spans) != 2 || got.Spans[0].Text != "" {
-		t.Errorf("spans = %+v, want the marker's span kept and empty", got.Spans)
-	}
-}
-
-// TestListsStripsPastALeadingSpaceSpan is the case where the marker is not in the first
-// non-empty span at all: a producer opens the block with a span holding only whitespace.
-//
-// listMarker trims before reading, so such a block is admitted on a marker that lives
-// further along, and a strip that gave up at the first non-empty span would leave the
-// marker in the text — emitting "- • Item." A mutation removing that branch survives
-// every other test here, which is how this case was found.
-func TestListsStripsPastALeadingSpaceSpan(t *testing.T) {
-	b := doc.Block{
-		Role: doc.RoleParagraph,
-		Box:  geom.Rect{X0: 100, X1: 300, Y1: 10},
-		Spans: []doc.Span{
-			{Text: "  ", MCID: -1, Style: doc.Style{Size: 10}},
-			{Text: "• Item.", MCID: -1, Style: doc.Style{Size: 10}},
-		},
-	}
-	d := pageDoc(b)
-	if st := Lists(d, DefaultOptions); st.Items != 1 {
-		t.Fatalf("items = %d, want 1", st.Items)
-	}
-	if txt := d.Pages[0].Blocks[0].Text(); txt != "Item." {
-		t.Errorf("text = %q, want %q", txt, "Item.")
+	if got.Marker != "•" {
+		t.Errorf("marker = %q, want %q: the glyph is kept, not discarded", got.Marker, "•")
 	}
 }
 
@@ -128,7 +80,7 @@ func TestListsStripsPastALeadingSpaceSpan(t *testing.T) {
 //
 // The last two cases are the length requirement: mupdf_explored.pdf sets a lone Wingdings
 // square as a page decoration, so a marker with nothing after it is not an item either.
-// Both fail on length once the text is trimmed, which is why listMarker has no third
+// Both fail on length once the text is trimmed, which is why doc.ListMarker has no third
 // "and content follows" condition — see its comment.
 func TestListsRequiresASeparator(t *testing.T) {
 	d := pageDoc(

@@ -74,6 +74,21 @@ type Block struct {
 	// RoleListItem (1-based). Zero for everything else.
 	Level int
 
+	// Marker is a list item's label with the item's own text — the bullet glyph a
+	// page draws, or the number or letter an ordered list counts. Empty for
+	// everything that is not a list item, and for an item whose label is neither
+	// declared nor drawn.
+	//
+	// It is a field rather than a prefix on the text for the reason Docling's
+	// ListItem separates the two: a marker kept inside the text has to be re-found
+	// by every sink, using a glyph allowlist each one would have to re-derive, and
+	// on the one sink that exists it doubles — markdown writes its own "- ". Kept
+	// rather than dropped because a bullet is losable and a label is not: "[1]" and
+	// "a." are text the page says, and Markdown has no syntax that restates them, so
+	// a sink that wants them needs to know they existed. Enumerated is that
+	// distinction, derived from this.
+	Marker string
+
 	// Spans are the block's styled runs in reading order.
 	Spans []Span
 
