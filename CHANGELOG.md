@@ -5,6 +5,58 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-08
+
+- **An ordered list emits Markdown's ordered syntax, which closes the gap v0.2.0 shipped
+  logged.** `sink/markdown` wrote `- 1\. First numbered item.` where the syntax is
+  `1. First numbered item.`; it now writes the latter for any label Markdown can express,
+  keeping the document's own number. A list starting at 3 is continuing one something
+  interrupted, and CommonMark reads only the first item's number anyway, so preserving each
+  item's costs nothing and keeps what the page says. `reference/tagged-lists.pdf` matches its
+  gold file byte-for-byte and is enforced rather than logged, leaving `table` and
+  `text-styles` as the only two fixtures still logged.
+- **The measurement is what bounded the fix: none of the corpus's own ordered labels can use
+  the new syntax.** All 13 on disk are `[1]`–`[7]` and `a.`/`b.`, against 2022 list items —
+  and Markdown's ordered marker is digits then `.` or `)`, so an alphabetic or bracketed label
+  written as one would be renumbered to 1 by any parser and lose the label the page drew.
+  Those keep the bullet and are written into the line as text, exactly as every label was
+  before. The untagged path contributes 0 enumerated markers, per ADR 0011's recorded limit,
+  so `tagged-lists` holds the only arabic markers anywhere and without it neither branch would
+  be pinned by anything on disk.
+- **A bullet list followed by an ordered one is separated by a blank line**, which says what
+  CommonMark already does rather than changing it: a change of marker type ends a list, so
+  writing the two adjacent only hid the boundary from a reader of the Markdown. `lastList`
+  became a kind rather than a bool for this.
+- The delimiter is normalized to `.` while the number is preserved, and the asymmetry is
+  deliberate: `1)` and `1.` are the same marker to a parser, so the delimiter is syntax and
+  carries nothing a reader can act on, where the number is the only part of an ordered label
+  that carries information.
+- **A nested item indents to the column where its parent's content begins**, rather than two
+  spaces per level. Two is right under `- ` and short under `1. `, which is three columns: an
+  item indented two there lands inside its parent's marker instead of its text, and CommonMark
+  parses it as a *sibling*, so the document's nesting was flattened with nothing reporting it.
+  Latent for bullets, where two is correct, and made reachable by the wider ordered marker —
+  found by the review of that change. A child of `10. ` now indents four, and a paragraph
+  clears the stack because it ends every open list.
+- **The blank line at a marker-type change is held to top-level items.** Between two items
+  inside an enclosing one it makes that enclosing list loose, and CommonMark then wraps every
+  one of its items in a paragraph — a visible change to the whole list in exchange for stating
+  a boundary the marker change already establishes.
+- **All seven mutations are caught, and two of the rules are pinned only by shapes no document
+  supplies.** Never converting, renumbering from 1, and collapsing the two list kinds are each
+  caught by a unit test *and* by the fixture. The other four are caught by a test alone, which
+  is the debt stated rather than hidden: widening the delimiter set to `]` would convert `1]`
+  and silently drop the bracket a page drew, and nothing on disk is shaped that way; and since
+  no corpus label is Markdown-expressible, every parent marker on disk is `- `, so all 98
+  nested items indent two whichever indent rule runs. The Markdown is byte-identical across
+  every document in `docs/` before and after, which is that reasoning confirmed rather than
+  assumed.
+- Measured directly rather than carried from a previous session's notes: 2022 list items,
+  13 enumerated across 9 distinct labels (`[1]`–`[7]` once each, `a.` and `b.` three times
+  each), 0 of them expressible in Markdown's ordered syntax, 623 items whose marker is neither
+  declared nor drawn, and 98 nested. The `a)`–`f)` labels visible in the output are item text
+  rather than markers, which is what that 623 accounts for.
+
 ## [0.2.0] — 2026-08-08
 
 The untagged layout path, and the tagged path's list markers. `docs/DESIGN.md` §10 opened

@@ -755,10 +755,60 @@ OKF-ified spec.
   gives +92/+1239, stripped-but-unrecorded gives −92/−1239 — so the invariant that started this
   section is now enforced by the accounting rather than only by a fixture.
 
-  Remaining gap, logged by `TestReferenceExactMatch` rather than fixed: an ordered item emits
-  `- 1\. text` where Markdown's own syntax is `1. text`. The marker survives and is escaped
-  correctly — dropping the escape would make a parser read a nested ordered list — but the
-  sink does not yet switch list syntax on `Enumerated()`.
+  **The ordered-list syntax this left open is closed, and measuring it is what decided how
+  far.** `sink/markdown` emits `1. text` for a label Markdown can express, keeping the
+  document's own number — a list starting at 3 is continuing one something interrupted, and
+  CommonMark reads only the first item's number anyway, so preserving each item's costs
+  nothing. `tagged-lists` now matches its gold file byte-for-byte and is enforced rather than
+  logged, leaving `table` and `text-styles` as the only two fixtures still logged.
+
+  What the measurement changed is the scope: **none of the corpus's own ordered labels can
+  use it.** All 13 are `[1]`–`[7]` and `a.`/`b.`, and Markdown's ordered marker is digits then
+  `.` or `)` — so an alphabetic or bracketed label written as one would be renumbered to 1 by
+  any parser and lose what the page says. Those keep the bullet and are written into the line
+  as text, which is what this repo did for every label before. The fixture holds the only
+  arabic markers on disk, so without it neither branch would be pinned by anything: the
+  untagged path contributes none, since ADR 0011 records an ordered item as unrecognizable
+  from glyphs alone.
+
+  The delimiter is normalized to `.` where the number is preserved, and the asymmetry is the
+  point — `1)` and `1.` are the same marker to a parser, so the delimiter is syntax here and
+  carries nothing a reader can act on, where the number is the only part of the label that
+  carries information. A bullet list followed by an ordered one now gets the blank line
+  between them that says what CommonMark already does: a change of marker type ends a list,
+  so writing them adjacent only hid the boundary from a reader of the Markdown.
+
+  **The blank line is emitted between top-level items only, and the nesting indent became a
+  running stack, both because the review of the change found the ordered marker had made a
+  latent bug reachable.** Indenting a nested item two spaces per level is right under `- ` and
+  short under `1. `, which is three columns wide: an item indented two there lands inside its
+  parent's marker rather than its content, and CommonMark parses it as a *sibling*, so the
+  document's nesting is flattened with nothing reporting it. Each level now records the width
+  of the marker actually written at it, so a child of `10. ` indents four. The blank line is
+  held to the top level for the symmetric reason — between two items inside an enclosing one
+  it makes that enclosing list loose, and CommonMark then wraps every one of its items in a
+  paragraph, which is a visible change to the whole list in exchange for stating a boundary
+  the marker change already establishes. A paragraph clears the stack, since it ends every
+  open list and the recorded columns then name parents that no longer exist.
+
+  All four mutations of the marker rule are caught, and so are three of the nesting rule.
+  The one that needed a case no document supplies is the delimiter set: widening it to `]`
+  converts `1]` and silently drops a bracket the page drew, which nothing on disk is shaped
+  to catch, so `TestArabicMarkerRecognition` carries it as a stated boundary rather than a
+  measured one. The nesting rules are the same kind of debt made explicit: no corpus label is
+  Markdown-expressible, so every parent marker on disk is `- ` and all 98 nested items indent
+  two whichever rule runs. What pins the wider marker is
+  `TestNestedItemIndentsToParentContent`, from a shape no fixture has. The Markdown is
+  byte-identical across every document in `docs/` before and after, which is that reasoning
+  confirmed rather than assumed.
+
+  The figures above are a direct measurement over the corpus rather than a carried-forward
+  note: 2022 list items, 13 enumerated across 9 distinct labels (`[1]`–`[7]` once each, `a.`
+  and `b.` three times each), 0 of them expressible, 623 items whose marker is neither
+  declared nor drawn, and 98 nested. Worth recording because the rendered output *looks* like
+  it contradicts them — 186 lines open with an `a)`-shaped token after the bullet — and those
+  are item text rather than markers, which is what the 623 accounts for. A label the producer
+  never declared is not a label this sink can move.
 - **A block boundary inside one marked-content element still loses the space that joined
   its two lines.** The wrap space is inferred only *within* a block, so a boundary there
   writes no space at all, and `sectionize.title` then rejoins spans sharing a `(page, MCID)`

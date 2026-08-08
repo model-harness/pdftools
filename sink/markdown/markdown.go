@@ -181,10 +181,68 @@ type writer struct {
 	// open the document with a blank line.
 	started bool
 
-	// lastList reports that the previous block was a list item. Consecutive items
-	// are written on adjacent lines: a blank line between them makes CommonMark
-	// treat the list as loose and wrap every item in a paragraph.
-	lastList bool
+	// lastList is the kind of list the previous block was an item of, or notList, and
+	// lastLevel is that item's depth. Consecutive items of one list are written on
+	// adjacent lines: a blank line between them makes CommonMark treat the list as
+	// loose and wrap every item in a paragraph. Two items that are not of one list
+	// need the blank line — see sameList for when that is.
+	lastList  listKind
+	lastLevel int
+
+	// indents is the column at which each list level's content begins, indexed by
+	// depth: indents[0] is where a top-level item's text starts, and so a level-2
+	// item's own marker. See listIndent — it is a running stack and not a fixed two
+	// spaces per level because an ordered marker is wider than a bullet's.
+	indents []int
+}
+
+// listKind is which of Markdown's list syntaxes a block is written with, or notList
+// for a block that is not a list item.
+//
+// The distinction exists because CommonMark ends a list where the marker type
+// changes: a bullet item followed immediately by an ordered one is already two
+// lists, and writing them on adjacent lines only hides that from a reader of the
+// Markdown. The blank line is the same one that separates any two blocks.
+type listKind uint8
+
+const (
+	notList listKind = iota
+	bulletList
+	orderedList
+)
+
+// level normalizes a block's declared depth. Level 0 and level 1 both mean top
+// level: a producer that declares a list item without a depth means the only depth
+// there is.
+func level(b doc.Block) int {
+	if b.Level < 1 {
+		return 1
+	}
+	return b.Level
+}
+
+// sameList reports whether an item at kind and depth continues the run the previous
+// block began, and so is written on the adjacent line with no blank between.
+//
+// A blank line is emitted only where the marker type changes between two *top-level*
+// items, which is where it costs nothing and says something: those are two sibling
+// lists, CommonMark ends the first at the change regardless, and the blank line only
+// makes the Markdown state what the renderer will already do.
+//
+// It is deliberately not emitted at a change of depth, nor at a kind change inside a
+// nested run. A blank line between two items that are both inside an enclosing item
+// makes that enclosing list loose — CommonMark then wraps every one of its items in a
+// paragraph — which is a visible change to the whole list in exchange for honesty
+// about a boundary the marker change already establishes. Cheap at top level, not
+// cheap there.
+func (w *writer) sameList(kind listKind, depth int) bool {
+	if kind == notList || w.lastList == notList {
+		return false
+	}
+	if kind == w.lastList {
+		return true
+	}
+	return depth > 1 || w.lastLevel > 1
 }
 
 func (w *writer) str(s string) {
@@ -198,12 +256,12 @@ func (w *writer) nl() { w.str("\n") }
 
 // gap opens a block, emitting the blank line that separates it from the previous
 // one.
-func (w *writer) gap(list bool) {
+func (w *writer) gap(kind listKind, depth int) {
 	if !w.started {
 		w.started = true
 		return
 	}
-	if list && w.lastList {
+	if w.sameList(kind, depth) {
 		return
 	}
 	if !w.blank {
@@ -225,8 +283,15 @@ func (w *writer) page(p doc.Page, opt Options) {
 }
 
 func (w *writer) block(b doc.Block) {
-	list := b.Role == doc.RoleListItem
-	w.gap(list)
+	kind, depth := notList, 0
+	number := ""
+	if b.Role == doc.RoleListItem {
+		kind, depth = bulletList, level(b)
+		if n, ok := arabicMarker(b.Marker); ok {
+			kind, number = orderedList, n
+		}
+	}
+	w.gap(kind, depth)
 
 	switch b.Role {
 	case doc.RoleHeading:
@@ -236,20 +301,38 @@ func (w *writer) block(b doc.Block) {
 		w.nl()
 
 	case doc.RoleListItem:
-		// Two spaces per level is CommonMark's minimum for nesting under a "- "
-		// marker. Level 1 and level 0 both mean top level: a producer that declares a
-		// list item without a depth means the only depth there is.
-		if n := b.Level - 1; n > 0 {
-			w.str(strings.Repeat("  ", n))
+		// A nested item is indented to the column where its parent's content begins,
+		// which is what makes it a child of that item rather than a sibling with
+		// leading spaces. That column is the parent's own marker width, so it has to be
+		// carried down rather than assumed: "- " is two, and "10. " is four.
+		marker := "- "
+		if number != "" {
+			// The document's own number, in Markdown's own ordered syntax. Renumbering
+			// from 1 would be a different claim than the page makes — a list starting at
+			// 3 is continuing one something interrupted — and CommonMark only reads the
+			// *first* item's number anyway, so emitting each item's own value costs
+			// nothing and preserves what the page says. (Nothing on disk exercises this:
+			// the corpus declares 13 ordered labels and none is arabic. The rule is
+			// CommonMark's, not a measurement.)
+			marker = number + ". "
 		}
-		w.str("- ")
-		// An ordered label is text the document says and Markdown has no syntax that
-		// says it: "1." would renumber from the parser's own count, and a nested "a."
-		// or a bracketed "[1]" has no representation at all. So it is written into the
-		// line, after the bullet, escaped like any other text — the alternative is
-		// dropping a reference the prose points at. A bullet glyph is *not* written:
-		// the "- " above already is one, and restating it is the doubling that this
-		// whole marker field exists to stop.
+		w.str(strings.Repeat(" ", w.listIndent(depth, len(marker))))
+		w.str(marker)
+		if number != "" {
+			w.content(b, false)
+			w.nl()
+			break
+		}
+		// A marker Markdown cannot say is written into the line instead, after the
+		// bullet, escaped like any other text. That is every ordered label in the
+		// corpus: extracting all 11 documents and counting doc.Block.Marker gives 13
+		// enumerated labels over 2022 list items, and they are "[1]" through "[7]" once
+		// each with "a." and "b." three times each. Markdown has no ordered syntax
+		// for a bracketed or alphabetic label — only "1." and "1)" are markers to a
+		// parser, so writing "a." as one would renumber it to 1 and lose what the page
+		// says. Dropping it instead loses a reference the prose points at. A bullet
+		// glyph is *not* written: the "- " above already is one, and restating it is
+		// the doubling that this whole marker field exists to stop.
 		if b.Enumerated() {
 			var sb strings.Builder
 			escapeInto(&sb, oneLine(b.Marker), true)
@@ -306,7 +389,75 @@ func (w *writer) block(b doc.Block) {
 	// is wanted. Writing it here instead would put a blank line between consecutive
 	// list items, making the list loose, and a trailing one at the end of every file.
 	w.blank = false
-	w.lastList = list
+	w.lastList = kind
+	w.lastLevel = depth
+}
+
+// listIndent returns the number of spaces an item at depth is written with, and
+// records where its own content begins so a child can be indented to that column.
+//
+// CommonMark makes a nested item a child of the one above it by indenting it to
+// within the parent's content — which is the parent's marker width, not a fixed two
+// spaces. Two is right under "- " and short under "1. ", where an item indented two
+// lands in the parent's marker rather than its text and parses as a sibling; the
+// document's nesting is silently flattened. So the column is carried in a stack, each
+// level recording the width of the marker actually written there.
+//
+// A depth that skips a level — a level-3 item with no level-2 above it, which a
+// producer can declare — indents to the deepest level seen rather than inventing a
+// parent, since a stack with a hole in it has no column to name.
+func (w *writer) listIndent(depth, width int) int {
+	if w.lastList == notList {
+		// A block that is not a list item is written at column zero after a blank line,
+		// which ends every open list — so the columns recorded for them name parents
+		// that no longer exist. A list resuming at depth 2 after a paragraph has no
+		// parent to nest under and starts again at the left margin.
+		w.indents = w.indents[:0]
+	}
+	if depth > len(w.indents)+1 {
+		depth = len(w.indents) + 1
+	}
+	if depth < 2 {
+		w.indents = append(w.indents[:0], width)
+		return 0
+	}
+	indent := w.indents[depth-2]
+	w.indents = append(w.indents[:depth-1], indent+width)
+	return indent
+}
+
+// arabicMarker returns the digits of an ordered label Markdown can express, and
+// whether the label is one.
+//
+// Markdown's ordered syntax is a run of digits then "." or ")", so that is exactly
+// what converts: "1." becomes a real list marker and everything else cannot. The
+// corpus's own ordered labels are all in the second group — "[1]" through "[7]" and
+// "a."/"b." — which is why the caller still has a path that writes the label as text.
+//
+// The delimiter is normalized to "." rather than preserved, because it is syntax
+// here and not content: a parser treats "1)" and "1." as the same marker, and a
+// document that used one is not saying anything a reader of the Markdown can act on.
+// The number is preserved for the opposite reason — it is the only part of an ordered
+// label that carries information.
+//
+// CommonMark caps an ordered marker at 9 digits and requires the start value to fit
+// in 32 bits, so a longer run is not a marker at all. Nothing on disk approaches it;
+// the bound is here because a page number or a year extracted as a label would
+// otherwise emit a list a parser refuses to open.
+func arabicMarker(marker string) (string, bool) {
+	if len(marker) < 2 || len(marker) > 10 {
+		return "", false
+	}
+	if d := marker[len(marker)-1]; d != '.' && d != ')' {
+		return "", false
+	}
+	digits := marker[:len(marker)-1]
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return "", false
+		}
+	}
+	return digits, true
 }
 
 // content writes a block's text.

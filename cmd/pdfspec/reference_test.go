@@ -157,6 +157,22 @@ func TestReferenceExactMatch(t *testing.T) {
 		// indent; the rest are float noise at 0.011. A change that broke nesting would
 		// therefore show up nowhere else, and the corpus tests would stay green.
 		"lists": true,
+
+		// The tagged path's list markers, which this fixture was built to guard and
+		// which logged "- 1\\. First numbered item." against "1. First numbered item."
+		// until the sink learned Markdown's ordered syntax. Three bulleted items and
+		// three numbered ones, the numbered half being the reason the fixture is not
+		// just a tagged copy of "lists": a dropped bullet reads correctly anyway
+		// because Markdown writes one, where a mishandled "1." has lost or invented
+		// text the document says.
+		//
+		// Enforced because it is the only thing on disk that pins the ordered path at
+		// all. Counting doc.Block.Marker over all 11 corpus documents gives 13 ordered
+		// labels against 2022 list items, and they are "[1]"–"[7]" and "a."/"b." — none
+		// of which Markdown can express, so they all take the write-it-as-text branch.
+		// This fixture holds the only arabic markers anywhere, and without it a change
+		// to either branch would show up nowhere.
+		"tagged-lists": true,
 	}
 
 	for _, f := range referenceFixtures {

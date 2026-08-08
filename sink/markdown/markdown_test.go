@@ -225,6 +225,228 @@ func TestListItems(t *testing.T) {
 	}
 }
 
+// An arabic ordered label becomes Markdown's own ordered syntax, keeping the
+// document's number.
+//
+// The number is not renumbered from 1 because the page's value is what the document
+// says — CommonMark reads only the first item's number anyway, so preserving each
+// item's own costs nothing — and the delimiter *is* normalized, because "1)" and "1."
+// are the same marker to a parser and the choice carries nothing a reader can act on.
+func TestOrderedListUsesMarkdownSyntax(t *testing.T) {
+	item := func(marker, text string) doc.Block {
+		return doc.Block{Role: doc.RoleListItem, Level: 1, Marker: marker,
+			Spans: []doc.Span{span(text)}}
+	}
+	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{
+		item("3.", "three"),
+		item("4)", "four"),
+	}}}}
+	want := "3. three\n4. four\n"
+	if got := String(d, DefaultOptions); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// An ordered label Markdown cannot express keeps the bullet and is written as text.
+//
+// This is every ordered label in the corpus: the 13 on disk are "[1]" through "[7]"
+// and "a."/"b.", and neither a bracketed nor an alphabetic label is a marker to a
+// parser. Writing "a." as one would renumber it to 1 and lose what the page says;
+// dropping it would lose a reference the prose points at.
+func TestUnexpressibleOrderedLabelStaysText(t *testing.T) {
+	item := func(marker, text string) doc.Block {
+		return doc.Block{Role: doc.RoleListItem, Level: 1, Marker: marker,
+			Spans: []doc.Span{span(text)}}
+	}
+	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{
+		item("[1]", "cited"),
+		item("a.", "lettered"),
+	}}}}
+	// Neither label needs a backslash, and that is the escaping policy holding rather
+	// than a gap in it: a bare "[1]" is literal text in CommonMark — which is why the
+	// corpus's citations survive unescaped — and "a." is not an ordered marker because
+	// only digits are. The one label that would have needed the escape is exactly the
+	// one that no longer reaches this branch, since arabicMarker takes it.
+	want := "- [1] cited\n- a. lettered\n"
+	if got := String(d, DefaultOptions); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A bullet list and an ordered list are two lists, so they are separated.
+//
+// CommonMark ends a list where the marker type changes, so writing these on adjacent
+// lines would render as two lists regardless — the blank line only makes the Markdown
+// say what the renderer will do. testdata/reference/tagged-lists.pdf is this shape and
+// its gold file carries the blank line.
+func TestBulletAndOrderedListsAreSeparated(t *testing.T) {
+	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{
+		{Role: doc.RoleListItem, Level: 1, Marker: "•", Spans: []doc.Span{span("bullet")}},
+		{Role: doc.RoleListItem, Level: 1, Marker: "1.", Spans: []doc.Span{span("first")}},
+		{Role: doc.RoleListItem, Level: 1, Marker: "2.", Spans: []doc.Span{span("second")}},
+	}}}}
+	want := "- bullet\n\n1. first\n2. second\n"
+	if got := String(d, DefaultOptions); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A nested item is indented to the column where its parent's content begins, which
+// is the parent's marker width and not a fixed two spaces.
+//
+// Two is right under "- " and short under "1. ": an item indented two there lands in
+// the parent's marker rather than its text, which CommonMark parses as a sibling, so
+// the document's nesting is flattened without anything reporting it. The measurement
+// that matters is the column, so each case states it.
+func TestNestedItemIndentsToParentContent(t *testing.T) {
+	item := func(depth int, marker, text string) doc.Block {
+		return doc.Block{Role: doc.RoleListItem, Level: depth, Marker: marker,
+			Spans: []doc.Span{span(text)}}
+	}
+	for _, tc := range []struct {
+		name   string
+		blocks []doc.Block
+		want   string
+	}{
+		// "1. " is three columns wide, so the child is indented three.
+		{"ordered under ordered", []doc.Block{
+			item(1, "1.", "one"), item(2, "2.", "nested"), item(1, "2.", "two"),
+		}, "1. one\n   2. nested\n2. two\n"},
+		{"bullet under ordered", []doc.Block{
+			item(1, "1.", "one"), item(2, "•", "nested"),
+		}, "1. one\n   - nested\n"},
+		// "- " is two, which is the case the fixed indent was written for.
+		{"ordered under bullet", []doc.Block{
+			item(1, "•", "bullet"), item(2, "1.", "nested"),
+		}, "- bullet\n  1. nested\n"},
+		// A two-digit marker is wider again, and the child follows it.
+		{"wide marker", []doc.Block{
+			item(1, "10.", "ten"), item(2, "•", "nested"),
+		}, "10. ten\n    - nested\n"},
+		// A depth that skips a level indents to the deepest level actually written
+		// rather than inventing the parent it names: a stack with a hole in it has no
+		// column to indent to. A producer can declare this.
+		{"skipped level", []doc.Block{
+			item(1, "•", "one"), item(3, "•", "deep"),
+		}, "- one\n  - deep\n"},
+	} {
+		d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: tc.blocks}}}
+		if got := String(d, DefaultOptions); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The blank line at a change of marker type is emitted between top-level items only.
+//
+// Between two items nested inside an enclosing one it would make that enclosing list
+// loose — CommonMark then wraps every one of its items in a paragraph — so the cost is
+// a visible change to the whole list, in exchange for stating a boundary the marker
+// change already establishes. At top level there is no enclosing list to loosen and
+// the blank line is free.
+func TestKindChangeSeparatesOnlyAtTopLevel(t *testing.T) {
+	item := func(depth int, marker, text string) doc.Block {
+		return doc.Block{Role: doc.RoleListItem, Level: depth, Marker: marker,
+			Spans: []doc.Span{span(text)}}
+	}
+	for _, tc := range []struct {
+		name   string
+		blocks []doc.Block
+		want   string
+	}{
+		{"ordered then bullet", []doc.Block{
+			item(1, "1.", "one"), item(1, "•", "bullet"),
+		}, "1. one\n\n- bullet\n"},
+		// Both nested under a top-level item: no blank line, or the outer list goes
+		// loose.
+		{"kind change while nested", []doc.Block{
+			item(1, "•", "outer"), item(2, "•", "a"), item(2, "1.", "b"),
+		}, "- outer\n  - a\n  1. b\n"},
+		// Returning to top level from a nested item is a change of depth, not of list:
+		// the run continues and a blank line would loosen it.
+		{"depth change alone", []doc.Block{
+			item(1, "•", "one"), item(2, "•", "nested"), item(1, "•", "two"),
+		}, "- one\n  - nested\n- two\n"},
+	} {
+		d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: tc.blocks}}}
+		if got := String(d, DefaultOptions); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A paragraph ends every open list, so a list resuming at depth 2 has no parent left
+// to nest under and starts again at the left margin.
+//
+// The indent stack outlives the list that filled it, and the columns in it name items
+// that are no longer open — indenting to one would emit two spaces before a marker
+// with nothing above it, which CommonMark reads as a top-level item anyway. The
+// nesting is not recoverable here; what is avoidable is claiming it.
+func TestListResumingAfterParagraphStartsAtMargin(t *testing.T) {
+	item := func(depth int, text string) doc.Block {
+		return doc.Block{Role: doc.RoleListItem, Level: depth, Marker: "•",
+			Spans: []doc.Span{span(text)}}
+	}
+	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{
+		item(1, "one"), item(2, "nested"),
+		para(span("Interrupting.")),
+		item(2, "resumed"),
+	}}}}
+	want := "- one\n  - nested\n\nInterrupting.\n\n- resumed\n"
+	if got := String(d, DefaultOptions); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A number's leading zeros are the page's, and CommonMark reads "007." as starting at
+// seven, so writing it back is both faithful and correct. Stripping them would be a
+// silent edit to what the document says with nothing gained.
+func TestOrderedMarkerKeepsLeadingZeros(t *testing.T) {
+	b := doc.Block{Role: doc.RoleListItem, Level: 1, Marker: "007.",
+		Spans: []doc.Span{span("seven")}}
+	if got := render(t, b); got != "007. seven\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// arabicMarker's boundaries, which are CommonMark's: digits then "." or ")".
+func TestArabicMarkerRecognition(t *testing.T) {
+	for _, tc := range []struct {
+		marker string
+		digits string
+		ok     bool
+	}{
+		{"1.", "1", true},
+		{"1)", "1", true},
+		{"42.", "42", true},
+		{"123456789.", "123456789", true},
+		// CommonMark caps an ordered marker at 9 digits, so a longer run is not one —
+		// a page number or a year extracted as a label would otherwise emit a list a
+		// parser refuses to open.
+		{"1234567890.", "", false},
+		// Not markers to a parser, and all of the corpus's own ordered labels.
+		{"[1]", "", false},
+		{"a.", "", false},
+		// CommonMark's delimiter set is "." and ")" and nothing else, so a bracket is
+		// not one even with digits in front of it. Nothing on disk is shaped this way —
+		// the corpus's bracketed labels are "[1]", which the "[" already rejects — but
+		// widening the set here is a mutation no other case catches, and converting
+		// "1]" would silently drop the bracket the page drew.
+		{"1]", "", false},
+		{"1", "", false},
+		{".", "", false},
+		{"", "", false},
+		{"•", "", false},
+		{"1.2.", "", false},
+	} {
+		digits, ok := arabicMarker(tc.marker)
+		if ok != tc.ok || digits != tc.digits {
+			t.Errorf("arabicMarker(%q) = %q, %v; want %q, %v",
+				tc.marker, digits, ok, tc.digits, tc.ok)
+		}
+	}
+}
+
 // A list followed by a paragraph does need the blank line, or the paragraph is
 // absorbed into the last item as a lazy continuation.
 func TestListThenParagraphSeparated(t *testing.T) {

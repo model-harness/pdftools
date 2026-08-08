@@ -105,13 +105,13 @@ func (w *writer) unplaced(pages []doc.Page, opt Options) {
 				continue
 			}
 			if !any {
-				w.gap(false)
+				w.gap(notList, 0)
 				w.str(fmt.Sprintf(
 					"<!-- pdfspec: text on page %d belongs to no clause in the structure tree -->",
 					p.Number))
 				w.nl()
 				w.blank = false
-				w.lastList = false
+				w.lastList, w.lastLevel = notList, 0
 				any = true
 			}
 			w.block(b)
