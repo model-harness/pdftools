@@ -5,6 +5,21 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-08
+
+The untagged layout path, and the tagged path's list markers. `docs/DESIGN.md` §10 opened
+with four gaps a reference fixture measured rather than remembered — heading rank, paragraph
+breaks, list role, table grid — and three of them are closed here; the fourth is the
+untagged-table research problem and stays open. Closing the list item is what exposed the
+larger defect beside it: the tagged path was emitting `- ■ text` on 1363 items across 6
+files, and the fixture written to guard the fix found a second defect that dropped six list
+items entirely.
+
+Minor rather than patch because the surface changed: a new `layout` package, `doc.Block.Marker`
+with `StripMarker`/`SetMarker`/`Enumerated`, `doc.ListMarker`, and different Markdown bytes out
+of `md` for any file with a list. Pin the tag rather than `@latest` — the API is not stable
+before 1.0.
+
 ### Fixed — 2026-08-08
 
 - **The tagged path's list markers, which closes DESIGN.md §10's largest open item: 1363
@@ -1379,5 +1394,6 @@ tag rather than `@latest` — the API is not stable before 1.0.
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
 
-[Unreleased]: https://github.com/model-harness/pdftools/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/model-harness/pdftools/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/model-harness/pdftools/releases/tag/v0.1.0
