@@ -1,0 +1,44 @@
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_17d1f7123ec46f 577-585
+  s_5cd1b28ed520c1::t_72df031c0684b4 787-797
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_a6bb17550c9253 10-46,59-66
+  s_5cd1b28ed520c1::t_1eb63d48688810 47-58
+sectionize/untagged_test.go
+  s_5cd1b28ed520c1::t_83707e6ffad188 354-382
+  s_5cd1b28ed520c1::t_fe52d9d7a50fb2 1-353,383-391
+cmd/pdfspec/okf_test.go
+  s_5cd1b28ed520c1::t_844b921c401ad2 247-321
+docs/adr/0008-rank-untagged-headings-by-their-own-numbering.md
+  s_5cd1b28ed520c1::t_4367dc85c27962 113-122
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_6e43800f5a2ebe 11
+  s_5cd1b28ed520c1::t_fce259400c27fe 59-62,65-83
+  s_5cd1b28ed520c1::t_1b34bd65786a2a 58,63-64
+sectionize/untagged.go
+  s_5cd1b28ed520c1::t_20b37ed5f5492b 1-54,56-61,63-89,112-141
+  s_5cd1b28ed520c1::t_5d0e0222990144 91-111
+  s_5cd1b28ed520c1::t_abd792d1a5f699 62
+  s_5cd1b28ed520c1::t_e38959a08a560e 55
+  s_5cd1b28ed520c1::t_46fc8b5effdffd 90
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_a596bd061f19a2 195-212
+  s_5cd1b28ed520c1::t_6ec946bc9caa29 505-514
+  s_5cd1b28ed520c1::t_09ffb95b5b59fa 116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bb5fa32e5eb70f2c735cecffb363a0482245a9b4",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
