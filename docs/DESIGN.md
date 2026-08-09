@@ -664,6 +664,18 @@ OKF-ified spec.
   change, which is what proves it is a merge and not a deletion — a block count cannot tell
   those apart.
 
+  `reference/tagged-table.pdf` is the yardstick, and it exists because the corpus cannot
+  be one: 788 tables are asserted by a section total and a block floor, and a count cannot
+  tell a correct grid from a transposed one nor a declared header from a promoted data row.
+  It matches its gold file byte-for-byte and is enforced. Its gold file is byte-identical
+  to `table.gold.md` on purpose — the same table, one declared and one drawn — so the day
+  stroke-path extraction lands, the untagged path has an exact target already known to be
+  reachable. Building it needed a third requirement beyond the two `clauses.tex` records:
+  a plain `tabular` under `tagging=on` declares *every* cell a `TD`, so the first build was
+  the headerless shape (11 of 788) rather than the one being pinned (773 of 788), and
+  `tagging-setup={table/header-rows={1}}` with `latex-lab-testphase-table` is what makes
+  row 1 `TH`.
+
   **Untagged table detection remains a research problem** and is still out of scope for
   Phase 1–5; the VLM path covers it in the interim. Two shapes are on disk for whenever it
   is taken up: LaTeX draws each rule as a translated stroke (`q / cm / w / m 0 0 /
@@ -764,8 +776,9 @@ OKF-ified spec.
     that does: the tagged path emits real grids for all 788 tagged tables on disk. Row and
     column membership on *this* file is the untagged-table research problem named above —
     the fixture draws no `Table` element, so there is nothing to read and the strokes that
-    would say where the cells are go unconsumed. The fixture exists so the day it is solved
-    is measurable.
+    would say where the cells are go unconsumed. `reference/tagged-table.pdf` is the same
+    table declared and matches exactly, so the target is known reachable and the gap belongs
+    to this path alone; the fixture exists so the day it is solved is measurable.
 - **~~The tagged path emits its list markers literally~~ — fixed, and the fix found a second
   defect.** *Closed. Kept because the two figures either side of it are the measurement, and
   because the second defect is the argument for the fixture that now guards both.*

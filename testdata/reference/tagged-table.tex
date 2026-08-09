@@ -1,0 +1,57 @@
+% tagged-table — a table whose grid the structure tree declares.
+%
+% One concern: does a declared cell reach the output in its own row and column? The
+% 788 tagged tables in the corpus are asserted only by counts — a section total, a block
+% floor — and a count cannot tell a correct grid from a transposed one, nor a header row
+% from a promoted data row. This is the byte-exact yardstick for the path that reads
+% Table/TR/TD/TH, and table.pdf is not it: that file is untagged, so it exercises the
+% geometry the layout reader has no grid logic for and says nothing about this path.
+%
+% The defect it was written for emitted every one of those 788 tables as scattered
+% paragraphs. Of 17482 TD and TH elements on disk, 0 hold marked content of their own —
+% all of them wrap their text in a P — and sectionize detached that P, so the cell had no
+% spans, IsEmpty dropped it, and the text reappeared outside the table it belonged to.
+% That is the LI > LBody > P defect tagged-lists.tex was written for, one element name
+% over, which is why both fixtures exist rather than one: they fail independently, and a
+% single gold file asserting lists and tables together reads the same either way.
+%
+% Header cells in the first row, because the header row is the one decision GFM forces
+% that the tree does not make for us. 773 of the corpus's 788 tables declare an all-TH
+% first row and 11 declare no header there at all, and the sink treats those differently —
+% an empty header row rather than a promoted data row, since promoting one relabels data
+% as a column name. Only the declared case is committed here; the other is a constructed
+% unit fixture, because no producer on disk emits a headerless table and LaTeX will not
+% write one.
+%
+% Three columns and three body rows. Two of either cannot distinguish a transposed read
+% from a correct one, and the corpus's own column counts cluster at 3 (628 of 788).
+% Deliberately absent: spans, nesting, and a row-header column. All three are on disk —
+% 69 ColSpan, 43 RowSpan, 13 nested, 598 with a TH below row 0 — and none is expressible
+% in GFM, so a fixture asserting them would be asserting the workaround rather than the
+% behaviour. They are recorded in doc.Cell and in DESIGN.md §10 instead.
+%
+% Build with lualatex, not pdflatex, for the reason clauses.tex records at length:
+% pdfTeX's tagging backend writes /MCID 1 into every /MCR while the content stream draws
+% an increasing sequence, so all but one structure element joins to nothing. The committed
+% PDF means a clone never builds either.
+%
+% tagging-setup=table/header-rows is required and is not the default: a plain tabular
+% under tagging=on declares every cell a TD, which is the headerless shape, and the first
+% build of this fixture did exactly that. The key needs the testphase table module, which
+% is what turns row 1's cells into TH — the shape 773 of the corpus's 788 tables have and
+% the one GFM's header row expresses.
+\DocumentMetadata{pdfstandard=ua-2, tagging=on,
+  tagging-setup={table/header-rows={1}}}
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage{latex-lab-testphase-table}
+\pagestyle{empty}
+\begin{document}
+
+\begin{tabular}{lll}
+Header A & Header B & Header C \\
+Cell A1 & Cell B1 & Cell C1 \\
+Cell A2 & Cell B2 & Cell C2 \\
+\end{tabular}
+
+\end{document}

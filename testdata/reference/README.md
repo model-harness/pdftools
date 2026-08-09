@@ -75,6 +75,7 @@ were learned the hard way:
 | `image.tex` | A page whose only content is an image | no |
 | `clauses.tex` | Numbered clause hierarchy via the structure tree | yes |
 | `tagged-lists.tex` | Declared list markers, bulleted and numbered | yes |
+| `tagged-table.tex` | A declared table grid with a header row | yes |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
 The `.tex` is committed beside the `.pdf` so the fixture can be rebuilt and so the
@@ -87,6 +88,7 @@ assertion nobody can check.
 pdflatex -interaction=nonstopmode <name>.tex        # the six untagged fixtures
 lualatex -interaction=nonstopmode clauses.tex       # the tagged ones — see below
 lualatex -interaction=nonstopmode tagged-lists.tex
+lualatex -interaction=nonstopmode tagged-table.tex
 ```
 
 The tagged fixtures need both a new enough kernel and the right engine.
@@ -111,3 +113,13 @@ That build is not a fixture worth keeping: no reader can distinguish it from a
 document whose paragraphs are genuinely untagged, so it would pin our behaviour
 against a broken producer instead of a correct one. The committed PDFs mean a clone
 does not need LaTeX at all.
+
+`tagged-table.tex` has a third requirement on top of those two, and it is quiet in the
+same way: **a plain `tabular` under `tagging=on` declares every cell a `TD`**, header row
+included. The first build of that fixture did exactly that, and the output was a table
+with an empty header — correct behaviour for a headerless table, and the wrong shape to
+be pinning, since 773 of the corpus's 788 tables declare an all-`TH` first row and only 11
+declare none. `tagging-setup={table/header-rows={1}}` plus
+`\usepackage{latex-lab-testphase-table}` is what makes row 1 `TH`. Confirm with
+`pdfspec probe`, which reports the role counts: the committed build gives `TH=3 TD=6`, and
+a build without the key gives `TD=9`.

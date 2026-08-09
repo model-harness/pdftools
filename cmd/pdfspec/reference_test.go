@@ -53,6 +53,7 @@ var referenceFixtures = []struct {
 	{"image", "a page with one image: no prose is the honest answer"},
 	{"clauses", "numbered clause hierarchy from the structure tree"},
 	{"tagged-lists", "list markers the structure tree declares, bulleted and numbered"},
+	{"tagged-table", "a table grid the structure tree declares, with a header row"},
 }
 
 // TestReferenceFidelity is the assertion that must hold: the words the document
@@ -174,9 +175,23 @@ func TestReferenceExactMatch(t *testing.T) {
 		// to either branch would show up nowhere.
 		"tagged-lists": true,
 
+		// The tagged table grid: three declared columns, a declared header row, two body
+		// rows, emitted as a GFM pipe table. Exact on its first build, because the
+		// corpus's 788 tagged tables had already driven the sink — this fixture is what
+		// pins it, since a corpus assertion is a count and a count cannot tell a correct
+		// grid from a transposed one, nor a declared header from a promoted data row.
+		//
+		// It is the pair to "table", not a duplicate of it, and the two gold files are
+		// byte-identical on purpose: same table, one declared and one drawn, so the day
+		// stroke-path extraction lands the untagged path has an exact target that is known
+		// to be reachable. Enforced because nothing it asserts waits on a deferred debt.
+		"tagged-table": true,
+
 		// Not here, and measured rather than assumed: "table" waits on stroke-path
 		// extraction that does not exist — content/lexer.go tokenizes m/l/re and nothing
-		// consumes them — and "text-styles" is not a styling gap at all. Every emphasis
+		// consumes them, and this fixture draws no Table element for the tagged path to
+		// read; "tagged-table" above is the same table declared, and it is exact — and
+		// "text-styles" is not a styling gap at all. Every emphasis
 		// marker it emits is already byte-correct; its four one-line paragraphs arrive as
 		// one block, and DESIGN.md §10 records why no rule can separate them: the only
 		// signal left is that a line ends short of the measure, which fires on 57% of all

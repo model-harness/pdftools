@@ -7,6 +7,21 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-08-09
 
+- **`testdata/reference/tagged-table.pdf`, the yardstick for the tagged table path**, matching
+  its gold file byte-for-byte and enforced by `TestReferenceExactMatch`. The corpus cannot be
+  one: its 788 tables are asserted by a section total and a block floor, and a count cannot
+  tell a correct grid from a transposed one, nor a declared header row from a promoted data
+  row. Its gold file is byte-identical to `table.gold.md` deliberately — the same table, one
+  declared and one drawn — so when stroke-path extraction lands the untagged path has an exact
+  target already known to be reachable.
+- Building it needed a requirement beyond the engine note `clauses.tex` records: a plain
+  `tabular` under `tagging=on` declares *every* cell a `TD`, so the first build was the
+  headerless shape (11 of 788 tables) rather than the one being pinned (773 of 788).
+  `tagging-setup={table/header-rows={1}}` with `latex-lab-testphase-table` makes row 1 `TH`;
+  `pdfspec probe` reports `TH=3 TD=6` for the committed build against `TD=9` without the key.
+  Recorded in `testdata/reference/README.md`, because a fixture nobody can rebuild is an
+  assertion nobody can check.
+
 - **A tagged table emits a real Markdown table.** `sink/markdown` renders a GFM pipe table
   from a table's cells, grouped by `doc.Cell.Table`; `sectionize` reads each cell's row,
   column and header from the structure tree. This covers **788 tagged tables, 4650 `TR`,
