@@ -33,8 +33,9 @@ import (
 //     should be promoted into the tier above.
 //
 // Splitting them this way is the only honest arrangement. Deleting the exact-match
-// tier would hide known defects; making it fail the build would gate every commit
-// on a documented debt (grid table emission, DESIGN.md §10).
+// tier would hide known defects; making it fail the build would gate every commit on
+// a documented debt — the paragraph split inside a run of one-line paragraphs at one
+// size, DESIGN.md §10, which is the last fixture still logging rather than asserting.
 
 // referenceFixtures are the single-concern documents and what each one is for.
 //
@@ -92,9 +93,10 @@ func TestReferenceFidelity(t *testing.T) {
 // TestReferenceExactMatch reports the distance between what we emit and what the
 // gold file says, without failing the suite.
 //
-// It logs rather than errors on purpose. Some of what it finds is a documented debt
-// — grid table emission is DESIGN.md §10 — and gating commits on a debt we chose to
-// defer would mean either paying it now or deleting the test that remembers it.
+// It logs rather than errors on purpose. What it finds is a documented debt — the
+// unsplittable run of one-line paragraphs, DESIGN.md §10 — and gating commits on a
+// debt we chose to defer would mean either paying it now or deleting the test that
+// remembers it.
 // Neither is what this is for: its output is a worklist, and its value is that the
 // worklist is measured rather than remembered.
 //
@@ -187,11 +189,19 @@ func TestReferenceExactMatch(t *testing.T) {
 		// to be reachable. Enforced because nothing it asserts waits on a deferred debt.
 		"tagged-table": true,
 
-		// Not here, and measured rather than assumed: "table" waits on stroke-path
-		// extraction that does not exist — content/lexer.go tokenizes m/l/re and nothing
-		// consumes them, and this fixture draws no Table element for the tagged path to
-		// read; "tagged-table" above is the same table declared, and it is exact — and
-		// "text-styles" is not a styling gap at all. Every emphasis
+		// The same table drawn rather than declared, and byte-identical to the gold file
+		// above — which is what the two were built as a pair to prove. This fixture has
+		// no Table element and no TH: everything the pipe table says about it was read
+		// from the sixteen strokes the page draws, four horizontal and twelve vertical.
+		//
+		// Enforced because the two gold files being identical is the assertion, not a
+		// coincidence. Nothing else on disk can catch the untagged grid diverging from
+		// the declared one — the corpus is entirely tagged, so a corpus count would stay
+		// green while this path emitted a transposed grid or lost a column.
+		"table": true,
+
+		// Not here, and measured rather than assumed: "text-styles" is not a styling gap
+		// at all. Every emphasis
 		// marker it emits is already byte-correct; its four one-line paragraphs arrive as
 		// one block, and DESIGN.md §10 records why no rule can separate them: the only
 		// signal left is that a line ends short of the measure, which fires on 57% of all

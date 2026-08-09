@@ -146,6 +146,7 @@ func (e *Extractor) Page(n int) (doc.Page, error) {
 	run.walk(data, res, geom.Identity, 0)
 
 	p.Blocks = run.blocks(e.opt)
+	p.Rules = run.rules
 	return p, nil
 }
 

@@ -47,6 +47,12 @@ type run struct {
 
 	// havePen reports whether pen is meaningful yet.
 	havePen bool
+
+	// path is the path currently being constructed, and rules the axis-aligned
+	// segments every painted path has contributed. See rules.go for why a path is
+	// tracked here rather than in content.Machine.
+	path  path
+	rules []doc.Rule
 }
 
 // frag is a run of glyphs sharing a style and a baseline.
@@ -84,6 +90,33 @@ type frag struct {
 	// artifact reports that the fragment was drawn inside an Artifact
 	// marked-content region.
 	artifact bool
+
+	// cuts are the wide gaps inside this fragment, in text order: places a rule may
+	// later turn into a cell boundary.
+	//
+	// Recorded during the walk and resolved after it, because a page's rules are not
+	// known while its text is being drawn. LaTeX draws a row's vertical rules just
+	// before that row's text, and a producer emitting rectangles draws them wherever
+	// it likes — reference/table.pdf interleaves the two, so a decision made at the
+	// gap would be reading a partially built grid.
+	cuts []cut
+
+	// apart marks a fragment that split off from the one before it at a rule, and
+	// must not be merged back into it by appendLine. Without it the split would be
+	// undone immediately: two cells of one row share a style and a marked-content
+	// identifier, which is exactly appendLine's test for one span.
+	apart bool
+}
+
+// cut is a wide gap inside a fragment: the byte offset in its text where the gap
+// falls, and the interval on the along axis that the gap spans.
+//
+// The offset points at the byte after the space the gap produced, so splitting there
+// leaves the space on the text before it — which is the trailing-placement rule
+// appendLine already applies to a wrapped line, for the same reason.
+type cut struct {
+	off    int
+	x0, x1 float64
 }
 
 // line is a set of fragments sharing a baseline.
@@ -134,6 +167,14 @@ func (r *run) walkWith(m *content.Machine, data []byte, res objects.Dict, depth 
 					}
 				}
 			}
+			continue
+		}
+
+		// Paths are read after the state operators and before the text ones, because
+		// "W n" is a clip rather than ink and the machine has to see the W first. The
+		// path operators overlap no text operator, so the order between these two is
+		// otherwise free.
+		if r.applyPath(m, op) {
 			continue
 		}
 
@@ -434,6 +475,19 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 	// Distinguishing them needs to know whether the page has columns, which is
 	// layout's question, and emitting several spaces would corrupt the character
 	// counts the benchmark compares against.
+	//
+	// Every inferred space is remembered rather than acted on, so that splitAtRules can
+	// divide the fragment at one if a rule turns out to run through the gap.
+	//
+	// Every space and not only a wide one, which was measured rather than assumed. A
+	// WideSpaceFrac filter of 2.50 was tried first and it dropped a real cell boundary:
+	// reference/table.pdf's header row sets wider cells than its body, so its column
+	// gaps are 2.400 space widths against the body's 4.128, and the filter admitted the
+	// body rows while silently discarding the header. That is the failure mode of every
+	// threshold on this quantity — the gap distribution over all 48757 inferred spaces
+	// on disk is continuous from 0.25 to 1300 space widths with no empty band anywhere —
+	// and the rule is the evidence, so there is nothing for a width to add. The cost is
+	// bookkeeping on a slice that is discarded with the page.
 	c := r.cur()
 	sameFrag := c != nil && c.mcid == mcid && c.artifact == artifact &&
 		c.style.SameRun(style, r.tol)
@@ -453,6 +507,10 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 
 	if needSpace {
 		c.text = append(c.text, ' ')
+	}
+	if needSpace {
+		// After the space, so the offset splits with the space on the left-hand side.
+		c.cuts = append(c.cuts, cut{off: len(c.text), x0: r.pen, x1: along})
 	}
 	r.appendText(g.Text, along, end, sy)
 	r.setPen(along)
@@ -601,6 +659,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	if len(r.lines) == 0 {
 		return nil
 	}
+	r.splitAtRules()
 
 	var out []doc.Block
 	var cur *doc.Block
@@ -991,7 +1050,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 		// paragraph after it are frequently set in the same face at the same size — the
 		// style says one run, the structure tree says two elements — and merging them
 		// resolves the heading's title to the heading plus the paragraph.
-		if n := len(b.Spans); n > 0 && b.Spans[n-1].MCID == fr.mcid &&
+		if n := len(b.Spans); n > 0 && !fr.apart && b.Spans[n-1].MCID == fr.mcid &&
 			b.Spans[n-1].Style.SameRun(fr.style, t) {
 			b.Spans[n-1].Text += txt
 			b.Spans[n-1].Box = b.Spans[n-1].Box.Union(box)

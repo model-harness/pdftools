@@ -676,15 +676,104 @@ OKF-ified spec.
   `tagging-setup={table/header-rows={1}}` with `latex-lab-testphase-table` is what makes
   row 1 `TH`.
 
-  **Untagged table detection remains a research problem** and is still out of scope for
-  Phase 1–5; the VLM path covers it in the interim. Two shapes are on disk for whenever it
-  is taken up: LaTeX draws each rule as a translated stroke (`q / cm / w / m 0 0 /
-  l 159.789 0 / S / Q`) and pymupdf draws `re` rectangles with `B`.
-- **The untagged layout path's one remaining measured gap.** `TestReferenceExactMatch` in
+  **Untagged table detection is closed too, and it was not the research problem this said
+  it was.** What made it look like one was measuring the wrong quantity. The question was
+  taken to be "how wide must a gap be to be a column boundary", which has no answer: over
+  all **48757 inferred spaces on disk** the ratio of gap to nominal space width is
+  continuous from **0.25 to 1303 with no empty band anywhere** — 4351 between 0.25 and 0.50,
+  14337 between 1.75 and 2.00, then a long thin tail past 200 — so no threshold separates a
+  cell boundary from wide word spacing at any value. That is the measurement that rules out
+  the percentile gap clustering pdfplumber and markitdown use, and it is the reason this was
+  deferred rather than attempted with one.
+
+  The answer is that the producer already states it. A stroke drawn between two glyphs is
+  the page's own claim that they are in different cells, where a gap is a statistic about
+  them, so `extract` collects the page's axis-aligned segments into `doc.Page.Rules` and
+  `layout.Tables` reads the grid from those. Both shapes previously named as future work are
+  handled by the same collector: LaTeX's translated stroke (`q / cm / w / m 0 0 / l 159.789
+  0 / S / Q`) and pymupdf's `re` rectangles with `B`. `re` and the fill operators are not
+  optional — `reference/table.pdf`'s sixteen rules are *all* filled rectangles, because a
+  hairline is drawn as a thin fill rather than a stroked line to avoid interacting with the
+  device resolution, so an `m`/`l`-only reader finds no grid there at all.
+
+  **Splitting happens in `extract`, not in `layout`, and that placement is forced.** A
+  block's spans carry one box each, so a row whose cells have already merged into a single
+  span cannot be taken apart downstream without re-measuring glyphs. `place` therefore
+  records every inferred space as a candidate cut and `splitAtRules` divides the fragment at
+  the ones a rule runs through. Every inferred space and not only a wide one, which was
+  measured rather than assumed: a `WideSpaceFrac` filter of 2.50 was tried first and
+  silently dropped a real boundary, because `reference/table.pdf`'s header row sets wider
+  cells than its body — 2.400 space widths against 4.128 — so the filter admitted the body
+  rows and discarded the header.
+
+  **Columns come from cell x-overlap with no tolerance, and the alternative is worth
+  recording because it shipped first and was wrong twice.** Keying a row by the positions of
+  the rules that split it fails on two files on disk: `autotagPDFInput.pdf` draws its header
+  row's column rule at x=158.88 and its body rows' at 158.94, so an exact key read one table
+  as two, and `dotted-gridlines.pdf` draws 2048 verticals of a dotted grid where which one
+  is found first depends on the width of the text either side. Cell overlap is invariant to
+  both, and it has the property `listTiers` has: the numbers compared are glyph extents the
+  extractor measured, not quantities `layout` invented. Rows are grouped the same way, by
+  vertical box overlap — narrowed to the intersection of a band's members and never widened
+  to their union, because a tall span (an inline fraction, a large initial, a superscript)
+  would otherwise drag the row below into the same band, which is a *missing row* rather
+  than a wrong column count.
+
+  Three gates, each paid for: a rule is required between *cells* and not between spans,
+  since a cell holding an italic term is two spans by construction and requiring one per
+  adjacent pair would read it as prose and reject the table silently; rows need only *agree*
+  on columns rather than match counts, because ISO/TS 32004's key/type/value tables fill two
+  of three and `dotted-gridlines.pdf` sets a 9-column total row under 6-column data rows;
+  and a run needs **two rows**, which over the 6 untagged documents drops 8 of 21 candidates
+  that are a line of prose with a rule through it, at the cost of 4 genuine one-row rating
+  tables in `chinese-tables.pdf`. A one-row table is a GFM header and delimiter with no
+  body, which is why the trade goes that way.
+
+  **Two further caps, `maxRunRows = 512` and `maxRunCells = 4096`, are cost guards and not
+  claims about tables.** `group` re-clusters a candidate run's whole column set for every row
+  it adds, because a column merge is retroactive — a later row whose cell straddles two
+  established columns collapses them, which can put an *earlier* row's pair of cells in one
+  column, and that is what ends a run. So the work is quadratic, and `maxRules` does not bound
+  it: one page-tall vertical splits every band on the page, so a stream of many short lines
+  yields as many two-cell rows as it has lines. Measured on a synthetic page, 4000 rows take
+  0.6s, 8000 take 3.2s and 16000 take 12.3s.
+
+  It is quadratic in the run's *cells* rather than its rows, which is why there are two caps
+  and why capping rows alone — which is what shipped first — was measured to be insufficient.
+  With the row cap in place and 512 rows held fixed, 100 columns take 1.3s, 200 take 4.8s and
+  400 take 14.0s, with `agrees` at 75% of profile samples and `columnOf` alone at 20%. Either
+  factor drives the cost on its own: 16384 two-cell rows and 512 four-hundred-cell rows are
+  the same hostile page written two ways, which is why both are capped and each has its own
+  test. Both are sized against measured ceilings taken over every PDF on disk — the longest
+  run of multi-cell bands is **42 rows** (page 888 of ISO 32000-2, next largest 23 and 12) and
+  the largest table any document produces is **300 cells**, the widest row 15 — so each cap is
+  more than ten times what a real document reaches, and together they take a 204800-span
+  hostile page from 14.0s to 0.27s, linear in span count thereafter. Reaching either ends the
+  run rather than truncating it, so the rows past the cap start a new table and every span is
+  still emitted.
+
+  **One defect in this pass was invisible to every conservation assertion.** `rebuild` flushed
+  a block's non-table spans in the order `bandsOf` found them, which is by descending y — this
+  pass sorts by y to find bands at all, and reading order is `extract`'s to decide. A block
+  whose reading order disagrees with its y order, a footnote emitted after the body but drawn
+  above it, therefore had its prose silently permuted while the character count, the span
+  count and the table itself all stayed correct. Non-table spans now carry their positions in
+  the source block and are sorted before being emitted. Nothing on disk reaches it: over the
+  743 pages that draw rules, 0 blocks have their bands out of y order, so the case had to be
+  constructed, and the test that does so is the only thing anywhere that can catch it.
+
+  `reference/table.pdf` now matches `table.gold.md` byte-for-byte and is enforced. That file
+  is byte-identical to `tagged-table.gold.md`, which is what the pair was built to prove:
+  the same table, one declared and one drawn, reaching the same output.
+- **The untagged layout path, and the one gap left in it.** `TestReferenceExactMatch` in
   `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
   measured worklist rather than a remembered one. Every item in this sub-list is the layout
-  path lacking a role the structure tree would otherwise declare. `clauses` matches exactly
-  and is enforced, but that is not the same as the tagged path being gapless — it has no
+  path lacking a role the structure tree would otherwise declare, and every one of them is
+  now closed and enforced except `text-styles`, which is recorded below as *unreachable*
+  rather than pending: the document contains no geometric evidence of its paragraph
+  boundaries, and the only candidate signal fires on 57% of all line pairs on disk. That
+  makes it the single fixture `TestReferenceExactMatch` still logs rather than asserts.
+  `clauses` matching exactly is not the same as the tagged path being gapless — it has no
   list fixture, and the item after this one is a tagged-path defect that measurement found:
   - *Heading rank* — **closed.** `layout.Headings` levels an untagged file's headings from its
     own section numbering, gated on typographic distinction from the body cluster; `headings`
@@ -772,13 +861,17 @@ OKF-ified spec.
       the 41947 currently-joined line pairs, 6911 join lines carrying different MCIDs, and
       only 8 of those are the bullet case — the other 77 bullet joins have one line spanning
       several MCIDs, so an equality test does not even classify them.
-  - *Table grid.* `table` emits nine cells as one run of words, and it is now the only place
-    that does: the tagged path emits real grids for all 788 tagged tables on disk. Row and
-    column membership on *this* file is the untagged-table research problem named above —
-    the fixture draws no `Table` element, so there is nothing to read and the strokes that
-    would say where the cells are go unconsumed. `reference/tagged-table.pdf` is the same
-    table declared and matches exactly, so the target is known reachable and the gap belongs
-    to this path alone; the fixture exists so the day it is solved is measurable.
+  - *Table grid* — **closed.** `table` emitted nine cells as one run of words until
+    `extract` collected the page's strokes and `layout.Tables` read the grid from them; it
+    now matches its gold file byte-for-byte and is enforced. Everything the pipe table says
+    about that file was read from sixteen rules — four horizontal, twelve vertical — since
+    the fixture declares no `Table` element and no `TH`. The measurements are above, under
+    the untagged-table bullet, and the one worth repeating here is why the fixture pair
+    exists at all: its gold file is byte-identical to `tagged-table.gold.md`, so the drawn
+    path and the declared path are asserted to reach the same output rather than each being
+    checked against itself. Nothing else on disk can catch them diverging, because the whole
+    11-document corpus is tagged and a corpus count would stay green while this path emitted
+    a transposed grid.
 - **~~The tagged path emits its list markers literally~~ — fixed, and the fix found a second
   defect.** *Closed. Kept because the two figures either side of it are the measurement, and
   because the second defect is the argument for the fixture that now guards both.*

@@ -7,6 +7,33 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-08-09
 
+- **An untagged table is read from the strokes the page draws.** `extract` collects the page's
+  axis-aligned segments into `doc.Page.Rules` and `layout.Tables` infers the grid from them, so
+  `testdata/reference/table.pdf` now emits a GFM pipe table and matches `table.gold.md`
+  byte-for-byte — which is byte-identical to `tagged-table.gold.md`, the pair those two fixtures
+  were built to prove. Everything the table says about that file comes from sixteen rules; it
+  declares no `Table` element and no `TH`. Over the 6 untagged documents on disk this finds 9
+  tables, 26 rows and 88 cells with no prose misread as a grid.
+- `extract/rules.go`: a path accumulator over `m`/`l`/`c`/`h`/`re` and the paint operators.
+  Filled rectangles count and are not an edge case — `table.pdf`'s sixteen rules are *all*
+  fills, because a hairline is drawn as a thin filled rectangle rather than a stroked line to
+  avoid interacting with the device resolution, so an `m`/`l`-only reader finds no grid there
+  at all. `W n` contributes nothing, since a clip is not ink and treating one as a rule would
+  put a table edge around every clipped image on disk.
+- `splitAtRules` divides a fragment at each inferred space a vertical rule runs through. This
+  is in `extract` and not in `layout` because a block's spans carry one box each, so a row
+  whose cells have merged into one span cannot be taken apart downstream without re-measuring
+  glyphs.
+- `layout/tables.go`: rows from vertical box overlap, columns from cell x-overlap, both with no
+  tolerance anywhere — the numbers compared are glyph extents the extractor measured rather
+  than quantities this package computed. A band's extent is narrowed to the intersection of its
+  members and never widened to their union, so a tall span cannot drag the row below it into
+  the same band.
+- 21 tests in `extract/rules_test.go` and 19 in `layout/tables_test.go`, each pinning one
+  mutation of the two files. Two mutations that survived the first pass are recorded in the
+  Fixed section below, because what they found was a defect in the code rather than a hole in
+  the tests.
+
 - **`testdata/reference/tagged-table.pdf`, the yardstick for the tagged table path**, matching
   its gold file byte-for-byte and enforced by `TestReferenceExactMatch`. The corpus cannot be
   one: its 788 tables are asserted by a section total and a block floor, and a count cannot
@@ -37,6 +64,59 @@ All notable changes to this project are documented here, following
   An inner table follows the outer one, the only order GFM can express.
 
 ### Fixed — 2026-08-09
+
+- **A table's first cell no longer fuses into the last cell of the row above.** `appendLine`
+  merges a fragment into the previous span when the style and MCID match, and a table's rows
+  match on both, so `table.pdf`'s nine cells arrived as seven spans with "Header C Cell A1" run
+  together — a plausible-looking sentence that has silently lost the grid. Every piece of a
+  split is now marked apart, including the first.
+- **A gap-width filter on the cut candidates was dropping real cell boundaries and is gone.**
+  A `WideSpaceFrac` of 2.50 was tried first; `table.pdf`'s header row sets wider cells than its
+  body, so its column gaps are 2.400 space widths against the body's 4.128, and the filter
+  admitted the body rows while discarding the header. Every inferred space is now a candidate
+  and the rule is the only evidence consulted — the gap distribution over all 48757 inferred
+  spaces on disk is continuous from 0.25 to 1303 space widths with no empty band, so no
+  threshold on that quantity is available at any value.
+- **Columns are keyed by cell overlap rather than by which rule split the row**, which was the
+  first design and was wrong on two files. `autotagPDFInput.pdf` draws its header row's column
+  rule at x=158.88 and its body rows' at 158.94, so an exact key read one table as two, and
+  `dotted-gridlines.pdf` draws 2048 verticals of a dotted grid where which one is found first
+  depends on the width of the text either side of it.
+- **`layout.Tables` was quadratic in a table's row count with nothing bounding it**, found by
+  the code review of this change and measured before being fixed. `group` re-clusters a
+  candidate run's whole column set for every row it adds, because a column merge is
+  retroactive; `maxRules` caps rules at 4096 and does not help, since one page-tall vertical
+  splits every band on the page and a stream of many short lines then yields as many two-cell
+  rows as it has lines. On a synthetic page of agreeing rows: 4000 rows 0.6s, 8000 rows 3.2s,
+  16000 rows 12.3s — unbounded work from one page of an untrusted file. The work is quadratic
+  in the run's **cells**, not its rows, so both factors are capped: `maxRunRows = 512` and
+  `maxRunCells = 4096`. Capping rows alone was measured to be insufficient — with the row cap
+  in place and 512 rows held fixed, 100 columns took 1.3s, 200 took 4.8s and 400 took 14.0s,
+  with `agrees` at 75% of profile samples and `columnOf` alone at 20%. Both caps are sized
+  against measured ceilings taken over every PDF on disk: the longest run of multi-cell bands
+  is **42 rows** (page 888 of ISO 32000-2; next largest 23 and 12), and the largest table any
+  document produces is **300 cells**, with the widest single row at 15. Together they take a
+  204800-span hostile page from 14.0s to 0.27s and an 819200-span one to 3.3s, linear in span
+  count thereafter. Reaching either cap ends the run so the rows past it start a new table —
+  every span is still emitted, because truncating would lose text.
+- **Prose around a table came back in geometric order rather than the order it was emitted
+  in.** `rebuild` flushed a block's non-table spans in the order `bandsOf` found them, which is
+  by descending y, so a block whose reading order disagreed with its y order — a footnote
+  emitted after the body but drawn above it — had its text silently permuted. Every
+  conservation assertion held and the table itself was correct, which is why nothing caught it.
+  Non-table spans are now collected as indices into the source block and sorted before being
+  emitted. Unreachable from the corpus: over the 743 pages that draw rules, 0 blocks have their
+  bands out of y order, so the new test is the only thing anywhere that can catch it.
+- **A zero-length-rule filter in `extract.verticals` was unreachable and has been removed**,
+  found by mutation testing rather than by review: `paintPath` classifies a segment as vertical
+  only when the y delta is not exactly zero, so no content stream can produce one. It was a
+  claim about `paintPath` stated in the wrong file. The namesake filter in `layout` stays and is
+  now tested, because that package's input is a caller-assembled `doc.Document`.
+- `splitAtRules` declines rotated text, and that decision is now pinned by a test rather than
+  only by a comment. A gap is measured along the baseline and a rule's position across the
+  page; for horizontal text those are the same axis, which is the only reason the two can be
+  compared, and for rotated text the comparison still yields a boolean from coordinates in
+  different frames.
 
 - **A paragraph inside a table cell no longer detaches the cell's text.** Of 17482 `TD`/`TH`
   elements on disk, **0 hold marked content of their own** — all 17370 non-empty ones wrap

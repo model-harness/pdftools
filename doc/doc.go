@@ -105,7 +105,52 @@ type Page struct {
 	// text as inferred, which matters for a knowledge bundle a model will later
 	// read as fact.
 	Rasterized bool
+
+	// Rules are the page's axis-aligned straight strokes and fills, in the order
+	// drawn. They are the only evidence an untagged ruled table leaves behind, which
+	// is why they are carried at all: measured over every inferred space on disk, the
+	// gap that separates two cells and the gap that separates two words occupy one
+	// continuous distribution from 0.25 to 1300 space widths with no empty band
+	// anywhere, so no threshold on the gap alone can tell a column boundary from wide
+	// word spacing. A rule between two glyphs can, and it is the producer's own
+	// statement rather than a statistic about it.
+	//
+	// On the page rather than on a block because a rule belongs to no block. It is
+	// drawn outside any marked content, frequently before the text it encloses, and
+	// one rule bounds cells on both sides of it. Nothing downstream of layout reads
+	// these, and no accounting test counts them: they carry no characters, so they
+	// cannot affect the conservation invariant that every other field here is subject
+	// to.
+	//
+	// Empty for a page that draws none, which is most pages — 580 of ISO 32000-2's
+	// 1,023 draw at least one, and 8 of the 9 reference fixtures draw none at all.
+	Rules []Rule
 }
+
+// Rule is one axis-aligned straight stroke or fill edge, in page coordinates.
+//
+// Kept as a segment rather than a full line because extent is what distinguishes a
+// table's edge from a page decoration: a horizontal rule spanning the text measure is a
+// header underline, and one spanning a single column is a cell edge. A consumer needs
+// both endpoints to tell them apart.
+//
+// Curves are deliberately absent. A Bézier says nothing about where a table's edge
+// runs, and the corpus draws 421 diagonal segments, all of them inside artwork.
+type Rule struct {
+	// Vertical reports the axis. A rule is one or the other by construction — a
+	// segment that is neither is discarded rather than snapped to the nearer axis.
+	Vertical bool
+
+	// Pos is the coordinate on the axis the rule is perpendicular to: x for a
+	// vertical rule, y for a horizontal one.
+	Pos float64
+
+	// From and To bound the rule along its own axis, From <= To.
+	From, To float64
+}
+
+// Length returns the rule's extent along its own axis.
+func (r Rule) Length() float64 { return r.To - r.From }
 
 // Text returns the page's text with one newline between blocks.
 //

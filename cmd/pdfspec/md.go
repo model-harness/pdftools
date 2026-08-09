@@ -130,13 +130,23 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 	return o, nil
 }
 
-// inferRoles promotes headings and list items in a document that declared none.
+// inferRoles promotes table cells, headings, and list items in a document that declared
+// none.
 //
 // Called on the untagged branch only: where a structure tree exists, sectionize has
 // already assigned every role from what the producer declared, and guessing over a
 // declaration would replace evidence with a heuristic.
 //
-// Headings first, on evidence and not on necessity. Both passes consider only
+// Tables first, and this order is load-bearing rather than a precedence claim. It runs on
+// the page's own strokes, which the other two never consult, and it is the only pass that
+// changes the block list rather than relabelling blocks in place — a table's row arrives
+// as one paragraph and leaves as one block per cell. Running it second would hand
+// Headings a table's header row as a short paragraph in a distinct style, which is what
+// its size ranking promotes, and Lists a numeric first column, which is what its marker
+// test reads. Running it first leaves both nothing to misread: they consider only
+// RoleParagraph blocks, and a cell is RoleTableCell.
+//
+// Headings then Lists, on evidence and not on necessity. Both passes consider only
 // RoleParagraph blocks, so whichever runs second cannot reclassify what the first
 // promoted, and Headings has the stronger claim on the overlap — a section number the
 // document states outright, against a marker glyph.
@@ -154,6 +164,7 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 // unaffected either way: doctags assigns RoleHeading and RoleListItem itself, and both
 // passes consider only paragraphs.
 func inferRoles(d *doc.Document) {
+	layout.Tables(d, layout.DefaultOptions)
 	layout.Headings(d, layout.DefaultOptions)
 	layout.Lists(d, layout.DefaultOptions)
 }
