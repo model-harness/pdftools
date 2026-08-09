@@ -7,6 +7,63 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-08-09
 
+- **`pdfspec okf` converts an untagged PDF.** It used to refuse one outright, because a bundle
+  is one document per clause and the clause hierarchy came from a structure tree. `sectionize.Untagged`
+  removes that dependency: the hierarchy was never a subtree extraction — ADR 0002 measured ISO
+  32000-2 at 7 `Sect` elements against 981 headings, one `Part` holding 13,442 flat children —
+  it is a level stack over a linear sequence of headings, and a sequence is exactly what
+  `layout.Headings` already produced. So `Untagged` reads `(level, title, content)` out of
+  `doc.RoleHeading` blocks and their `Level` and drives the *identical* `builder.open` and
+  `builder.place` the tagged path drives over `H1`..`H6`. Measured over the corpus: 4 of the
+  untagged documents on disk yield a bundle — `mupdf_explored.pdf` 296 clauses to 3 levels,
+  `LightOnOCR-2601.14251v1.pdf` 21, `2201.00069.pdf` 2, `testdata/reference/headings.pdf` 4 —
+  and those 4 are the only exit-code changes across all 50 PDFs. Closes the second consequence
+  ADR 0008 recorded and Phase 5 of the roadmap.
+- `sectionize.Untagged` **reads declared roles and infers nothing.** No geometry and no
+  typography, because those belong to `layout`, which has the measurements behind them and the
+  negative results that bound them. That is what lets one function serve two producers:
+  `layout.Headings` promotes a numbered heading in an untagged file, and package `doctags`
+  assigns roles from a recognition model's output. It is the same precedence the tagged path
+  keeps — a declaration outranks a guess, wherever the declaration came from.
+- `builder.open` and `builder.place`, extracted from `builder.heading` and `builder.emitItem`.
+  These are the two operations in the builder that never touched a `tag.Elem`: the stack push
+  reads a `(level, title, pages)` triple and the placement reads a `doc.Block` and a page
+  range. Extracting them is what made a second producer possible without a second hierarchy
+  implementation. `builder.stats` is shared for the same reason — a per-path tally would be a
+  per-path definition of "section", and these numbers are the acceptance measurement for both.
+- `Untagged` has **no `Unplaced`, and that is exactness rather than a gap.** `Tagged` joins page
+  text to structure elements on (page, MCID) and must report what the join missed, because on a
+  tagged file unclaimed text is content silently lost. There is no join here: every non-empty
+  block is either a title or placed content. The page range is likewise a single number, since
+  `extract` nests blocks inside `doc.Page` and no block spans a page break — `Tagged` needs a
+  range because a paragraph joined from marked content on two pages is one block there.
+- A guard on the untagged branch: a file inference finds no heading in is reported rather than
+  written as a bundle of one preamble document, which would look like a successful conversion of
+  a specification into a knowledge base and be the opposite. The error names `pdfspec md`, which
+  is the conversion that still works. **Checked on the untagged branch only** — 5 tagged files on
+  disk reach `Bundle` with an empty outline (invoices and single-table fixtures) and have always
+  written the preamble-only bundle that produces; their tree is a declaration that this path has
+  no better answer, and broadening the guard would newly reject them.
+- `detach` copies a placed block's `Spans` and `MCIDs`, so an `Untagged` outline shares no
+  storage with the document it was built from. Review found the asymmetry: the tagged path gets
+  this for free and therefore never states it — `emitItem` builds each block's spans from the
+  elements' own and `unplaced` copies each survivor by value — while `Untagged` takes the
+  extractor's blocks whole, which is what carries their roles and boxes across, and a struct
+  copy shares the array behind a slice. It matters because both functions return the same
+  `*doc.Outline` and a caller cannot tell which produced one: `doc.Block.StripMarker` edits
+  `Span.Text` in place, so a caller running `layout.Lists` *after* sectionizing would rewrite
+  text inside an outline it was holding. `okf` runs inference first and nothing hit this, which
+  is why it is now a property of the type rather than of one call site's ordering. Bundle output
+  is byte-identical across all 4 untagged documents.
+- 13 tests in `sectionize/untagged_test.go` and 2 in `cmd/pdfspec/okf_test.go`, each pinning one
+  mutation. The CLI pair exists because 2 of the 3 mutations against `okf.go` — dropping
+  `inferRoles`, dropping the guard — initially survived: nothing tested that branch at all.
+- `md` output is **byte-identical across all 50 PDFs**, and the 18 bundles the tagged path
+  already produced are unchanged modulo their generation timestamp. `markdown.Write` already
+  rendered `doc.RoleHeading` with its level, so an untagged file's headings were always levelled
+  in `md`; the debt was OKF's alone, and routing `md` through the outline was measured, found to
+  change 4 documents' bytes for no correctness gain, and dropped.
+
 - **An untagged table is read from the strokes the page draws.** `extract` collects the page's
   axis-aligned segments into `doc.Page.Rules` and `layout.Tables` infers the grid from them, so
   `testdata/reference/table.pdf` now emits a GFM pipe table and matches `table.gold.md`

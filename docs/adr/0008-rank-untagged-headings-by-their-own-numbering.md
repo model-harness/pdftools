@@ -110,6 +110,16 @@ Turning a levelled sequence into one means running sectionize's level stack over
 the next step on this path. `pdfspec okf` continues to refuse untagged input, with an
 error that now says which half landed.
 
+> **Closed, 2026-08-09.** `sectionize.Untagged` is that step. It reads `(level, title,
+> content)` out of `doc.RoleHeading` blocks and drives the identical `builder.open` and
+> `builder.place` the tagged path drives over `H1`..`H6`, so a levelled sequence needs no
+> tree of its own — the stack *is* the tree, exactly as ADR 0002 measured it (7 `Sect`
+> elements against 981 headings). `pdfspec okf` accepts untagged input; 4 of the untagged
+> documents on disk yield a bundle, `mupdf_explored.pdf` at 296 clauses three levels deep.
+> The refusal survives only where inference finds no heading at all, which is this ADR's
+> *first* consequence — unnumbered headings — reached honestly rather than hidden behind a
+> missing tree.
+
 **Block segmentation was the blocking gap underneath this, and it is why two of the six
 reported zero candidates.** `extract.continues` tested only vertical step, so a heading
 whose next line fell at ordinary leading fused into the paragraph after it, and

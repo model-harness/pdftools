@@ -244,6 +244,81 @@ func TestOKFVerb(t *testing.T) {
 	}
 }
 
+// TestOKFVerbOnAnUntaggedFile is the acceptance test for the untagged path, which this verb
+// used to refuse outright: an untagged file with numbered headings has a hierarchy, and the
+// bundle is built by running sectionize's level stack over layout's inferred roles rather
+// than over a structure tree.
+//
+// headings.pdf rather than a corpus document, deliberately: it is committed, so this does not
+// skip on a clean clone, and its four headings are exactly the shape the level stack has to
+// get right — two roots with a two-deep chain under the first.
+func TestOKFVerbOnAnUntaggedFile(t *testing.T) {
+	in := filepath.Join("..", "..", "testdata", "reference", "headings.pdf")
+	if _, err := os.Stat(in); err != nil {
+		t.Skipf("%s not built: %v", in, err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	if err := runOKF([]string{"-o", dir, in}); err != nil {
+		t.Fatalf("runOKF on an untagged file: %v", err)
+	}
+
+	// One document per clause, with the nesting the numbering declares: 1.1 sits in 1's
+	// directory and 1.1.1 in 1.1's. A flat bundle would mean the level stack ran and
+	// returned four roots.
+	for _, want := range []string{
+		"1-first-section/1-first-section.md",
+		"1-first-section/1-1-a-subsection/1-1-a-subsection.md",
+		"1-first-section/1-1-a-subsection/1-1-1-a-sub-subsection.md",
+		"2-second-section.md",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(want))); err != nil {
+			t.Errorf("missing %s: %v", want, err)
+		}
+	}
+
+	// And the clause holds its own body rather than its children's, which is what makes a
+	// concept document a concept rather than a chapter.
+	b, err := os.ReadFile(filepath.Join(dir, "1-first-section", "1-first-section.md")) // #nosec G304 -- the test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := string(b)
+	if !strings.Contains(md, "Body of the first section.") {
+		t.Errorf("clause 1 lost its body:\n%s", md)
+	}
+	if strings.Contains(md, "Body of the subsection.") {
+		t.Errorf("clause 1 swallowed its subsection's body:\n%s", md)
+	}
+}
+
+// TestOKFVerbRefusesAFileWithNoClauses pins the guard that replaced the untagged refusal. A
+// bundle is one document per clause, so a file inference finds no heading in has nothing to
+// build one from, and writing a bundle of a single preamble document would look like a
+// successful conversion of a specification into a knowledge base and be the opposite.
+//
+// paragraphs.pdf is untagged and deliberately uniform — nothing in it differs in size or
+// weight from anything else — so inference correctly promotes nothing.
+func TestOKFVerbRefusesAFileWithNoClauses(t *testing.T) {
+	in := filepath.Join("..", "..", "testdata", "reference", "paragraphs.pdf")
+	if _, err := os.Stat(in); err != nil {
+		t.Skipf("%s not built: %v", in, err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	err := runOKF([]string{"-o", dir, in})
+	if err == nil {
+		t.Fatal("okf succeeded on a file with no clauses, writing a bundle that names none")
+	}
+	// The message has to say what to do instead, since the file is not broken and the user
+	// has a conversion they can still run.
+	if !strings.Contains(err.Error(), "pdfspec md") {
+		t.Errorf("error does not name the alternative: %v", err)
+	}
+	// And nothing was written: a directory of one document is the outcome this refuses.
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+		t.Errorf("wrote %d entries before refusing", len(entries))
+	}
+}
+
 // bundleLinks pulls the destinations out of "](...)" occurrences, skipping the ones that are
 // not bundle paths.
 func bundleLinks(md string) []string {

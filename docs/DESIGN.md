@@ -574,10 +574,15 @@ records the rest, including the two things about DocTags that are not guessable 
 output — the 500-unit normalized `<loc_>` grid, and the top-down Y that the parser must flip.
 
 **Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
-sections without paying for inference. Heading *rank* has landed (ADR 0008); what remains
-before an untagged file yields sections is block segmentation in `extract` — a heading
-still fuses into the paragraph below it when the leading is ordinary — and running
-sectionize's level stack over `layout`'s levels to get a tree rather than a flat sequence.
+sections without paying for inference. **Landed.** Heading *rank* came first (ADR 0008);
+block segmentation in `extract` followed, so a heading no longer fuses into the paragraph
+below it at ordinary leading (ADR 0009); and `sectionize.Untagged` now runs the same level
+stack over `layout`'s levelled blocks that the tagged path runs over `H1`..`H6`, so an
+untagged file yields a tree and not a flat sequence. `pdfspec okf` accepts untagged input
+as a result — 4 of the untagged documents on disk produce a bundle, `mupdf_explored.pdf` at
+296 clauses three levels deep. What bounds it now is `layout`'s own limit and not the
+absence of a tree: a heading is promoted where the document *numbers* it, so a file whose
+headings are all unnumbered still yields no clauses and the verb says to run `md` instead.
 
 **Phase 6 — native replacement.** Rasterizer first, then JBIG2. Driven by the interfaces
 already in place.
@@ -779,8 +784,17 @@ OKF-ified spec.
     own section numbering, gated on typographic distinction from the body cluster; `headings`
     matches exactly and is enforced. ADR 0008 records why numbering rather than size-ladder
     position decides the level, and the two limits that remain: an *unnumbered* heading stays a
-    paragraph, because nothing separates "Preface" from a body-size bold table row, and an OKF
-    bundle still needs a tree rather than a levelled sequence.
+    paragraph, because nothing separates "Preface" from a body-size bold table row. The second
+    limit ADR 0008 recorded — that an OKF bundle needs a tree rather than a levelled sequence —
+    is **closed**: `sectionize.Untagged` drives the same `builder.open`/`builder.place` the
+    tagged path drives, reading `(level, title, content)` out of `doc.RoleHeading` blocks
+    instead of out of `H1`..`H6` elements, so a levelled sequence *is* a tree. `pdfspec okf`
+    accepts untagged input; 4 documents on disk yield one (`mupdf_explored.pdf` 296 clauses to
+    3 levels, `LightOnOCR-2601.14251v1.pdf` 21, `2201.00069.pdf` 2, `reference/headings.pdf`
+    4) and 25 yield none, which the verb reports rather than writing a bundle of one document
+    claiming to be a knowledge base. The 18 bundles the tagged path already produced are
+    unchanged, and `md` output is byte-identical across all 50 PDFs — the markdown sink already
+    rendered a levelled heading, so the debt was OKF's alone.
   - *Paragraph breaks* — **closed**, in two halves, and the second one corrected the first's
     account of it. The heading half is ADR 0009: `extract.continues` breaks a block where two
     consecutive lines' dominant type sizes differ by more than `Tolerance.SizeFrac`, which is

@@ -8,6 +8,7 @@ import (
 
 	"github.com/model-harness/pdftools/extract"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/sectionize"
 	"github.com/model-harness/pdftools/sink/okf"
 )
 
@@ -54,16 +55,32 @@ func runOKF(args []string) error {
 		return err
 	}
 	if o == nil {
-		// A bundle is one file per clause, and an untagged file has no clauses this
-		// pipeline can name. Reported rather than silently producing a bundle of one
-		// document, which would look like a successful conversion of a specification
-		// into a knowledge base and be the opposite.
-		//
-		// layout.Headings lifts half of this already — `md` levels an untagged file's
-		// headings — but a bundle needs a tree, and turning a levelled sequence into one
-		// means running sectionize's level stack over layout's output rather than over a
-		// structure tree. That is the next step on this path and it is not taken yet.
-		return fmt.Errorf("%s has no structure tree: an OKF bundle needs clauses, so convert it with `pdfspec md` until the untagged outline lands", in)
+		// No structure tree, so the clauses come from inference instead: inferRoles marks
+		// the headings md already renders, and sectionize.Untagged runs the same level
+		// stack over them that the tagged path runs over H1..H6 elements. 4 of the
+		// untagged documents on disk yield a real outline this way — mupdf_explored.pdf
+		// 296 clauses to 3 levels, LightOnOCR 21, and the two reference fixtures.
+		inferRoles(d)
+		o, _ = sectionize.Untagged(d, sectionize.DefaultOptions)
+		if len(o.Sections) == 0 {
+			// A bundle is one file per clause, and inference found no heading to name one
+			// with. Reported rather than silently producing a bundle of one document, which
+			// would look like a successful conversion of a specification into a knowledge
+			// base and be the opposite.
+			//
+			// Checked on this branch only. A tagged file whose tree declares no heading
+			// reaches Bundle with an empty outline too — 5 on disk do, all of them invoices
+			// and single-table fixtures — and it has always written the preamble-only bundle
+			// that produces. Extending this guard to cover them would be a second change
+			// wearing the same justification, and their tree is a declaration that this
+			// path has no better answer to offer.
+			//
+			// The limit that remains is layout's, recorded in its package comment and
+			// DESIGN.md §10: a heading is promoted where the document numbers it, so an
+			// unnumbered "Foreword" stays a paragraph and a file whose headings are all
+			// unnumbered lands here.
+			return fmt.Errorf("%s yielded no clauses: an OKF bundle is one document per clause, and the file has neither a structure tree nor a numbered heading, so convert it with `pdfspec md`", in)
+		}
 	}
 
 	// The run time comes from here rather than from the sink, so that the sink renders

@@ -113,28 +113,7 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 	out.Preamble = b.preamble
 	out.Unplaced = b.index.unplaced(d)
 
-	var st Stats
-	st.Blocks = b.blocks
-	for _, p := range out.Unplaced {
-		st.UnplacedBlocks += len(p.Blocks)
-		for _, blk := range p.Blocks {
-			st.UnplacedChars += len(blk.Text())
-		}
-	}
-	out.Walk(func(s *doc.Section) bool {
-		st.Sections++
-		if s.Title != "" {
-			st.Titled++
-		}
-		if s.Number != "" {
-			st.Numbered++
-		}
-		if s.Level > st.MaxLevel {
-			st.MaxLevel = s.Level
-		}
-		return true
-	})
-	return out, st
+	return out, b.stats(out)
 }
 
 // builder accumulates sections as the tree is descended.
@@ -213,7 +192,24 @@ func (b *builder) heading(e *tag.Elem) {
 	var pg span
 	b.gather(e, &spans, &nested, &pg, false)
 
-	title := b.title(e, spans)
+	b.open(b.title(e, spans), level, pg)
+
+	// A block-level element nested inside a heading — a Figure in a chapter title, a
+	// Link element the producer wrapped in a block role. Visited now that the section
+	// is open, so its content lands inside the clause it belongs to.
+	for _, n := range nested {
+		b.visit(n)
+	}
+}
+
+// open starts a section at level, closing every open section it outranks.
+//
+// This is the hierarchy computation in full, and it is separate from heading because it
+// is the half that does not know where its input came from: a (level, title, pages)
+// triple is all it reads. The package comment says a structure tree and font-size
+// clustering both produce those, and Untagged is the second producer — a levelled
+// sequence of blocks drives the same stack that a tree's H1..H6 elements do.
+func (b *builder) open(title string, level int, pg span) {
 	sec := &doc.Section{
 		Title:  title,
 		Level:  level,
@@ -238,13 +234,6 @@ func (b *builder) heading(e *tag.Elem) {
 	// The heading's own pages anchor the section straight away, so a clause whose body
 	// could not be anchored still reports where its heading was.
 	sec.FirstPage, sec.LastPage = pg.lo, pg.hi
-
-	// A block-level element nested inside a heading — a Figure in a chapter title, a
-	// Link element the producer wrapped in a block role. Visited now that the section
-	// is open, so its content lands inside the clause it belongs to.
-	for _, n := range nested {
-		b.visit(n)
-	}
 }
 
 // title resolves a heading's text.
@@ -513,6 +502,16 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	if role == doc.RoleListItem {
 		markItem(&blk, marker)
 	}
+	b.place(blk, pg)
+}
+
+// place attributes a finished block to the innermost open section, or to the preamble
+// when no heading has been seen yet, and widens that section's page range to cover it.
+//
+// Separate from emitItem for the same reason open is separate from heading: this half
+// reads a doc.Block and a page range and nothing about where they came from, so Untagged
+// places extract's own blocks through it rather than rebuilding them span by span.
+func (b *builder) place(blk doc.Block, pg span) {
 	if blk.IsEmpty() {
 		return
 	}
