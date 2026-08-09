@@ -65,6 +65,33 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-09
 
+- **A table cell ignored its own `/ActualText`.** `content` prefers `Alt` over a block's spans,
+  because `/ActualText` and `/Alt` are the producer's statement of what the content says where
+  the glyphs do not spell it — a ligature drawn as artwork, an image of a word. `sectionize`
+  sets it on a `RoleTableCell` like any other block, but `cellText` read only the spans, so a
+  TD with `/ActualText` emitted the glyphs the producer went out of its way to correct while
+  the same text in a paragraph emitted the correction. Now honoured, with `atStart` false
+  rather than true: a cell is inline context, so a leading `-` or `#` in one is a dash or a
+  hash and not a list marker or a heading. Unreachable from the corpus — 218 blocks on disk
+  carry `Alt` and none of them is a cell — so the two new tests are the only thing that can
+  catch it.
+- **A pipe inside a monospace table cell broke the row it sat in.** `escapeInto` escapes the
+  pipe along with every other Markdown delimiter, but a monospace span routes through
+  `writeCode`, which escapes nothing by design — a code span is literal. GFM splits a row
+  into cells *before* it parses inline content, though, so a raw pipe in a code span still
+  ends the cell: a cell holding `a|b` emitted `` | `a|b` | `second` | ``, four pipes for a
+  two-column row, which reads as three cells against a two-column delimiter and **drops
+  `second` outright**. Now escaped in `writeCode` under a `cell` flag threaded from
+  `cellText`, one backslash per pipe unconditionally, because the row split consumes exactly
+  one and the span is literal after that. The escape has to live at this layer rather than in
+  a pass over the rendered cell: by then an escape and a backslash the document itself draws
+  are the same byte, so a parity check on the rendered text turned a literal `` `a\|b` ``
+  into `` `a|b` `` and lost the backslash. Verified against pandoc 3.9 `-f gfm` on all four
+  cases — plain and monospace, escaped and literal-backslash — each rendering exactly the
+  document's text in two cells. Unreachable from the corpus, so the four pipe tests are the only
+  thing that can catch it: 13 table rows on disk hold a code span and none of them holds a
+  pipe, while the 25 escaped pipes elsewhere are all outside code. Markdown output is
+  byte-identical across all 50 PDFs on disk, and both table fixtures still match their golds.
 - **A table's first cell no longer fuses into the last cell of the row above.** `appendLine`
   merges a fragment into the previous span when the style and MCID match, and a table's rows
   match on both, so `table.pdf`'s nine cells arrived as seven spans with "Header C Cell A1" run

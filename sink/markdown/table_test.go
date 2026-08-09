@@ -18,6 +18,14 @@ func cell(table, row, col int, header bool, text string) doc.Block {
 	}
 }
 
+// monoCell is a cell whose text is monospaced, which routes it through writeCode rather
+// than escapeInto — the path the pipe escape in cellText exists for.
+func monoCell(table, row, col int, text string) doc.Block {
+	b := cell(table, row, col, true, text)
+	b.Spans = []doc.Span{span(text, mono)}
+	return b
+}
+
 func renderBlocks(t *testing.T, blocks ...doc.Block) string {
 	t.Helper()
 	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: blocks}}}
@@ -190,6 +198,92 @@ func TestPipeInCellIsEscaped(t *testing.T) {
 	// pipe here would make the header two columns wide and the delimiter row disagree.
 	if n := strings.Count(strings.SplitN(got, "\n", 2)[0], "|"); n != 3 {
 		t.Errorf("escaped pipe still split the row: %q", got)
+	}
+}
+
+// The pipe escapeInto never reaches is one inside a code span, and GFM splits a row into
+// cells before it parses inline content — so a raw pipe there ends the cell even though a
+// code span is otherwise literal. Before this was fixed the cell below emitted
+// "| `a|b` | `second` |": four pipes for a two-column row, which reads as three cells
+// against a two-column delimiter and drops "second" outright.
+//
+// Unreachable from the corpus, which is why this test is the only thing that can catch it:
+// 13 table rows on disk hold a code span and none of them holds a pipe.
+func TestPipeInMonospaceCellIsEscaped(t *testing.T) {
+	got := renderBlocks(t,
+		monoCell(1, 0, 0, "a|b"),
+		monoCell(1, 0, 1, "second"),
+	)
+	want := "| `a\\|b` | `second` |\n| --- | --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A backslash the document itself draws before a pipe in a code span must survive as a
+// backslash, which is what one escape per pipe gets right and a parity check on the
+// rendered cell got wrong: by then an escape and a literal backslash are the same byte.
+// Verified against pandoc 3.9 -f gfm — "`a\\|b`" in a cell renders "<code>a\|b</code>",
+// so emitting one added backslash here is what puts the document's own backslash on screen.
+func TestLiteralBackslashInMonospaceCellSurvives(t *testing.T) {
+	got := renderBlocks(t,
+		monoCell(1, 0, 0, `a\|b`),
+		monoCell(1, 0, 1, "second"),
+	)
+	want := "| `a\\\\|b` | `second` |\n| --- | --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// The plain-text path needs nothing extra: escapeInto escapes both the backslash and the
+// pipe, and "\\\|" is what renders "a\|b". Asserted so the code-span escape is never
+// generalized to a pass over the whole cell, which would escape these a second time.
+func TestPipeInCellIsNotDoubleEscaped(t *testing.T) {
+	got := renderBlocks(t, cell(1, 0, 0, true, "a|b"))
+	want := "| a\\|b |\n| --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// Monospace outside a table keeps a pipe verbatim, since only the table-row split reads a
+// pipe before inline parsing. This is the negative half of the cell flag: without it the
+// escape would put a visible backslash into every code span in the corpus that holds a
+// pipe, and a PDF specification draws plenty of them.
+func TestPipeInMonospaceParagraphIsNotEscaped(t *testing.T) {
+	b := para(span("a|b", mono))
+	got := renderBlocks(t, b)
+	if got != "`a|b`\n" {
+		t.Errorf("got %q, want %q", got, "`a|b`\n")
+	}
+}
+
+// Alt is the producer's statement of what a cell says where the glyphs do not spell it, and
+// it wins over the spans here exactly as it does in a paragraph. This walker was the one that
+// ignored it. Its pipe is escaped too, since Alt is a plain string and reaches the row
+// through escapeInto rather than through any code span.
+func TestCellPrefersAltOverSpans(t *testing.T) {
+	c := cell(1, 0, 0, true, "glyphs")
+	c.Alt = "a|b"
+	got := renderBlocks(t, c)
+	want := "| a\\|b |\n| --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A cell is inline context, so the line-start characters are not live in it: a cell opening
+// with "-" is a dash, not a list marker. content passes atStart true because a block can
+// begin a line; a cell never can, and escaping there would put a backslash in front of every
+// cell that starts with a dash — the corpus is full of them.
+func TestAltCellDoesNotEscapeLineStartCharacters(t *testing.T) {
+	c := cell(1, 0, 0, true, "glyphs")
+	c.Alt = "-5 to +5"
+	got := renderBlocks(t, c)
+	want := "| -5 to +5 |\n| --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
 	}
 }
 

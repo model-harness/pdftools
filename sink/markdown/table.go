@@ -151,12 +151,31 @@ func (w *writer) delimiter(width int) {
 // line break inside one of them.
 //
 // Emphasis survives, since inline markup is legal inside a cell and a bold column
-// heading is what these documents draw. The pipe is escaped by escapeInto along with
-// every other Markdown delimiter, which is what keeps a cell containing "a|b" from
-// becoming two cells.
+// heading is what these documents draw. escapeInto escapes the pipe along with every
+// other Markdown delimiter, which is what keeps a cell containing "a|b" from becoming
+// two cells, and it needs nothing extra here.
+//
+// The cell flag is passed through for the one path escapeInto does not reach, a code
+// span, which writeCode emits verbatim — see the pipe rule there.
+//
+// Alt takes precedence over the spans, matching content: /ActualText and /Alt are the
+// producer's statement of what the content says when the glyphs do not spell it, so
+// preferring the glyphs emits the thing the producer went out of its way to correct.
+// sectionize sets it on a table cell like any other block, and this is the one walker
+// that did not honour it — a TD with /ActualText emitted its glyphs here while the same
+// text in a paragraph emitted the correction. Nothing on disk holds one: 218 blocks in the
+// corpus have Alt and none of them is a cell, so the test is the only thing that can catch
+// this. atStart is false, unlike in content, because a cell is inline context — a leading
+// "-" or "#" inside one is not a list marker or a heading, and escaping it would put a
+// backslash in front of every cell that opens with a dash.
 func cellText(b doc.Block, opt Options) string {
 	_ = opt
-	return strings.TrimSpace(oneLine(inline(b.Spans, false)))
+	if b.Alt != "" {
+		var sb strings.Builder
+		escapeInto(&sb, oneLine(b.Alt), false)
+		return strings.TrimSpace(sb.String())
+	}
+	return strings.TrimSpace(oneLine(inline(b.Spans, false, true)))
 }
 
 // table is a grid assembled from a table's cells.

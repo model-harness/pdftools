@@ -460,7 +460,7 @@ func (w *writer) content(b doc.Block, plain bool) {
 		w.str(sb.String())
 		return
 	}
-	w.str(inline(b.Spans, plain))
+	w.str(inline(b.Spans, plain, false))
 }
 
 // uniformEmphasis reports whether every visible span in a block carries the same

@@ -15,8 +15,10 @@ import (
 // consecutive asterisks are a delimiter run CommonMark resolves differently than
 // either pair alone.
 //
-// plain suppresses emphasis for contexts already inside markers.
-func inline(spans []doc.Span, plain bool) string {
+// plain suppresses emphasis for contexts already inside markers. cell reports that the
+// output is a table cell, which is the one context where a code span's pipe is not
+// literal — see writeCode.
+func inline(spans []doc.Span, plain, cell bool) string {
 	var sb strings.Builder
 	for i := 0; i < len(spans); {
 		if strings.TrimSpace(spans[i].Text) == "" {
@@ -32,7 +34,7 @@ func inline(spans []doc.Span, plain bool) string {
 		for j < len(spans) && style(spans[j], plain) == st {
 			j++
 		}
-		writeRun(&sb, spans[i:j], st, sb.Len() == 0)
+		writeRun(&sb, spans[i:j], st, sb.Len() == 0, cell)
 		i = j
 	}
 	return sb.String()
@@ -99,7 +101,7 @@ func (m mark) delim() string {
 // atStart reports that this run opens the block, which is what decides whether
 // line-start-sensitive characters need escaping. It is threaded through rather than
 // recomputed because only the caller knows whether anything preceded it.
-func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart bool) {
+func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart, cell bool) {
 	var text strings.Builder
 	for i := range spans {
 		text.WriteString(spans[i].Text)
@@ -107,7 +109,7 @@ func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart bool) {
 	s := text.String()
 
 	if m == markCode {
-		writeCode(sb, s)
+		writeCode(sb, s, cell)
 		return
 	}
 
@@ -144,10 +146,34 @@ func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart bool) {
 // without the padding "“ `x` “" would parse its delimiter run as four backticks.
 //
 // Nothing inside is escaped — a code span is literal by definition, and escaping it
-// would emit the backslashes.
-func writeCode(sb *strings.Builder, s string) {
+// would emit the backslashes. The pipe in a table cell is the sole exception, which is
+// what cell selects.
+//
+// GFM splits a table row into cells by scanning for pipes *before* it parses any inline
+// content, so a raw pipe inside a code span still ends the cell: a two-column row whose
+// first cell is a monospaced "a|b" emits "| `a|b` | `second` |", which the split reads as
+// three cells against a two-column delimiter row and drops "second" entirely. That is
+// text loss, not a cosmetic defect, and it is why a verbatim context escapes this one
+// byte.
+//
+// One backslash per pipe, unconditionally, because the split consumes exactly one and
+// then the span is literal. Verified against pandoc 3.9 with -f gfm, a monospaced cell in
+// a two-column row: "`a\|b`" renders <code>a|b</code>, "`a\\|b`" renders <code>a\|b</code>,
+// "`a\\\|b`" renders <code>a\\|b</code>. So the backslash this adds is eaten by the split
+// and never seen, and a literal backslash the document itself draws before a pipe survives
+// as itself — which is the case a parity check on the rendered cell got wrong, since by
+// then an escape and a literal backslash are the same byte. Escaping at this layer is what
+// makes them distinguishable: everything reaching here is document text.
+//
+// GFM's own spec prescribes it, example 200 being "| b `\|` az |" rendering
+// "<td>b <code>|</code> az</td>". Nothing on disk trips it — 13 table rows hold a code
+// span and none of those holds a pipe — so the tests are the only thing that can catch it.
+func writeCode(sb *strings.Builder, s string, cell bool) {
 	// The one substitution a verbatim context still makes — see sanitize.
 	s = sanitize(s)
+	if cell {
+		s = strings.ReplaceAll(s, "|", `\|`)
+	}
 	lead := s[:len(s)-len(strings.TrimLeft(s, " \t"))]
 	trail := s[len(strings.TrimRight(s, " \t")):]
 	body := s[len(lead) : len(s)-len(trail)]
