@@ -65,6 +65,70 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-09
 
+- **A wrap space was doubled wherever the producer wrote its word boundaries as anything but
+  an ASCII space.** `appendLine` infers a space at a line break unless one is already there,
+  and that test read bytes: `' '`, `'\n'`, `'\t'`. Well-Tagged-PDF-WTPDF-1.0.pdf sets *every*
+  inter-word gap as U+2002 EN SPACE, so the guard saw none of them and added a second space on
+  top — 231 of them, "the understanding  of" and "e.g.,  WCAG" among them — plus 5 more in the
+  other direction, where the arriving line began with U+2002 and the leading `strings.HasPrefix`
+  missed it. Not only a wrong answer about the page: two trailing spaces in Markdown are a hard
+  line break, so the doubling changed how those lines rendered. Both halves of the guard now
+  decode the rune and test `unicode.IsSpace`. The space this code *writes* stays an ASCII one,
+  since that is its own inference rather than a glyph the page drew. 224 characters left that
+  document's Markdown, no line changed in anything but whitespace, no line grew, and the other
+  49 PDFs are byte-identical.
+
+  Found while sizing the block-boundary lost-space item in `docs/DESIGN.md`, which is now
+  closed as *unreachable* by the same census: across all 50 PDFs there are 398 shared-MCID
+  block boundaries, and of the 80 downward-unspaced candidates 79 are ISO 32000-2 mathematics
+  where a space would be a new defect — including `𝐷min2𝑛`, which that item named as its
+  symptom and which is a subscript. The 1 remaining case was this defect, in the opposite
+  direction.
+- **An OKF description was cut mid-word in any document whose word boundaries are not ASCII
+  spaces.** `firstSentence` looked for a `.` followed by `' '` and then, failing that,
+  truncated at the last `' '` — both byte searches. In Well-Tagged-PDF-WTPDF-1.0.pdf, which
+  sets every gap as U+2002, the first search found no sentence end anywhere in the document, so
+  every description fell through to truncation; the second found no boundary either and cut
+  wherever the 300-byte bound landed. 4 descriptions on disk, including "font specifications
+  referenced by thes…" with the boundary two characters away. Both are now rune searches
+  (`strings.LastIndexFunc`, `unicode.IsSpace`), and those two read `referenced by…` and
+  `specified in ISO…`.
+- `sectionize.truncate` had the same rule and is fixed with it, though nothing on disk reaches
+  it: no title in the corpus is 200 bytes long. Recorded rather than left, because the two
+  functions are the same decision written twice and a fix to one of them is a trap in the other.
+- **A PDF text string was never PDFDocEncoded, only reinterpreted as UTF-8.** `decodeBytes`
+  handled the UTF-16BE case and then did `string(b)`, which is correct for PDFDocEncoding's
+  ASCII subset and wrong everywhere else — and the doc comment said so, asserting that "text
+  strings in practice do not use" 0x80-0x9F. The corpus disagrees 102 times. Annex D.2 puts
+  Latin-1 above 0xA0, so `0xE9` is `eacute` and became a lone invalid byte instead of `é`
+  ("Cubic B\xe9zier curves"); it reassigns 0x80-0xA0 to punctuation, so `0x84` is an em dash
+  and read as a raw byte ("Table 15 \x84 Entries"); and `0x80` is a bullet, which is what 92
+  `/ActualText` entries in Well-Tagged-PDF-WTPDF-1.0.pdf use to say what their list marker
+  means. 137 strings across the 50 PDFs on disk decoded wrongly, 4 of them to invalid UTF-8;
+  after the fix, 0 and 0.
+- The table it needed already existed. `font/encoding`'s `PDFDocEncoding` entry carried the
+  comment "Text-string decoding lives in objects.DecodeTextString" while `DecodeTextString`
+  never used it — two halves written to meet and never connected. `objects` now imports it,
+  which introduces no cycle since `font/encoding` depends only on the standard library.
+  Undefined positions fall back to the code point of their own byte, which is what preserves
+  tab, newline and the corpus's 192 carriage returns: those have no glyph name, so a bare
+  table lookup would delete them.
+- This changes no output today. Markdown is byte-identical across all 50 documents, and OKF is
+  too once the generation timestamp is excluded — the corrected strings live in `Meta` and in
+  `Block.Alt`, and no `Alt` on disk holds an affected byte. It also settles the truncation
+  defect below at its root rather than at one consumer: `DecodeTextString` can no longer return
+  invalid UTF-8 for any input, which the new 256-byte property test pins.
+- **The same truncation could emit invalid UTF-8**, which is the defect underneath the mid-word
+  cut and outlives the fix for it. The bound is on bytes, so where no word boundary is close
+  enough to move the cut it stays wherever 297 bytes landed, which for multi-byte text is
+  inside a rune: 400 bytes of `é` with no space in it returned a description ending in a bare
+  `\xc3`, and a YAML value is where that goes. `firstSentence` now backs the cut off to a rune
+  boundary the way `sectionize.truncate` already did. The backoff stops on decoded width and
+  not on `RuneError` alone, so a U+FFFD the document itself holds is kept — it is a character
+  the page draws, not an artifact of the cut, and the two are indistinguishable from the rune
+  alone. Found by a review of the fix above and confirmed against the corpus, where it is
+  unreachable: all 222 files of the WTPDF bundle are valid UTF-8 with no U+FFFD in them, so
+  the two new assertions are the only thing that can catch it.
 - **A table cell ignored its own `/ActualText`.** `content` prefers `Alt` over a block's spans,
   because `/ActualText` and `/Alt` are the producer's statement of what the content says where
   the glyphs do not spell it — a ligature drawn as artwork, an image of a word. `sectionize`

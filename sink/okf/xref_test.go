@@ -3,6 +3,7 @@ package okf
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/doc"
 )
@@ -122,6 +123,71 @@ func TestFirstSentence(t *testing.T) {
 	if strings.HasSuffix(strings.TrimSuffix(got, "…"), " ") {
 		t.Errorf("truncation left a trailing space: %q", got)
 	}
+}
+
+// A document whose word boundaries are not ASCII spaces still gets its sentence found and,
+// failing that, its truncation cut between words.
+//
+// Well-Tagged-PDF-WTPDF-1.0.pdf sets every inter-word gap as U+2002 EN SPACE. Under the byte
+// tests this function found no sentence terminator anywhere in it — the check was for a '.'
+// followed by ' ' — so every description fell through to truncation, and the truncation's
+// own word-boundary search found no ' ' either and cut mid-word: "font specifications
+// referenced by thes…", with the boundary two characters away. 4 descriptions on disk.
+func TestFirstSentenceWithUnicodeSpaces(t *testing.T) {
+	const en = "\u2002" // EN SPACE, written as an escape because it is invisible otherwise
+	sentence := "A" + en + "filter" + en + "transforms" + en + "a" + en + "stream."
+	got := firstSentence(sentence + en + "It" + en + "shall" + en + "be" + en + "applied.")
+	if got != sentence {
+		t.Errorf("firstSentence = %q, want %q: a full stop before U+2002 ends a sentence", got, sentence)
+	}
+
+	// No terminator, so this truncates — and must do so at one of the EN SPACEs rather than
+	// inside a word.
+	long := strings.Repeat("word"+en, 200)
+	cut := strings.TrimSuffix(firstSentence(long), ellipsis)
+	if len(cut) > maxDescription {
+		t.Errorf("truncated to %d bytes, over the %d bound", len(cut), maxDescription)
+	}
+	if !strings.HasSuffix(cut, "word") {
+		t.Errorf("truncation cut mid-word: %q ends %q, want a whole word", cut, tailOf(cut, 6))
+	}
+	// And it must not leave the boundary itself dangling on the end.
+	if endsWithSpace(cut) {
+		t.Errorf("truncation left a trailing space: %q", cut)
+	}
+}
+
+// TestFirstSentenceTruncatesOnARuneBoundary pins the other half of the truncation: the cut is
+// at a byte offset, so where no word boundary is close enough to move it the cut can land
+// inside a rune and emit invalid UTF-8 into a YAML frontmatter value.
+func TestFirstSentenceTruncatesOnARuneBoundary(t *testing.T) {
+	// No space anywhere, so the word-boundary search cannot rescue the cut, and every rune is
+	// two bytes wide so an odd-offset cut is guaranteed to split one.
+	got := firstSentence(strings.Repeat("é", 400))
+	if !utf8.ValidString(got) {
+		t.Errorf("truncation emitted invalid UTF-8: %q", got)
+	}
+	if len(got) > maxDescription {
+		t.Errorf("truncated to %d bytes, over the %d bound", len(got), maxDescription)
+	}
+
+	// A U+FFFD the document itself holds is a character, not a cut artifact, and must survive
+	// the backoff — which is why the backoff tests the decoded width and not just the rune.
+	// Placed so that its last byte is the cut's last byte: the cut is at
+	// maxDescription-len(ellipsis) bytes, and the ellipsis and U+FFFD are both three wide.
+	const fffd = "�"
+	lead := maxDescription - len(ellipsis) - len(fffd)
+	got = firstSentence(strings.Repeat("a", lead) + fffd + strings.Repeat("b", 200))
+	if !strings.HasSuffix(got, fffd+ellipsis) {
+		t.Errorf("backoff ate a real U+FFFD: %q ends %q", got, tailOf(got, 4))
+	}
+}
+
+func tailOf(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[len(r)-n:])
+	}
+	return s
 }
 
 func TestISODate(t *testing.T) {

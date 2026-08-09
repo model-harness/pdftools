@@ -25,6 +25,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/sink/markdown"
@@ -579,12 +581,16 @@ func firstSentence(s string) string {
 	for i := 0; i < len(s)-1; i++ {
 		switch s[i] {
 		case '.', '!', '?':
-			if s[i+1] != ' ' {
+			// The space after the terminator is matched by rune, for the same reason the
+			// word boundary below is: a document that sets its gaps as U+2002 has a full
+			// stop followed by U+2002, and a byte test finds no sentence end anywhere in
+			// it — which is how WTPDF descriptions reached the truncation path at all.
+			if !startsWithSpace(s[i+1:]) {
 				continue
 			}
 			// A single letter before the period is an initial or an enumerator ("A. "),
 			// not the end of a sentence.
-			if i >= 2 && s[i-2] == ' ' && isAlpha(s[i-1]) {
+			if i >= 2 && endsWithSpace(s[:i-1]) && isAlpha(s[i-1]) {
 				continue
 			}
 			if i+1 <= maxDescription {
@@ -598,13 +604,51 @@ func firstSentence(s string) string {
 	// The ellipsis counts against the bound, so what comes back is never longer than
 	// maxDescription — a bound the returned value can exceed is not one.
 	cut := s[:maxDescription-len(ellipsis)]
-	if i := strings.LastIndexByte(cut, ' '); i > maxDescription/2 {
+	// The word boundary is found by rune and not by byte, because a producer writes one with
+	// whatever space character its typography calls for. Well-Tagged-PDF-WTPDF-1.0.pdf sets
+	// every inter-word gap as U+2002 EN SPACE, so a search for ' ' found none and 4 of its
+	// descriptions were cut mid-word — "font specifications referenced by thes…", where the
+	// boundary was two characters away.
+	if i := strings.LastIndexFunc(cut, unicode.IsSpace); i > maxDescription/2 {
 		cut = cut[:i]
 	}
-	return strings.TrimRight(cut, " ,;:") + ellipsis
+	// A byte-offset cut can land inside a rune, and where no word boundary was close enough to
+	// replace it that partial rune is what gets returned — 300 bytes of multi-byte text with no
+	// space in it emitted invalid UTF-8 into a YAML value, which a strict parser rejects. The
+	// same backoff sectionize.truncate does, and for the same reason: stripping only
+	// continuation bytes is not enough, since a cut can land just after a lead byte too. The
+	// n > 1 test is what distinguishes a truncated rune from a U+FFFD the document itself
+	// holds, which must survive.
+	for len(cut) > 0 {
+		r, n := utf8.DecodeLastRuneInString(cut)
+		if r != utf8.RuneError || n > 1 {
+			break
+		}
+		cut = cut[:len(cut)-1]
+	}
+	return strings.TrimRightFunc(cut, isSpaceOrPunct) + ellipsis
 }
 
 const ellipsis = "…"
+
+// isSpaceOrPunct is the trailing set for a truncated description: whitespace, and the
+// punctuation that reads as dangling once the text after it is gone.
+func isSpaceOrPunct(r rune) bool {
+	return unicode.IsSpace(r) || r == ',' || r == ';' || r == ':'
+}
+
+// startsWithSpace and endsWithSpace test the rune rather than the byte, so a word boundary
+// the producer wrote as something other than an ASCII space still reads as one. The empty
+// string decodes to U+FFFD, which is not a space, so both return false with no guard.
+func startsWithSpace(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return unicode.IsSpace(r)
+}
+
+func endsWithSpace(s string) bool {
+	r, _ := utf8.DecodeLastRuneInString(s)
+	return unicode.IsSpace(r)
+}
 
 func isAlpha(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'

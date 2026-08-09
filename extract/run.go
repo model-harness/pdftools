@@ -3,7 +3,7 @@ package extract
 import (
 	"math"
 	"sort"
-	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/content"
@@ -1039,7 +1039,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 			// either way and no assertion on the joined string can tell them apart.
 			n := len(b.Spans) - 1
 			prev := b.Spans[n].Text
-			if !endsWithSpace(prev) && !strings.HasPrefix(txt, " ") && wrapNeedsSpace(prev, txt) {
+			if !endsWithSpace(prev) && !startsWithSpace(txt) && wrapNeedsSpace(prev, txt) {
 				b.Spans[n].Text += " "
 			}
 		}
@@ -1069,8 +1069,38 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 	}
 }
 
+// endsWithSpace and startsWithSpace report whether a word boundary is already written at
+// the join, in which case appendLine must not infer a second one.
+//
+// The test is on the *rune*, not the byte, because a producer writes a word boundary with
+// whatever space character its typography calls for. Well-Tagged-PDF-WTPDF-1.0.pdf sets
+// every inter-word gap as U+2002 EN SPACE, so an ASCII-only test saw none of them and
+// doubled 231 of them — "the understanding  of", "e.g.,  WCAG" — and 5 more in
+// the other direction, where the arriving line *began* with U+2002. In Markdown two
+// trailing spaces are a hard line break, so a doubled space at a wrap is not only a wrong
+// answer about the page but changes the rendering of the line.
+//
+// unicode.IsSpace covers the Unicode space separators along with the ASCII whitespace the
+// byte test already had. Only these two predicates widen: the space appendLine writes stays
+// an ASCII space, since it is this code's own inference and not a glyph the page drew.
+//
+// U+00A0 NO-BREAK SPACE counts, which is the one that looks arguable. It is a word boundary
+// the producer drew as a glyph — the "no-break" is a line-breaking instruction to a
+// *formatter*, and this code is reading a page that is already formatted. A second space
+// beside it would be as wrong as beside any other.
+//
+// The empty string needs no guard: it decodes to U+FFFD, which is not a space, so both
+// return false. Invalid UTF-8 decodes to U+FFFD as well and therefore still gets a space,
+// which is the answer the byte test gave and the one wrapNeedsSpace documents for the same
+// input — a decode failure should not also lose a word boundary.
 func endsWithSpace(s string) bool {
-	return s != "" && (s[len(s)-1] == ' ' || s[len(s)-1] == '\n' || s[len(s)-1] == '\t')
+	r, _ := utf8.DecodeLastRuneInString(s)
+	return unicode.IsSpace(r)
+}
+
+func startsWithSpace(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return unicode.IsSpace(r)
 }
 
 // wrapNeedsSpace reports whether joining two wrapped lines needs a space between them.

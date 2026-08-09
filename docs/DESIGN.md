@@ -987,26 +987,43 @@ OKF-ified spec.
   it contradicts them — 186 lines open with an `a)`-shaped token after the bullet — and those
   are item text rather than markers, which is what the 623 accounts for. A label the producer
   never declared is not a label this sink can move.
-- **A block boundary inside one marked-content element still loses the space that joined
-  its two lines.** The wrap space is inferred only *within* a block, so a boundary there
-  writes no space at all, and `sectionize.title` then rejoins spans sharing a `(page, MCID)`
-  across it with no separator. ADR 0009's marked-content guard closes the route the size
-  test would have opened; the vertical-step route remains and has always been there. It
-  shows on ISO 32000-2 as `𝐷min2𝑛` where the page sets a fraction.
+- **A block boundary inside one marked-content element loses no space, and this item is
+  closed as *unreachable* — the census that was meant to size it found no case to fix and a
+  different defect instead.** The premise was sound: the wrap space is inferred only
+  *within* a block, so a boundary writes none, and `sectionize` rejoins spans sharing a
+  `(page, MCID)` with no separator. In `extract.continues` the vertical-step test runs
+  *before* ADR 0009's marked-content guard, so a shared-MCID pair whose step exceeds
+  `ParaFrac × h` still splits, and that route is real.
 
-  Moving the wrap space to the previous span's *trailing* end was the fix tried for this
-  and it is not one — with no space written, there is nothing to place. It landed anyway
-  because the measurement found a different, larger defect: span *regrouping*. `sectionize`
-  joins spans in the order a structure element lists its content rather than in page order,
-  so a space on a span's leading edge travels away from the neighbour it was inferred for.
-  Over the 11 tagged documents that emitted "revision" as "re" + "-" + " vision" and 15
-  more the same way, and ran clause numbers into the sentence before them; trailing
-  placement fixed all 29 and broke none. What is left for this item is the block-boundary
-  case, which needs a space *inferred* at the boundary rather than moved — and inferring one
-  wherever two blocks share an MCID is wrong. Enumerated over the corpus, 52 of those 56
-  adjacencies are mathematics: sub- and superscripts, summation limits, and displayed
-  equations, where a space would be a new defect. Only 4 are genuinely a lost space. The
-  signal has to be the page geometry, not the shared identifier.
+  What the corpus says is that nothing travels it. Enumerated over all 50 PDFs there are
+  **398** such boundaries, not the 56 recorded before — 183 already spaced, and of the 215
+  not: 116 upward, 19 at the same baseline, 80 downward. The 19 all have `dx ≈ 0` and fall
+  mid-token (`[` + `5]`, `r` + `d`), where a space would be a new defect. Of the 80 downward
+  candidates **79 are ISO 32000-2 mathematics** — fractions, summation limits, matrix
+  brackets, subscripts. `𝐷min2𝑛`, named here as the symptom, is among them: it is `min` + `2`
+  at a step of 0.728 × height, a *subscript*, and the space this item wanted to insert would
+  have been wrong. Exactly **1** looked like an ordinary wrap, and it was not a lost space
+  either — its first span already ended in U+2002 EN SPACE.
+
+  That last case was the actual defect, in the opposite direction. `endsWithSpace` tested
+  bytes for ASCII space, `\n`, `\t`, so it could not see the space character
+  Well-Tagged-PDF-WTPDF-1.0.pdf uses for *every* inter-word gap, and inferred a second one on
+  top of it: 231 doubled spaces in that document — "the understanding  of", "e.g.,  WCAG" —
+  plus 5 where the arriving line *began* with U+2002 and the leading `HasPrefix` missed it.
+  In Markdown two trailing spaces are a hard line break, so the doubling changed how those
+  lines rendered. Both halves of the guard now test the rune with `unicode.IsSpace`; the
+  space this code writes stays an ASCII one, since that is its own inference rather than a
+  glyph the page drew. 224 characters left that document's Markdown and the other 49 are
+  byte-identical.
+
+  Also recorded, because it is the reason the earlier count was wrong: the geometry signal
+  this item asked for cannot be built from a corpus of one. Trailing placement — the fix
+  tried first — was never a fix for the boundary case, since with no space written there is
+  nothing to place; it landed on its own merits, because `sectionize` joins spans in
+  structure order rather than page order, so a leading-edge space travels away from the
+  neighbour it was inferred for. That emitted "revision" as "re" + "-" + " vision" and 15
+  more the same way, and ran clause numbers into the sentence before them. Trailing
+  placement fixed all 29 and broke none.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

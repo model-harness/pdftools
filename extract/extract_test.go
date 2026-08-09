@@ -95,6 +95,7 @@ func courier() objects.Dict {
 func onePage(stream string) *memStore {
 	fontRef := objects.Ref{Num: 10}
 	monoRef := objects.Ref{Num: 11}
+	enRef := objects.Ref{Num: 12}
 	page := objects.Dict{
 		"Type":     objects.Name("Page"),
 		"MediaBox": objects.Array{objects.Int(0), objects.Int(0), objects.Int(612), objects.Int(792)},
@@ -102,6 +103,7 @@ func onePage(stream string) *memStore {
 			"Font": objects.Dict{
 				"F1": fontRef,
 				"F2": monoRef,
+				"F3": enRef,
 			},
 		},
 	}
@@ -109,6 +111,7 @@ func onePage(stream string) *memStore {
 		objs: map[objects.Ref]objects.Object{
 			fontRef: helvetica(),
 			monoRef: courier(),
+			enRef:   enSpaceFont(),
 		},
 		pages:   []objects.Dict{page},
 		content: [][]byte{[]byte(stream)},
@@ -277,6 +280,90 @@ func TestWrapSpaceNotDoubledWhereTheLineAlreadyEndsInOne(t *testing.T) {
 	}
 	if got, want := p.Blocks[0].Text(), "one two"; got != want {
 		t.Errorf("text = %q, want %q: the line's own trailing space is the word boundary", got, want)
+	}
+}
+
+// enSpaceFont is Helvetica with U+2002 EN SPACE at code 0x80, so a test can write the
+// space character a real producer uses for its inter-word gaps. Nothing in the standard
+// encodings reaches it: WinAnsi and Standard both have only U+0020, which is exactly why
+// the ASCII-only test below went unnoticed.
+func enSpaceFont() objects.Dict {
+	return objects.Dict{
+		"Type":     objects.Name("Font"),
+		"Subtype":  objects.Name("Type1"),
+		"BaseFont": objects.Name("Helvetica"),
+		"Encoding": objects.Dict{
+			"Type":         objects.Name("Encoding"),
+			"BaseEncoding": objects.Name("WinAnsiEncoding"),
+			"Differences":  objects.Array{objects.Int(0x80), objects.Name("uni2002")},
+		},
+	}
+}
+
+// A word boundary the producer wrote as U+2002 EN SPACE is a word boundary, and inferring
+// a second one at the wrap doubles it.
+//
+// Well-Tagged-PDF-WTPDF-1.0.pdf sets every inter-word gap this way, so the byte test saw
+// none of them: 231 doubled spaces, "the understanding  of" and "e.g.,  WCAG" among them.
+// That is not only wrong about the page — two trailing spaces in Markdown are a hard line
+// break, so the doubling changed how the line rendered. Fixing the test removed 224
+// characters from that document's Markdown and changed nothing else in the corpus.
+func TestWrapSpaceNotDoubledAfterAUnicodeSpace(t *testing.T) {
+	// \200 is the U+2002 in the encoding above, ending the first line the way the producer
+	// ends every line in that document.
+	stream := "BT /F3 12 Tf 10 700 Td (one\\200) Tj 0 -14 Td (two) Tj ET"
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "one two"; got != want {
+		t.Errorf("text = %q, want %q: the line's own EN SPACE is the word boundary", got, want)
+	}
+}
+
+// The same test on the other end of the join. 5 wraps in that document *begin* with the
+// EN SPACE rather than ending with one, and the leading half of the guard was an ASCII
+// HasPrefix, so those doubled too.
+func TestWrapSpaceNotDoubledBeforeAUnicodeSpace(t *testing.T) {
+	stream := "BT /F3 12 Tf 10 700 Td (one) Tj 0 -14 Td (\\200two) Tj ET"
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "one two"; got != want {
+		t.Errorf("text = %q, want %q: the arriving line's EN SPACE is the word boundary", got, want)
+	}
+}
+
+// The two space predicates have no emptiness guard, because a decode of "" yields U+FFFD and
+// U+FFFD is not a space. Pinned directly rather than through a stream: the guard those two
+// dropped is invisible in extracted text, and the same U+FFFD answer is what makes invalid
+// UTF-8 still get its word boundary — the decision wrapNeedsSpace documents for that input.
+func TestSpacePredicatesOnEmptyAndInvalidInput(t *testing.T) {
+	for _, c := range []struct {
+		s          string
+		ends, begs bool
+		why        string
+	}{
+		// Written as escapes rather than as the characters themselves: the difference
+		// between these rows is invisible in a monospaced editor, which is how the defect
+		// they pin survived in the first place.
+		{"", false, false, "empty decodes to U+FFFD, which is not a space"},
+		{"\x80", false, false, "invalid UTF-8 is not a space, so the wrap still gets one"},
+		{"a", false, false, "an ordinary letter"},
+		{"\u0020", true, true, "the ASCII space the byte test already saw"},
+		{"\u2002", true, true, "EN SPACE, the one the byte test missed"},
+		{"\u00a0", true, true, "NO-BREAK SPACE is a boundary the producer drew"},
+		{"\u200b", false, false, "ZERO WIDTH SPACE is not a space separator and marks no boundary"},
+		{"a\u2002", true, false, "the space is only at the end"},
+		{"\u2002a", false, true, "the space is only at the start"},
+	} {
+		if got := endsWithSpace(c.s); got != c.ends {
+			t.Errorf("endsWithSpace(%q) = %v, want %v: %s", c.s, got, c.ends, c.why)
+		}
+		if got := startsWithSpace(c.s); got != c.begs {
+			t.Errorf("startsWithSpace(%q) = %v, want %v: %s", c.s, got, c.begs, c.why)
+		}
 	}
 }
 

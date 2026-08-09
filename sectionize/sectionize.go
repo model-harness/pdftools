@@ -304,11 +304,16 @@ func (b *builder) truncate(s string) string {
 		cut = cut[:len(cut)-1]
 	}
 	// Then to the last word boundary, if one is close enough that the result still says
-	// something.
-	if i := strings.LastIndexByte(cut, ' '); i > limit/2 {
+	// something. Found by rune rather than by byte: a producer writes a word boundary with
+	// whatever space character its typography calls for, and a document setting every gap as
+	// U+2002 EN SPACE has no ' ' anywhere for a byte search to find — so the fallback would
+	// be a mid-word cut. Nothing on disk reaches this, since no title in the corpus is 200
+	// bytes long, but sink/okf's truncation has the same rule and 4 of its descriptions were
+	// cut that way.
+	if i := strings.LastIndexFunc(cut, unicode.IsSpace); i > limit/2 {
 		cut = cut[:i]
 	}
-	return strings.TrimRight(cut, " ")
+	return strings.TrimRightFunc(cut, unicode.IsSpace)
 }
 
 // block emits one content block for e, then descends into the block-level elements
