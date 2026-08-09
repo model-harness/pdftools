@@ -1,0 +1,31 @@
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_e9ae7e029de8ca 463
+sink/markdown/inline.go
+  s_5cd1b28ed520c1::t_e9ae7e029de8ca 18-21,37,104,112,149-171,174-176
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_59a415d9591b28 78-79
+  s_5cd1b28ed520c1::t_a2d7f320efce10 68-77
+  s_5cd1b28ed520c1::t_9725987ab81e9e 80-90,92-94
+  s_5cd1b28ed520c1::t_cc80728fb0248a 91
+sink/markdown/table_test.go
+  s_5cd1b28ed520c1::t_e9ae7e029de8ca 21-28,204-288
+  s_5cd1b28ed520c1::t_7d511dee8d4b5a 289
+sink/markdown/table.go
+  s_5cd1b28ed520c1::t_e9ae7e029de8ca 154-170,173-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e4c18890dd7784753267676ec40280feacbd8448",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
