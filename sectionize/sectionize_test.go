@@ -566,13 +566,77 @@ func TestTableCellsBecomeBlocks(t *testing.T) {
 	if len(blocks) != 4 {
 		t.Fatalf("blocks = %d, want 4 cells: %v", len(blocks), texts(blocks))
 	}
-	for i, want := range []doc.Role{doc.RoleTableCell, doc.RoleTableCell, doc.RoleTableCell, doc.RoleParagraph} {
-		if blocks[i].Role != want {
-			t.Errorf("block %d role = %s, want %s", i, blocks[i].Role, want)
+	// All four are cells, the last one included. Its text is wrapped in a P, which is
+	// what every cell on disk does — 0 of 17482 hold marked content directly — and this
+	// case asserted RoleParagraph until wrapsText made that P transparent. A detached
+	// paragraph there is the defect: the cell emits empty, IsEmpty drops it, and the
+	// text reappears outside the table it belongs to.
+	for i := range blocks {
+		if blocks[i].Role != doc.RoleTableCell {
+			t.Errorf("block %d role = %s, want %s", i, blocks[i].Role, doc.RoleTableCell)
 		}
 	}
 	if got := texts(blocks); !equal(got, []string{"Key", "Value", "/Filter", "name or array"}) {
 		t.Errorf("cells = %v", got)
+	}
+
+	// The positions THead and TBody must not disturb: a row group holds rows without
+	// renumbering them, so the header is row 0 and the body row 1, not row 0 of each
+	// group.
+	for i, want := range []doc.Cell{
+		{Table: 1, Row: 0, Col: 0, Header: true},
+		{Table: 1, Row: 0, Col: 1, Header: true},
+		{Table: 1, Row: 1, Col: 0},
+		{Table: 1, Row: 1, Col: 1},
+	} {
+		got := blocks[i].Cell
+		if got == nil {
+			t.Errorf("block %d has no cell position", i)
+			continue
+		}
+		if *got != want {
+			t.Errorf("block %d cell = %+v, want %+v", i, *got, want)
+		}
+	}
+}
+
+// A cell that is not one of its row's own kids has no column, and cellAt declines rather
+// than guessing. Nothing on disk needs this — all 17482 cells are direct children of
+// their TR — but the spec does not require it, and the alternative is worse than no
+// position: falling out of the ordinal scan without a match leaves Col at the row's cell
+// count, placing the cell past the end of its own row. Declining emits the text as a
+// paragraph, which loses the grid and nothing else.
+//
+// Two shapes, both nested one level deeper than a column can be counted at: a TD under a
+// TD, and a TD under a non-table container inside the TR.
+func TestCellNestedBelowItsRowHasNoPosition(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "outer"}, sp{1, 2, "inner"}, sp{1, 3, "wrapped"})
+	inner := kids(el(tag.RoleTD, 1, 1), el(tag.RoleTD, 1, 2))
+	wrapped := kids(el(tag.RoleDiv, 1), el(tag.RoleTD, 1, 3))
+	tbl := kids(el(tag.RoleTable, 1), kids(el(tag.RoleTR, 1), inner, wrapped))
+	tr := tree(el(tag.RoleH2, 1, 0), tbl)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	// The outer TD is a direct kid and keeps its position; the two below it do not. Its
+	// text includes the inner cell's, because a TD inside a TD has no block role of its
+	// own and gather takes it — the position is the claim under test, not the split.
+	blocks := out.Sections[0].Blocks
+	for i := range blocks {
+		if blocks[i].Role != doc.RoleTableCell {
+			continue
+		}
+		c := blocks[i].Cell
+		text := blocks[i].Text()
+		if strings.Contains(text, "outer") {
+			if c == nil {
+				t.Errorf("the direct cell %q lost its position", text)
+			}
+			continue
+		}
+		if c != nil {
+			t.Errorf("nested cell %q got position %+v, want none", text, *c)
+		}
 	}
 }
 

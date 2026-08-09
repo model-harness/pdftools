@@ -1,0 +1,276 @@
+package markdown
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/model-harness/pdftools/doc"
+)
+
+// cell is one positioned cell. The position is what makes a grid, so every test here
+// states it rather than relying on order — that is the distinction between this sink and
+// one that groups by adjacency, and a test built on order could not tell them apart.
+func cell(table, row, col int, header bool, text string) doc.Block {
+	return doc.Block{
+		Role:  doc.RoleTableCell,
+		Cell:  &doc.Cell{Table: table, Row: row, Col: col, Header: header},
+		Spans: []doc.Span{span(text)},
+	}
+}
+
+func renderBlocks(t *testing.T, blocks ...doc.Block) string {
+	t.Helper()
+	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: blocks}}}
+	return String(d, DefaultOptions)
+}
+
+func TestTable(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "Key"), cell(1, 0, 1, true, "Value"),
+		cell(1, 1, 0, false, "Type"), cell(1, 1, 1, false, "Page"),
+	)
+	want := "| Key | Value |\n| --- | --- |\n| Type | Page |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// The defect this whole file exists to prevent: nine cells emitted one at a time are
+// nine paragraphs, which is what every sink in this package did before grouping.
+func TestCellsDoNotBecomeParagraphs(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "A"), cell(1, 0, 1, true, "B"),
+		cell(1, 1, 0, false, "c"), cell(1, 1, 1, false, "d"),
+	)
+	if strings.Contains(got, "\n\nc") {
+		t.Errorf("a cell was emitted as its own block:\n%s", got)
+	}
+	if n := strings.Count(got, "\n"); n != 3 {
+		t.Errorf("got %d lines, want 3 (header, delimiter, one body row):\n%s", n, got)
+	}
+}
+
+// Two tables in sequence must not merge, which is the reason Cell.Table is a number
+// rather than the cells being grouped by adjacency alone.
+func TestAdjacentTablesStaySeparate(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "First"),
+		cell(2, 0, 0, true, "Second"),
+	)
+	want := "| First |\n| --- |\n\n| Second |\n| --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A nested table's cells arrive inside the outer table's run — 13 tables on disk do
+// this — and grouping by adjacency would cut the outer table in two at that point. The
+// inner table follows the outer one, which is the only order GFM can express.
+func TestNestedTableFollowsRatherThanSplits(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "Outer A"), cell(1, 0, 1, true, "Outer B"),
+		cell(2, 0, 0, true, "Inner"),
+		cell(1, 1, 0, false, "one"), cell(1, 1, 1, false, "two"),
+	)
+	want := "| Outer A | Outer B |\n| --- | --- |\n| one | two |\n" +
+		"\n| Inner |\n| --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// 46 of 788 tables on disk are ragged. A short GFM row renders with the missing cells
+// simply absent, which reads as a broken table, so the row is padded.
+func TestRaggedRowIsPadded(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "A"), cell(1, 0, 1, true, "B"), cell(1, 0, 2, true, "C"),
+		cell(1, 1, 0, false, "only"),
+	)
+	want := "| A | B | C |\n| --- | --- | --- |\n| only |  |  |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// The 11 tables on disk whose first row declares no header. Promoting a data row would
+// relabel data as a column name, so the header comes out empty instead — GFM requires
+// something in that position.
+func TestNoHeaderRowEmitsEmptyHeader(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, false, "a"), cell(1, 0, 1, false, "b"),
+		cell(1, 1, 0, false, "c"), cell(1, 1, 1, false, "d"),
+	)
+	want := "|  |  |\n| --- | --- |\n| a | b |\n| c | d |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// 598 tables mark a whole first column as TH to give each row a row-header. GFM cannot
+// mark that, so those cells are ordinary — but no row may be dropped or promoted for it.
+func TestHeaderBelowRowZeroIsAnOrdinaryCell(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "H"), cell(1, 0, 1, true, "V"),
+		cell(1, 1, 0, true, "Row name"), cell(1, 1, 1, false, "value"),
+	)
+	want := "| H | V |\n| --- | --- |\n| Row name | value |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// Under Write a table spanning a page break reaches this sink in two groups, one page at
+// a time, so the second group's rows start at a nonzero Row. Rows are indexed by their
+// sorted distinct values for exactly this reason: indexing by Row would pad the table
+// with empty rows up to the first number seen.
+func TestPageSplitTableDoesNotPadWithEmptyRows(t *testing.T) {
+	d := &doc.Document{Pages: []doc.Page{
+		{Number: 1, Blocks: []doc.Block{
+			cell(1, 0, 0, true, "A"), cell(1, 0, 1, true, "B"),
+		}},
+		{Number: 2, Blocks: []doc.Block{
+			cell(1, 7, 0, false, "c"), cell(1, 7, 1, false, "d"),
+		}},
+	}}
+	got := String(d, DefaultOptions)
+	want := "| A | B |\n| --- | --- |\n\n|  |  |\n| --- | --- |\n| c | d |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// Rows come out in row order regardless of the order their cells arrive in. Reading
+// order puts them in order and nothing on disk does otherwise, so this pins the sort
+// that the page-split case above needs but cannot detect the absence of: without it that
+// test still passes, because its two groups already arrive ascending.
+func TestRowsAreOrderedByRowNotByArrival(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 2, 0, false, "third"),
+		cell(1, 0, 0, true, "head"),
+		cell(1, 1, 0, false, "second"),
+	)
+	want := "| head |\n| --- |\n| second |\n| third |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A cell with no Cell at all — a TD outside any Table, which sectionize leaves nil — is
+// the untagged case and emits as a paragraph. A grid of one unplaced cell says less than
+// the text does.
+func TestUnpositionedCellEmitsAsParagraph(t *testing.T) {
+	got := renderBlocks(t,
+		doc.Block{Role: doc.RoleTableCell, Spans: []doc.Span{span("loose")}},
+	)
+	if got != "loose\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// Inline markup is legal inside a cell and a bold column heading is what these documents
+// draw, so emphasis survives.
+func TestCellKeepsEmphasis(t *testing.T) {
+	c := cell(1, 0, 0, true, "")
+	c.Spans = []doc.Span{span("Bold", bold)}
+	got := renderBlocks(t, c)
+	if got != "| **Bold** |\n| --- |\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A pipe inside a cell's text would otherwise become a cell boundary. escapeInto already
+// emits "\|", which is what GFM reads as a literal pipe inside a cell — asserted here
+// because the escaping is in another file and a change there breaks tables silently.
+func TestPipeInCellIsEscaped(t *testing.T) {
+	got := renderBlocks(t, cell(1, 0, 0, true, "a|b"))
+	if !strings.Contains(got, `a\|b`) {
+		t.Errorf("pipe not escaped: %q", got)
+	}
+	// Three pipes, not four: the row's own two delimiters plus the escaped one. A raw
+	// pipe here would make the header two columns wide and the delimiter row disagree.
+	if n := strings.Count(strings.SplitN(got, "\n", 2)[0], "|"); n != 3 {
+		t.Errorf("escaped pipe still split the row: %q", got)
+	}
+}
+
+// A cell cannot contain a newline in GFM — the pipe row is the row — so a multi-line cell
+// is joined onto one line rather than breaking the table.
+func TestMultiLineCellIsJoined(t *testing.T) {
+	got := renderBlocks(t, cell(1, 0, 0, true, "first\nsecond"))
+	if got != "| first second |\n| --- |\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// The blank-line accounting a table participates in like any other block: a paragraph on
+// either side is separated, and the table does not open the document with a gap.
+func TestTableSeparatedFromSurroundingBlocks(t *testing.T) {
+	got := renderBlocks(t,
+		para(span("Before.")),
+		cell(1, 0, 0, true, "H"),
+		para(span("After.")),
+	)
+	want := "Before.\n\n| H |\n| --- |\n\n| After. |\n"
+	if got == want {
+		t.Fatal("the paragraph after the table was swallowed into it")
+	}
+	want = "Before.\n\n| H |\n| --- |\n\nAfter.\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// An empty cell is skipped as a block everywhere else in this package, and skipping it
+// must not shift the cells after it: the position comes from Cell, not from the cell's
+// ordinal place in the list.
+func TestEmptyCellLeavesAHoleRatherThanShifting(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "A"), cell(1, 0, 1, true, "B"),
+		cell(1, 1, 0, false, ""), cell(1, 1, 1, false, "d"),
+	)
+	want := "| A | B |\n| --- | --- |\n|  | d |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// WriteBlocks is sink/okf's entry point and the fourth walker over a block list. It goes
+// through the same grouping, because an OKF bundle emitting cells as paragraphs while the
+// Markdown sink emits a table from the same extraction is the divergence this package's
+// single-policy exports exist to prevent.
+func TestWriteBlocksEmitsTables(t *testing.T) {
+	blocks := []doc.Block{
+		cell(1, 0, 0, true, "Key"), cell(1, 0, 1, true, "Value"),
+		cell(1, 1, 0, false, "Type"), cell(1, 1, 1, false, "Page"),
+	}
+	var sb strings.Builder
+	if err := WriteBlocks(&sb, blocks, DefaultOptions); err != nil {
+		t.Fatal(err)
+	}
+	want := "| Key | Value |\n| --- | --- |\n| Type | Page |\n"
+	if sb.String() != want {
+		t.Errorf("got\n%q\nwant\n%q", sb.String(), want)
+	}
+}
+
+// Routing WriteBlocks through the grouping moved its artifact and empty-block skipping
+// into blocks, so the skips are asserted here on a list that mixes all of it — an
+// artifact, an empty block, a table, and prose either side.
+func TestWriteBlocksMixedContent(t *testing.T) {
+	blocks := []doc.Block{
+		{Role: doc.RoleArtifact, Spans: []doc.Span{span("Page 412")}},
+		para(span("Before.")),
+		para(),
+		cell(1, 0, 0, true, "H"), cell(1, 0, 1, true, "V"),
+		cell(1, 1, 0, false, "a"), cell(1, 1, 1, false, "b"),
+		para(span("After.")),
+	}
+	var sb strings.Builder
+	if err := WriteBlocks(&sb, blocks, DefaultOptions); err != nil {
+		t.Fatal(err)
+	}
+	want := "Before.\n\n| H | V |\n| --- | --- |\n| a | b |\n\nAfter.\n"
+	if sb.String() != want {
+		t.Errorf("got\n%q\nwant\n%q", sb.String(), want)
+	}
+}

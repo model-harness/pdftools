@@ -151,6 +151,10 @@ type builder struct {
 	// section's parent is the deepest open section of lower level, and nothing has to
 	// look ahead.
 	stack []*doc.Section
+
+	// tables numbers each Table element the first time one of its cells is emitted.
+	// See tableNum.
+	tables map[*tag.Elem]int
 }
 
 // visit descends one element.
@@ -320,11 +324,30 @@ func (b *builder) block(e *tag.Elem, role doc.Role) {
 	if role == doc.RoleListItem {
 		marker = b.label(e)
 	}
-	b.gather(e, &spans, &nested, &pg, role == doc.RoleListItem)
+	b.gather(e, &spans, &nested, &pg, wrapsText(role))
 	b.emitItem(e, role, spans, pg, marker)
 	for _, n := range nested {
 		b.visit(n)
 	}
+}
+
+// wrapsText reports whether a block of this role holds its text in a wrapping
+// paragraph rather than directly, which makes that paragraph transparent.
+//
+// Both roles here were measured, not assumed. A list item's body is LI > LBody > Part
+// > P in LaTeX's tagging backend, which gather documents at length. A table cell is
+// the same shape and more absolute: of 17482 TD and TH elements on disk, **0** hold
+// marked content of their own and all 17370 non-empty ones wrap it in a P. So a cell
+// that is not transparent emits no spans, is dropped by IsEmpty, and its text detaches
+// as a free paragraph — which is why a tagged table read as scattered one-cell
+// paragraphs rather than as a table.
+//
+// A heading is deliberately absent. Its text is resolved by title against its own
+// spans, and a P inside one is a producer wrapping a title it also drew directly;
+// nothing on disk does it, and making it transparent would change what title reads
+// with no case to measure against.
+func wrapsText(role doc.Role) bool {
+	return role == doc.RoleListItem || role == doc.RoleTableCell
 }
 
 // label takes a list item's declared /Lbl out of the item and returns it.
@@ -378,18 +401,26 @@ func (b *builder) label(e *tag.Elem) string {
 // element that has both is a tagging defect, and the ones that matter here — a TD
 // wrapping a P, a Figure wrapping a Caption — have children only.
 //
-// item says the block being built is a list item, which makes a paragraph inside it
-// transparent. ISO 32000-2 Table 364 lets an LBody hold any block-level element, and
-// LaTeX's tagging backend uses that: it writes LI > LBody > Part > P, so the item's whole
-// body is a wrapped paragraph. Detaching it emits the item with no spans — dropped by
-// IsEmpty — and the body as a paragraph of its own, which loses the list entirely: six
-// items became six bare paragraphs, and the marker they had just been given went with the
+// wraps says the block being built holds its text in a wrapping paragraph — a list
+// item or a table cell, per wrapsText — which makes a paragraph inside it transparent.
+// ISO 32000-2 Table 364 lets an LBody hold any block-level element, and LaTeX's tagging
+// backend uses that: it writes LI > LBody > Part > P, so the item's whole body is a
+// wrapped paragraph. Detaching it emits the item with no spans — dropped by IsEmpty —
+// and the body as a paragraph of its own, which loses the list entirely: six items
+// became six bare paragraphs, and the marker they had just been given went with the
 // block that was thrown away.
 //
-// Only a paragraph, and only for an item. A Figure in an LBody is a picture and belongs in
-// its own block, which is the one such case on disk; a nested list detaches because its LI
-// has a block role of its own, so the recursion below reaches it through the transparent L
-// and stops there.
+// A cell is the same shape and is the more absolute case: 0 of 17482 TD and TH elements
+// on disk hold marked content directly and all 17370 non-empty ones wrap it in a P, so
+// without this every tagged table's cells detached into free paragraphs. 752 of those
+// cells hold more than one P, which gather joins into the one cell rather than the
+// several paragraphs a producer's line breaks would otherwise become.
+//
+// Only a paragraph. A Figure in an LBody is a picture and belongs in its own block,
+// which is the one such case on disk; a nested list detaches because its LI has a block
+// role of its own, so the recursion below reaches it through the transparent L and stops
+// there. The same holds inside a cell, where it is what keeps the 42 cells containing a
+// list and the 13 containing a nested table from being flattened into their cell's text.
 //
 // "A paragraph" is doc.RoleParagraph, which blockRole also gives a Formula — so a Formula
 // wrapped in an item's LBody is transparent too, which is wider than this rule was written
@@ -398,11 +429,11 @@ func (b *builder) label(e *tag.Elem) string {
 // because an item whose body is a formula is an item, and detaching it is the defect above
 // with a different element name.
 //
-// item does not survive a block boundary, which is what keeps this narrow: every element
+// wraps does not survive a block boundary, which is what keeps this narrow: every element
 // with a block role is detached here and re-entered through block, where the flag is set
-// from that element's own role. So a TD inside an item — or a nested LI, or a TOCI inside a
-// TOC inside a TOCI — gathers with item false, and a paragraph inside it detaches normally.
-func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span, item bool) {
+// from that element's own role. So a nested LI, or a TOCI inside a TOC inside a TOCI,
+// gathers with the flag set from its own role and not its parent's.
+func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span, wraps bool) {
 	*spans = append(*spans, b.index.take(e.Content)...)
 	pg.add(e.Page)
 	for _, r := range e.Content {
@@ -413,11 +444,11 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 			*nested = append(*nested, k)
 			continue
 		}
-		if r, ok := blockRole(k.Role); ok && !(item && r == doc.RoleParagraph) {
+		if r, ok := blockRole(k.Role); ok && !(wraps && r == doc.RoleParagraph) {
 			*nested = append(*nested, k)
 			continue
 		}
-		b.gather(k, spans, nested, pg, item)
+		b.gather(k, spans, nested, pg, wraps)
 	}
 }
 
@@ -459,6 +490,9 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	}
 	if role == doc.RoleListItem {
 		blk.Level = listDepth(e)
+	}
+	if role == doc.RoleTableCell {
+		blk.Cell = cellAt(e, b.tableNum(e))
 	}
 	blk.Spans = make([]doc.Span, 0, len(spans))
 	for _, s := range spans {
@@ -554,6 +588,125 @@ func listDepth(e *tag.Elem) int {
 		// A list item outside any list. Common in TOCs, where TOCI appears under TOC.
 		return 1
 	}
+	return n
+}
+
+// tableNum returns a stable number for the table a cell sits in, assigning the next
+// one the first time that table is seen.
+//
+// Numbered on demand rather than counted during the walk because Table is transparent:
+// visit never stops at one, so there is no point at which a table could be opened and
+// closed. Keyed on the element pointer, which is what makes an inner table's cells all
+// agree with each other and differ from the outer table's — the 13 nested tables on
+// disk. Cells arrive in reading order, so the numbers come out in document order.
+func (b *builder) tableNum(e *tag.Elem) int {
+	var tbl *tag.Elem
+	for p := e.Parent; p != nil; p = p.Parent {
+		if p.Role == tag.RoleTable {
+			tbl = p
+			break
+		}
+	}
+	if tbl == nil {
+		return 0
+	}
+	if n, ok := b.tables[tbl]; ok {
+		return n
+	}
+	if b.tables == nil {
+		b.tables = map[*tag.Elem]int{}
+	}
+	// The count after insertion, so the first table is 1 and 0 stays reserved for a
+	// cell with no enclosing table.
+	n := len(b.tables) + 1
+	b.tables[tbl] = n
+	return n
+}
+
+// cellAt locates a cell in its table, from the tree rather than from geometry.
+//
+// The row and column are the cell's ordinal position among the cells its TR declares,
+// and the row's position among the TRs its Table declares — counted here rather than
+// tracked as the tree is walked, because Table and TR are transparent and a cell block
+// is emitted without either of them on any stack. Counting from the element's own
+// ancestry keeps the position a property of the cell, which is what makes it correct
+// for the 13 nested tables: an inner cell's Table is the inner Table element.
+//
+// A THead, TBody or TFoot between the Table and its rows is skipped rather than
+// counted, since it groups rows without renumbering them — a header row is row 0 of its
+// table whether or not a THead wraps it. Absent that, every document that wraps its
+// rows would report a table with one row per group.
+//
+// nil when the cell has no enclosing Table, which is a producer declaring a TD outside
+// one. The cell still emits its text as a block; only its position is unknown, and
+// guessing one would put it in a grid with nothing else in it.
+func cellAt(e *tag.Elem, table int) *doc.Cell {
+	// The TR is the nearest enclosing row and the Table the nearest enclosing table.
+	// Nearest rather than outermost is what makes a nested table's cell belong to the
+	// inner table: walking to the top would give every cell the outer one.
+	var tr, tbl *tag.Elem
+	for p := e.Parent; p != nil; p = p.Parent {
+		if tr == nil && p.Role == tag.RoleTR {
+			tr = p
+			continue
+		}
+		if p.Role == tag.RoleTable {
+			tbl = p
+			break
+		}
+	}
+	if tr == nil || tbl == nil {
+		return nil
+	}
+	// The column is the cell's ordinal position among its row's cells, which requires the
+	// cell to be one of that row's own kids. All 17482 TD and TH elements on disk are
+	// direct children of their TR, but nothing in ISO 32000-2 §14.8.4.3.4 requires it —
+	// so a cell that is not found is declined rather than assumed. Falling out of the
+	// loop without a match would otherwise leave Col at the row's full cell count, which
+	// places the cell past the end of its own row; a nil Cell emits the text as a
+	// paragraph, which loses the grid and nothing else.
+	col, found := 0, false
+	for _, k := range tr.Kids {
+		if k == e {
+			found = true
+			break
+		}
+		if k.Role == tag.RoleTD || k.Role == tag.RoleTH {
+			col++
+		}
+	}
+	if !found {
+		return nil
+	}
+	return &doc.Cell{
+		Table:  table,
+		Row:    rowIndex(tbl, tr),
+		Col:    col,
+		Header: e.Role == tag.RoleTH,
+	}
+}
+
+// rowIndex returns tr's 0-based position among tbl's rows, descending through the
+// row-group elements that do not renumber them.
+func rowIndex(tbl, tr *tag.Elem) int {
+	n, found := 0, false
+	var walk func(x *tag.Elem)
+	walk = func(x *tag.Elem) {
+		for _, k := range x.Kids {
+			if found {
+				return
+			}
+			switch {
+			case k == tr:
+				found = true
+			case k.Role == tag.RoleTR:
+				n++
+			case k.Role == tag.RoleTHead || k.Role == tag.RoleTBody || k.Role == tag.RoleTFoot:
+				walk(k)
+			}
+		}
+	}
+	walk(tbl)
 	return n
 }
 

@@ -29,9 +29,7 @@ func WriteOutline(w io.Writer, o *doc.Outline, opt Options) error {
 	if opt.Frontmatter {
 		mw.frontmatter(o.Meta, 0, pageSpan(o))
 	}
-	for _, b := range o.Preamble {
-		mw.emit(b, opt)
-	}
+	mw.blocks(o.Preamble, opt)
 	o.Walk(func(s *doc.Section) bool {
 		mw.section(s, opt)
 		return true
@@ -62,20 +60,7 @@ func (w *writer) section(s *doc.Section, opt Options) {
 			Spans: []doc.Span{{Text: s.Title, MCID: -1}},
 		})
 	}
-	for _, b := range s.Blocks {
-		w.emit(b, opt)
-	}
-}
-
-// emit writes a block unless it would render as nothing.
-func (w *writer) emit(b doc.Block, opt Options) {
-	if b.Role == doc.RoleArtifact && !opt.Artifacts {
-		return
-	}
-	if b.IsEmpty() {
-		return
-	}
-	w.block(b)
+	w.blocks(s.Blocks, opt)
 }
 
 // unplaced writes the text no section claimed, each page behind an HTML comment naming
@@ -95,28 +80,34 @@ func (w *writer) emit(b doc.Block, opt Options) {
 func (w *writer) unplaced(pages []doc.Page, opt Options) {
 	for i := range pages {
 		p := pages[i]
-		var any bool
-		for j := range p.Blocks {
-			b := p.Blocks[j]
-			if b.Role == doc.RoleArtifact && !opt.Artifacts {
-				continue
-			}
-			if b.IsEmpty() {
-				continue
-			}
-			if !any {
-				w.gap(notList, 0)
-				w.str(fmt.Sprintf(
-					"<!-- pdfspec: text on page %d belongs to no clause in the structure tree -->",
-					p.Number))
-				w.nl()
-				w.blank = false
-				w.lastList, w.lastLevel = notList, 0
-				any = true
-			}
-			w.block(b)
+		if !w.anyVisible(p.Blocks, opt) {
+			continue
+		}
+		w.gap(notList, 0)
+		w.str(fmt.Sprintf(
+			"<!-- pdfspec: text on page %d belongs to no clause in the structure tree -->",
+			p.Number))
+		w.nl()
+		w.blank = false
+		w.lastList, w.lastLevel = notList, 0
+		w.blocks(p.Blocks, opt)
+	}
+}
+
+// anyVisible reports whether a page holds a block this sink would write, which is what
+// decides whether the comment above it is warranted. Checked before writing rather than
+// lazily on the first block, because the comment has to precede the text it explains
+// and a page of nothing but artifacts must not get one.
+func (w *writer) anyVisible(blocks []doc.Block, opt Options) bool {
+	for i := range blocks {
+		if blocks[i].Role == doc.RoleArtifact && !opt.Artifacts {
+			continue
+		}
+		if !blocks[i].IsEmpty() {
+			return true
 		}
 	}
+	return false
 }
 
 // pageSpan is the highest page any content reached, for the frontmatter's page count.

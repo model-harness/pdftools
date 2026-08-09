@@ -618,9 +618,56 @@ OKF-ified spec.
 
 ## 10. Open questions
 
-- **Table extraction.** Tagged PDFs declare `Table`/`TR`/`TD`, so the tagged path can emit
-  real Markdown tables. Untagged table detection is a research problem and is explicitly
-  out of scope for Phase 1–5; the VLM path covers it in the interim.
+- **~~Table extraction~~ — the tagged half is closed, and re-measuring the debt is what
+  moved it.** This bullet used to say the tagged path "can emit real Markdown tables",
+  which was a statement about the format rather than about this code: it was emitting
+  **none**. A census over the whole corpus found **788 tagged tables, 4650 `TR`, 11626 `TD`
+  and 5856 `TH`** — 745 of the tables in ISO 32000-2 alone — every one of them flattened
+  into scattered paragraphs. Untagged tables exist in exactly five files. So the work
+  described here as blocked on a research problem was 788 real tables blocked on nothing,
+  and the fixture that named the blocker is the only thing that needed it.
+
+  **The defect was the `LI → LBody → P` case one element name over.** Of 17482 `TD`/`TH`
+  elements on disk, **0 hold marked content of their own**: all 17370 non-empty ones wrap
+  their text in a `P`, and `gather` detached that `P` exactly as it once detached a list
+  item's body. The cell emitted no spans, `IsEmpty` dropped it, and the text reappeared as a
+  free paragraph. Fixed by generalizing the transparency already there — `wrapsText` covers
+  `RoleListItem` and `RoleTableCell` — which also joins the 752 multi-`P` cells into one
+  cell each. A cell holding a list (42) or a nested table (13) still detaches, because those
+  kids have block roles of their own.
+
+  **Position is a field on the cell block, not a nested table block**, and that is the
+  load-bearing decision. A `doc.Page` is a flat list in reading order and every stage after
+  extraction walks it — the space accounting, the two character-conservation tests, the OKF
+  sink, the unplaced report — so nesting would make a block's text reachable by two paths
+  and break the invariant those tests rest on. `doc.Cell` carries `Table`, `Row`, `Col`,
+  `Header`; the sink regroups. Grouping is keyed by table *number* rather than adjacency,
+  which is what makes the 13 nested tables work: their cells arrive inside the container's
+  run, so consecutive-cell grouping would cut the outer table in two, and the inner table
+  instead follows the outer one — the only order GFM can express.
+
+  **The corpus is unusually GFM-friendly and one shape still is not expressible.**
+  Rectangular in 742/788, all-`TH` first row in 773/788, no table without `TR`, column
+  counts clustering at 3 (628). But **598 tables carry a `TH` below row 0** — these
+  producers mark a whole first *column* as `TH` so each row has a row-header, a real
+  distinction with no Markdown syntax, emitted as ordinary cells. Spans are the other:
+  69 `ColSpan` and 43 `RowSpan` over 280 cells with an `/A`, about 1%, concentrated in
+  ISO/TS 32005; `tag.Elem` does not read `/A` at all and GFM has no merged-cell syntax, so
+  a ragged row is padded. The 11 tables whose first row declares no header get an *empty*
+  header row rather than a promoted data row, because promoting one relabels data as a
+  column name — GFM requires something in that position and inventing a claim is worse than
+  a blank cell.
+
+  Cost, fully accounted: ISO 32000-2's block count falls 29218 → 27517, which is the 1721
+  extra `P`s folded into their cells (the 20-block difference is extra paragraphs that were
+  empty and dropped by `IsEmpty` either way). Both conservation tests hold across the
+  change, which is what proves it is a merge and not a deletion — a block count cannot tell
+  those apart.
+
+  **Untagged table detection remains a research problem** and is still out of scope for
+  Phase 1–5; the VLM path covers it in the interim. Two shapes are on disk for whenever it
+  is taken up: LaTeX draws each rule as a translated stroke (`q / cm / w / m 0 0 /
+  l 159.789 0 / S / Q`) and pymupdf draws `re` rectangles with `B`.
 - **The untagged layout path's one remaining measured gap.** `TestReferenceExactMatch` in
   `cmd/pdfspec` reports these against the fixtures in `testdata/reference/`, so they are a
   measured worklist rather than a remembered one. Every item in this sub-list is the layout
@@ -713,9 +760,12 @@ OKF-ified spec.
       the 41947 currently-joined line pairs, 6911 join lines carrying different MCIDs, and
       only 8 of those are the bullet case — the other 77 bullet joins have one line spanning
       several MCIDs, so an equality test does not even classify them.
-  - *Table grid.* `table` emits nine cells as one run of words. Row and column membership is
-    the untagged-table research problem named above; the fixture exists so the day it is
-    solved is measurable.
+  - *Table grid.* `table` emits nine cells as one run of words, and it is now the only place
+    that does: the tagged path emits real grids for all 788 tagged tables on disk. Row and
+    column membership on *this* file is the untagged-table research problem named above —
+    the fixture draws no `Table` element, so there is nothing to read and the strokes that
+    would say where the cells are go unconsumed. The fixture exists so the day it is solved
+    is measurable.
 - **~~The tagged path emits its list markers literally~~ — fixed, and the fix found a second
   defect.** *Closed. Kept because the two figures either side of it are the measurement, and
   because the second defect is the argument for the fixture that now guards both.*
@@ -777,7 +827,9 @@ OKF-ified spec.
   logged, leaving `table` and `text-styles` as the only two fixtures still logged — and both
   now for named reasons rather than as unexamined debt. `table` waits on stroke-path
   extraction that does not exist: `content/lexer.go` tokenizes `m`, `l` and `re` and nothing
-  consumes them, so there is no grid to emit. `text-styles` is not a styling gap at all —
+  consumes them, so there is no grid to emit. That is a statement about *this fixture*, which
+  is untagged — the tagged-table bullet above records the 788 tables that needed no strokes
+  and were being flattened while this note stood. `text-styles` is not a styling gap at all —
   every emphasis marker in it is already byte-correct, and the whole difference is its four
   one-line paragraphs arriving as one block, which the paragraph-break bullet above records
   as measured and unreachable.

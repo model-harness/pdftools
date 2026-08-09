@@ -96,16 +96,7 @@ func WritePage(w io.Writer, meta doc.Metadata, p doc.Page, total int, opt Option
 func WriteBlocks(w io.Writer, blocks []doc.Block, opt Options) error {
 	bw := bufio.NewWriter(w)
 	mw := &writer{w: bw}
-	for i := range blocks {
-		b := blocks[i]
-		if b.Role == doc.RoleArtifact && !opt.Artifacts {
-			continue
-		}
-		if b.IsEmpty() {
-			continue
-		}
-		mw.block(b)
-	}
+	mw.blocks(blocks, opt)
 	if err := mw.err; err != nil {
 		return err
 	}
@@ -270,16 +261,7 @@ func (w *writer) gap(kind listKind, depth int) {
 }
 
 func (w *writer) page(p doc.Page, opt Options) {
-	for i := range p.Blocks {
-		b := p.Blocks[i]
-		if b.Role == doc.RoleArtifact && !opt.Artifacts {
-			continue
-		}
-		if b.IsEmpty() {
-			continue
-		}
-		w.block(b)
-	}
+	w.blocks(p.Blocks, opt)
 }
 
 func (w *writer) block(b doc.Block) {
@@ -375,10 +357,10 @@ func (w *writer) block(b doc.Block) {
 		w.nl()
 
 	default:
-		// Paragraph, artifact, and table cell. A cell is emitted as its own paragraph
-		// because one cell is not a table: reconstructing a grid needs the row and
-		// column structure that only the tagged path has, and it emits real tables
-		// itself once sectionize reads them.
+		// Paragraph, artifact, and a table cell that has no position. A positioned cell
+		// never reaches here — blocks routes it into a grid — so this is the untagged
+		// case, where reconstructing the grid needs stroke paths nothing yet consumes.
+		// One cell is not a table, and a row of one says less than the text does.
 		w.content(b, false)
 		w.nl()
 	}

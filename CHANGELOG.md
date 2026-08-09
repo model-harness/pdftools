@@ -5,6 +5,61 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-08-09
+
+- **A tagged table emits a real Markdown table.** `sink/markdown` renders a GFM pipe table
+  from a table's cells, grouped by `doc.Cell.Table`; `sectionize` reads each cell's row,
+  column and header from the structure tree. This covers **788 tagged tables, 4650 `TR`,
+  11626 `TD` and 5856 `TH`** across the corpus — 745 of the tables in ISO 32000-2 alone —
+  every one of which was previously flattened into scattered paragraphs.
+- `doc.Cell` (`Table`, `Row`, `Col`, `Header`) as a field on the cell block rather than a
+  nested table block. A `doc.Page` is a flat list of blocks and every stage after extraction
+  walks it, so nesting would make a block's text reachable by two paths and break the
+  invariant the character-conservation tests rest on. A sink regroups instead.
+- `sink/markdown/table.go` and 17 tests over it. Grouping is keyed by table number rather
+  than adjacency, which is what makes the 13 nested tables on disk work: their cells arrive
+  inside the container's run, so consecutive-cell grouping would cut the outer table in two.
+  An inner table follows the outer one, the only order GFM can express.
+
+### Fixed — 2026-08-09
+
+- **A paragraph inside a table cell no longer detaches the cell's text.** Of 17482 `TD`/`TH`
+  elements on disk, **0 hold marked content of their own** — all 17370 non-empty ones wrap
+  their text in a `P`, and `gather` detached that `P`, leaving the cell with no spans to be
+  dropped by `IsEmpty` while its text reappeared as a free paragraph. This is the
+  `LI → LBody → P` defect v0.2.0 fixed, one element name over, and the fix generalizes the
+  same transparency (`wrapsText`) rather than adding a second mechanism. It also joins the
+  752 multi-`P` cells into one cell each; a cell holding a list (42) or a nested table (13)
+  still detaches, because those kids carry block roles of their own.
+- `WriteBlocks`, which is `sink/okf`'s entry point, goes through the same grouping. Left as
+  it was, an OKF bundle would have emitted cells as paragraphs while the Markdown sink
+  emitted a table from the same extraction.
+- `TestTableCellsBecomeBlocks` asserted the defect as expected behaviour — its fourth block
+  wanted `RoleParagraph` where its own comment said a nested `P` must not duplicate the cell.
+  Expectation corrected and position assertions added.
+- **A cell that is not one of its row's own kids is declined rather than mispositioned**,
+  found by the review of this change. `cellAt` derives the column as an ordinal scan over
+  `tr.Kids`; a cell nested deeper was never matched, so the scan ran to the end and left the
+  column at the row's full cell count — placing the cell past the end of its own row. All
+  17482 cells on disk are direct children and ISO 32000-2 does not require it, so the guard
+  is unreachable from the corpus and pinned by a constructed fixture instead. A declined
+  cell emits its text as a paragraph, which loses the grid and nothing else.
+- ISO 32000-2's block-count floor moves 29000 → 27500 against a measured 29218 → 27517. The
+  drop is the 1721 extra `P`s folded into their cells, with the 20-block difference being
+  extra paragraphs that were empty and dropped by `IsEmpty` either way. Both
+  `TestSectionizeLosesNoText` and `TestOutlineConservesCharacters` hold across the change,
+  which is what proves a merge rather than a deletion — a block count cannot tell those apart.
+
+### Documentation — 2026-08-09
+
+- DESIGN.md §10's "Table extraction" bullet said the tagged path "can emit real Markdown
+  tables", which was a statement about the format and not about this code: it emitted none.
+  Rewritten with the census, the defect, and the two shapes that remain unexpressible — 598
+  tables mark a whole first *column* as `TH` to give each row a row-header, and 69 `ColSpan` /
+  43 `RowSpan` cells (about 1% of 17482, concentrated in ISO/TS 32005) have no GFM syntax at
+  all. The note naming stroke-path extraction as `table`'s blocker is now scoped to that
+  fixture, which is untagged, rather than reading as the state of tagged tables.
+
 ### Fixed — 2026-08-08
 
 - **An ordered list emits Markdown's ordered syntax, which closes the gap v0.2.0 shipped

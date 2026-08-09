@@ -32,9 +32,7 @@ const (
 	// indent without reconstructing a tree.
 	RoleListItem Role = "list_item"
 
-	// RoleTableCell is one cell. Table geometry is not modeled: reconstructing a
-	// grid from a tagged table is sectionize's problem, and no sink needs it to
-	// emit the cell's text.
+	// RoleTableCell is one cell; Block.Cell says where in which table it sits.
 	RoleTableCell Role = "table_cell"
 
 	// RoleCode is preformatted text, where the extractor must not collapse
@@ -89,6 +87,11 @@ type Block struct {
 	// distinction, derived from this.
 	Marker string
 
+	// Cell places a RoleTableCell in its table, and is nil for every other role.
+	// See Cell for why the position is on the block rather than the blocks being
+	// nested inside a table block.
+	Cell *Cell
+
 	// Spans are the block's styled runs in reading order.
 	Spans []Span
 
@@ -118,6 +121,51 @@ type Block struct {
 	// such a heading's title to the heading plus the definition. Span.MCID is the key
 	// that does not have that failure.
 	MCIDs []int
+}
+
+// Cell is a table cell's position in its table.
+//
+// It is a field on the cell block rather than a Table block holding rows holding
+// cells, and that is the load-bearing decision here. A doc.Page is a flat list of
+// blocks in reading order, and every stage after extraction — the space accounting,
+// the character-conservation tests, the OKF sink, the unplaced-content report — walks
+// that list. Nesting tables would make a block's text reachable by two different
+// paths, and the invariant that a page's characters are the sum of its blocks' is what
+// this repo's accounting tests rest on. A sink that wants the grid regroups on Table
+// and Row, which is a scan of consecutive blocks because a tree's reading order puts
+// one table's cells together.
+//
+// Spans are not modeled. Of 17482 cells on disk, 69 declare /ColSpan greater than 1
+// and 43 declare /RowSpan — about 1%, concentrated in ISO/TS 32005 — and no Markdown
+// table syntax can express either, so a sink pads the row instead. Reading them would
+// let a sink place a spanning cell's text under only its first column, which is what
+// GFM renders anyway; recording that they exist and are unrepresentable is the honest
+// state, and tag.Elem does not read /A at all.
+type Cell struct {
+	// Table numbers the table within its document, from 1, so two adjacent tables do
+	// not merge into one grid. A number rather than a pointer because doc is a data
+	// model that has to survive being written to JSON and read back.
+	Table int
+
+	// Row is the 0-based row and Col the 0-based column, both counting the cells the
+	// tree declares rather than any geometric position. A ragged row — 46 of 788
+	// tables have one — therefore numbers its own cells consecutively and stops short,
+	// which is what lets a sink pad it to the table's width.
+	//
+	// Col is an ordinal among the row's own kids, so a producer that put a cell
+	// somewhere other than directly under its TR has no column and gets no Cell at all.
+	// All 17482 cells on disk are direct children, and the spec does not require it.
+	//
+	// Row counts through THead, TBody and TFoot without restarting, because those group
+	// rows rather than renumbering them — 4540 of the corpus's 4650 rows are inside one.
+	Row int
+	Col int
+
+	// Header reports a TH rather than a TD. 773 of 788 tables on disk have an all-TH
+	// first row, which is the shape a Markdown header row expresses; 598 also carry a
+	// TH below row 0, which no Markdown syntax can mark, so a sink emits those as
+	// ordinary cells and this field is what records that it had to.
+	Header bool
 }
 
 // Text returns the block's text, spans concatenated with no separator.

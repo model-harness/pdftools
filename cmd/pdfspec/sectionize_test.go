@@ -69,7 +69,16 @@ func TestSectionizeCorpus(t *testing.T) {
 		// 1 outside any marked-content sequence, so no structure element names it. The
 		// bound is here to catch the join losing content, which is a different thing and
 		// would show up as a much larger number.
-		{"ISO_32000-2_sponsored_EC3.pdf", 981, 851, 5, 29000, 0.30},
+		//
+		// 27500 was 29000 until a paragraph inside a table cell became transparent. The
+		// drop is 29218 to 27517, and it is a merge rather than a loss: 1721 of this
+		// file's cells hold a second or later P, each of which used to be a block of its
+		// own beside an empty cell and is now part of the cell's own text. The 20 that
+		// do not reconcile are cells whose extra paragraphs were empty and were dropped
+		// by IsEmpty either way. What proves nothing was lost is not this floor but
+		// TestSectionizeLosesNoText and TestOutlineConservesCharacters, which both hold
+		// across the change — a block count cannot tell a merge from a deletion.
+		{"ISO_32000-2_sponsored_EC3.pdf", 981, 851, 5, 27500, 0.30},
 	}
 
 	for _, tc := range cases {
