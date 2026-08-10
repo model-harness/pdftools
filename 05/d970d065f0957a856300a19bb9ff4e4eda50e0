@@ -1,0 +1,64 @@
+doc/marker.go
+  s_5cd1b28ed520c1::t_3d2205e36e8fa7 93-95,97,106-111,113-192,259-263,265-312,314
+  s_5cd1b28ed520c1::t_2c08ceccb0a299 96,98-105,112
+  s_5cd1b28ed520c1::t_6d0adb65b5481d 264
+  s_5cd1b28ed520c1::t_77ed48761933bf 313,315
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_d2074abff60f8c 858
+  s_5cd1b28ed520c1::t_7b28a4d300d89f 981-984
+  s_5cd1b28ed520c1::t_450269cf7f2370 385-387
+  s_5cd1b28ed520c1::t_95f77e3ed33524 850-857,859-873
+layout/layout.go
+  s_5cd1b28ed520c1::t_2d14708f7fe0f0 359,370-377
+  s_5cd1b28ed520c1::t_326b53d9ca9ee8 360-369
+  s_5cd1b28ed520c1::t_3d2205e36e8fa7 312-331,333-337,339,349-358,378-393,395-469,471-485,494-498
+  s_5cd1b28ed520c1::t_39db0f4ac71fa8 470
+  s_5cd1b28ed520c1::t_1acf45656b0219 338,340-348
+  s_5cd1b28ed520c1::t_b9be615eb843bf 394
+  s_5cd1b28ed520c1::t_e1763ceea614d2 332
+  s_5cd1b28ed520c1::t_4bfb1439d957a4 486-493
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_3d2205e36e8fa7 161-167,171,177
+docs/adr/0011-recognize-untagged-list-items-by-marker-glyph-and-left-edge.md
+  s_5cd1b28ed520c1::t_179d5a0f5e2f1b 150-160,166-176,189-194
+  s_5cd1b28ed520c1::t_b3c74261e2f5ea 161-165
+  s_5cd1b28ed520c1::t_a70a23e47cdc6e 177-188
+doc/marker_test.go
+  s_5cd1b28ed520c1::t_1203e72589ba7f 162,164-178,180,182-194,197-255,261,263-268,271-301
+  s_5cd1b28ed520c1::t_3b231533f2c9c2 163
+  s_5cd1b28ed520c1::t_bf64695d2e74c5 138-140
+  s_5cd1b28ed520c1::t_32d8ae96e90289 195-196
+  s_5cd1b28ed520c1::t_4ab679c011b836 257-260
+  s_5cd1b28ed520c1::t_ff65144492613b 256,262,269-270
+  s_5cd1b28ed520c1::t_1f568ffef5c60c 181
+  s_5cd1b28ed520c1::t_80d0b689c0a639 179
+layout/ordered_test.go
+  s_5cd1b28ed520c1::t_1b9d057817255f 128-130,133-139
+  s_5cd1b28ed520c1::t_e402aab7531261 90-117
+  s_5cd1b28ed520c1::t_d67e4ca83e0c6b 121-123,125-126,131
+  s_5cd1b28ed520c1::t_007867a3373938 217-243
+  s_5cd1b28ed520c1::t_775c00e707d677 1-89,118-120,127,140-216,244-268
+  s_5cd1b28ed520c1::t_af7e79cb245eb1 124,132
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_07fa02f4c46a31 74-83
+  s_5cd1b28ed520c1::t_32a88168b04623 17-23
+  s_5cd1b28ed520c1::t_bcf54477c2a3dd 27-40
+  s_5cd1b28ed520c1::t_4f42a068fa4a32 8-16,24-26,41-50,64-66,84-91
+  s_5cd1b28ed520c1::t_b65f43ebb42a18 51-63,67-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "05d970d065f0957a856300a19bb9ff4e4eda50e0",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
