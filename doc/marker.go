@@ -6,16 +6,22 @@ import (
 	"unicode/utf8"
 )
 
-// The list marker vocabulary, and the two operations that move a marker out of a
-// block's text into Block.Marker.
+// The list marker vocabulary, and the operations that move a marker out of a block's text
+// into Block.Marker.
 //
 // It lives in this package rather than in layout because both producers need it and
 // neither may depend on the other. layout infers a list item from the glyph a page
 // draws; sectionize reads one the structure tree declares, and then has to handle the
 // items whose producer declared the role without declaring the label — measured at
-// 1288 of 1412 on disk. Two copies of a thirteen-glyph allowlist is the split
+// 1291 of 1415 on disk. Two copies of a thirteen-glyph allowlist is the split
 // Block warns against for space inference, half the policy in one producer and half
 // in the other, and the failure mode is that the two disagree about the same document.
+//
+// Two vocabularies, not two copies. listMarkers is what both producers share and
+// declaredMarkers is it plus what a declaration earns, built from the first at init so a
+// glyph can be admitted in one place. Both live here for the reason above: the difference
+// between them is a fact about the evidence a caller has, which is a policy question, and
+// splitting the policy across two packages is what this header warns against.
 //
 // The marker leaves the text in whichever producer recognized it, and does not leave
 // the model: it goes into Block.Marker rather than being dropped, so a sink that can
@@ -65,8 +71,8 @@ import (
 // declines and the sink doubles the marker. Admitting "-" here fixes those 3 and breaks
 // 0; admitting "*" breaks 3 and fixes 0. The trade is not worth taking on a map both
 // producers share — a rule firing on inferred geometry has to weigh the C code, and one
-// firing on a declared RoleListItem does not. DESIGN.md's open questions record it, under
-// "A producer that sets a hyphen as its bullet".
+// firing on a declared RoleListItem does not. That is what declaredMarkers below is for,
+// and it is where the hyphen went.
 //
 // The dots and ">" are the opposite case and the reason the assertion is a unit test rather
 // than a golden: admitting any of them changes 0 of 50 documents, because none occurs
@@ -100,6 +106,47 @@ var listMarkers = map[rune]bool{
 	'\uf0b7': true, // Symbol bullet, via the PUA
 }
 
+// declaredMarkers is the vocabulary for a block whose producer already declared it a list
+// item: listMarkers, plus the glyphs whose only ambiguity is with drawn text.
+//
+// It is a superset built from the shared map rather than a second literal, so a glyph
+// admitted above cannot silently fall out of this one. Only the additions are listed.
+//
+// # Why two vocabularies and not one
+//
+// The two callers ask different questions. layout reads a block nothing declared anything
+// about, so "opens with a hyphen and a space" has to carry the whole claim that the block
+// is a list item at all \u2014 and on this corpus it mostly is not, since 12 of the hyphen's 13
+// block-initial occurrences are glued command-line flags and C comment continuations.
+// sectionize reaches here only for a block the structure tree already declared
+// RoleListItem; the role is not in question, only which of the block's runes is the label
+// it was declared to have. A glyph that cannot carry the first claim can be plain evidence
+// for the second.
+//
+// # The additions, and why only one
+//
+// Measured over all 1825 declared list items in the corpus, exactly 3 open with any glyph
+// this file excludes, and all 3 are the hyphen: the "-  Markup3D (PDF 1.7)", "-  3DM
+// (PDF 2.0)" and "-  MarkupGeo (PDF 2.0)" items in ISO 32000-2, each separated from its
+// text, each in Cambria-Italic at 10pt, and each declaring no /Lbl \u2014 so markItem falls
+// through to the glyph and the sink emits "- -  Markup3D\u2026". "*", ">", U+00B7 and U+02D9
+// occur on the declared path 0 times each, so admitting them here would be speculation
+// with no occurrence to check it against, and they stay out on both paths. This map holds
+// what the corpus shows, which is one glyph.
+//
+// A hyphen is also the least costly possible mistake in this direction: if one of the 3 is
+// not a bullet, the text lost is a single "-" from an item the producer already said was an
+// item, where the current behaviour loses nothing but doubles a marker. That asymmetry does
+// not hold for "*", where the same reading over untagged prose broke 3 lines of C.
+var declaredMarkers = func() map[rune]bool {
+	m := make(map[rune]bool, len(listMarkers)+1)
+	for r := range listMarkers {
+		m[r] = true
+	}
+	m['-'] = true // HYPHEN-MINUS: a bullet on the declared path only
+	return m
+}()
+
 // ListMarker returns the marker rune txt opens with, or zero.
 //
 // It trims the text itself rather than trusting a caller to, which is what makes the two
@@ -122,8 +169,17 @@ var listMarkers = map[rune]bool{
 // separate steps in layout: a block that will not be promoted must not have its text
 // edited, so the test has to be available without the mutation.
 func ListMarker(txt string) rune {
+	return listMarkerIn(txt, listMarkers)
+}
+
+// listMarkerIn is ListMarker against a given vocabulary, so the declared path gets the
+// same trimming, length and separator rules and cannot drift from them. The separator
+// requirement is not relaxed for a declared item: the 3 hyphens that motivate the wider
+// map are all separated, and the glued ones on disk are text ("-o", "*/") in every
+// occurrence read, declared or not.
+func listMarkerIn(txt string, vocab map[rune]bool) rune {
 	rs := []rune(strings.TrimSpace(txt))
-	if len(rs) < 2 || !listMarkers[rs[0]] {
+	if len(rs) < 2 || !vocab[rs[0]] {
 		return 0
 	}
 	if !unicode.IsSpace(rs[1]) {
@@ -240,6 +296,9 @@ func matchForm(rs []rune, prefix, suffix string, alpha bool) (string, int, bool)
 // separator and length requirements apply here too — a lone bullet with no text is
 // page decoration and keeps its glyph.
 //
+// A producer that declared the role but not the label wants StripDeclaredMarker, which is
+// this walk over a wider vocabulary.
+//
 // The span walk is not simply "edit the first span". A block's text is its spans
 // concatenated with no separator, so the marker and the whitespace after it can be
 // split across spans in three ways, each of which occurs on disk: the marker with its
@@ -256,7 +315,26 @@ func matchForm(rs []rune, prefix, suffix string, alpha bool) (string, int, bool)
 // a caller holds stay valid and Span.MCID survives for diagnosis; an empty span writes
 // nothing.
 func (b *Block) StripMarker() bool {
-	if ListMarker(b.Text()) == 0 {
+	return b.stripMarkerIn(listMarkers)
+}
+
+// StripDeclaredMarker is StripMarker for a block the producer already declared a list
+// item, and differs only in vocabulary: declaredMarkers rather than listMarkers.
+//
+// A separate method rather than a parameter on StripMarker, because the choice of
+// vocabulary is not a caller's option to pass — it follows from whether a declaration
+// exists, which only sectionize knows. layout has no declaration to read and must never
+// reach the wider map; a boolean argument would let it, and the compiler would not care.
+//
+// Callers: sectionize.markItem, on the path where the producer declared RoleListItem and
+// omitted the /Lbl. declaredMarkers documents which glyphs this adds and what each is
+// measured at.
+func (b *Block) StripDeclaredMarker() bool {
+	return b.stripMarkerIn(declaredMarkers)
+}
+
+func (b *Block) stripMarkerIn(vocab map[rune]bool) bool {
+	if listMarkerIn(b.Text(), vocab) == 0 {
 		return false
 	}
 	found := rune(0)
@@ -275,7 +353,7 @@ func (b *Block) StripMarker() bool {
 				continue
 			}
 			r, n := utf8.DecodeRuneInString(rest)
-			if !listMarkers[r] {
+			if !vocab[r] {
 				// Unreachable while ListMarker gates entry above, since it matched
 				// the first rune of this same text. Kept as the honest answer if the
 				// two ever disagree: leave the text alone rather than edit a block
@@ -394,10 +472,22 @@ func (b *Block) SetMarker(marker string) {
 // It exists because a sink cannot render what it cannot distinguish. Markdown has no
 // syntax for "[1]" as a list marker, so a sink emitting "- " has to put an ordered
 // label back into the line, and dropping it instead would lose text the page draws.
+//
+// The vocabulary here is declaredMarkers and not listMarkers, because this asks whether a
+// marker already in hand is a bullet, not whether a block's text should be read as having
+// one. Either producer's bullet is a bullet, and asking the narrower map made the hyphen
+// StripDeclaredMarker had just recovered come back as "- \- text" — the doubling the
+// marker field exists to stop, one escape further along. There is no false positive to
+// weigh: layout cannot set a marker this map admits and the shared one does not, and that
+// follows from the setters rather than from a convention. On the undeclared path Marker comes
+// from StripMarker, whose rune is in listMarkers by construction, or from StripOrderedLabel,
+// whose label is more than one rune and so returns above on the length test without reaching
+// either map. SetMarker is the only other setter and only sectionize calls it. The two maps
+// differ by exactly the hyphen, which is the one rune neither of those two can produce.
 func (b Block) Enumerated() bool {
 	if b.Marker == "" {
 		return false
 	}
 	r, n := utf8.DecodeRuneInString(b.Marker)
-	return n != len(b.Marker) || !listMarkers[r]
+	return n != len(b.Marker) || !declaredMarkers[r]
 }

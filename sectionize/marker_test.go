@@ -97,10 +97,10 @@ func TestDeclaredLabelReachesAnOrderedList(t *testing.T) {
 	}
 }
 
-// TestUndeclaredMarkerIsStrippedFromADeclaredItem is the other 1288.
+// TestUndeclaredMarkerIsStrippedFromADeclaredItem is the other 1291.
 //
 // Most producers declare the list item and draw the bullet without declaring a Lbl for
-// it — 1288 of the 1412 marker-opening items on disk. Without this they emit "- ■ text"
+// it — 1291 of the 1415 marker-opening items on disk. Without this they emit "- ■ text"
 // just as the declared ones did.
 //
 // It is not the same act as inferring a role. The block is already declared RoleListItem;
@@ -109,10 +109,11 @@ func TestDeclaredLabelReachesAnOrderedList(t *testing.T) {
 // label's first rune is that glyph in 124 of 124, with 0 disagreeing. So on every case
 // where evidence exists to check the glyph against, the glyph is what the producer meant.
 //
-// The path this covers is wider than those 1288, because label() reads only the Lbl's own
-// marked content and 100 of the 153 Lbl on disk hold their marker in a Span inside it. So
-// this fallback, not the declaration, is what supplies the marker for two thirds of the
-// items that declare one — recorded in label()'s own comment and in DESIGN.md.
+// The path this covers is wider than those 1291, because label() reads only the Lbl's own
+// marked content and 100 of the 153 Lbl on disk hold their marker in a Span inside it. Those
+// 100 are visible in the 124 above: reading the Lbl's whole subtree agrees 124 times, reading
+// only its own content 24. So this fallback, not the declaration, is what supplies the marker
+// for most of the items that declare one — recorded in label()'s own comment and in DESIGN.md.
 func TestUndeclaredMarkerIsStrippedFromADeclaredItem(t *testing.T) {
 	d := docWith(
 		sp{1, 0, "1 Scope"},
@@ -128,6 +129,43 @@ func TestUndeclaredMarkerIsStrippedFromADeclaredItem(t *testing.T) {
 	}
 	if blk.Marker != "•" {
 		t.Errorf("marker = %q, want %q", blk.Marker, "•")
+	}
+}
+
+// TestDeclaredItemsHyphenIsItsMarker is the 3 remaining items of those 1291, and the reason
+// this package strips through StripDeclaredMarker rather than StripMarker.
+//
+// The shape is ISO 32000-2's own: a declared LI, no Lbl at all, and a hyphen followed by two
+// spaces inside the italic run the item opens with. doc.listMarkers holds the hyphen out
+// because on the untagged path it is a command-line flag or a C comment continuation in 12 of
+// 13 occurrences; here the producer already said this is a list item, so the only question is
+// which rune is its label. Before this the output was "- *-  Markup3D (PDF 1.7)*".
+//
+// It is a sectionize test and not a doc one because the claim is the *call site*: doc's own
+// TestStripDeclaredMarkerReadsTheHyphen proves the method reads a hyphen, and every test in
+// this package passed with markItem still calling StripMarker. Nothing but a case with a
+// hyphen reaching the real path can tell the two apart, and there was none — which is how a
+// vocabulary can be written, tested, and never wired in.
+func TestDeclaredItemsHyphenIsItsMarker(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "12.5.6.18 3D annotations"},
+		sp{1, 1, "-  Markup3D (PDF 1.7) for a 3D comment."},
+	)
+	tr := tree(el(tag.RoleH1, 1, 0), kids(el(tag.RoleL, 1), el(tag.RoleLI, 1, 1)))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blk := out.Sections[0].Blocks[0]
+	if got := blk.Text(); got != "Markup3D (PDF 1.7) for a 3D comment." {
+		t.Errorf("text = %q, want the hyphen and its spaces gone", got)
+	}
+	if blk.Marker != "-" {
+		t.Errorf("marker = %q, want %q: the producer's own bullet", blk.Marker, "-")
+	}
+	// A bullet, so the sink writes its own "- " and does not put this one back into the
+	// line. With Enumerated reading the narrower map it did, as "- \- Markup3D".
+	if blk.Enumerated() {
+		t.Error("Enumerated = true, want false: a hyphen bullet is not an ordered label")
 	}
 }
 
@@ -437,7 +475,7 @@ func TestLabelOutsideAListItemIsLeftAsText(t *testing.T) {
 // TestLabelOnlyItemIsDropped is the emptying case, which measurement says does not occur
 // on disk and which must still not lose content silently.
 //
-// Of the 1412 marker-opening items, 0 would be emptied by removing the marker, and all 16
+// Of the 1415 marker-opening items, 0 would be emptied by removing the marker, and all 16
 // ordered labels leave non-empty content. But a producer can declare an item that is only a
 // label — a numbered placeholder whose body is elsewhere — and the block then has no spans.
 // The honest answer is that a marker is not content: such an item *is* empty and IsEmpty

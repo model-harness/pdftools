@@ -291,8 +291,8 @@ was guessed at. The declaration is taken whenever it exists and the glyph is nev
 then. DESIGN.md §10 records the result, and the marker vocabulary now lives in `doc` so both
 paths read one copy of it.
 
-> **Those four figures have all moved, for two reasons that are not re-measurements of the
-> same population.** Current: **1412** declared items open with an allowlist glyph, **124**
+> **Those four figures have all moved, for reasons that are not re-measurements of the
+> same population.** Current: **1415** declared items open with a marker glyph, **124**
 > also declare a `Lbl`, the label's first rune is that glyph in **124 of 124 with 0
 > disagreeing**, and **16** declared labels are ordered — `a.`, `b.`, `[1]`–`[7]` plus `1.`–`3.`
 > `testdata/reference/tagged-lists.pdf` was committed after this ADR and contributes 3 items to
@@ -302,6 +302,15 @@ paths read one copy of it.
 > because widening the allowlist widens the population that check runs over — a glyph whose
 > declared label disagreed with it would appear here as a nonzero second number, and it is the
 > only place such a mistake would show.
+>
+> The last **3** came from a vocabulary this ADR does not govern. `doc.declaredMarkers` is
+> `listMarkers` plus the hyphen, reached only from the declared path, and it exists because
+> the exclusion this ADR decides is right *here* and wrong there: over all 1825 declared list
+> items, exactly 3 open with an excluded glyph and all 3 are a hyphen bullet in ISO 32000-2,
+> while over the untagged paragraphs this rule considers a hyphen is block-initial 11 times and
+> separated in **0** of them. So the two paths disagree about one glyph and both are right; the
+> allowlist this ADR decides is unchanged, and `TestStripMarkerStillDeclinesTheHyphen` is what
+> keeps it that way. None of those 3 declares a `Lbl`, so the 124 of 124 above is unmoved.
 >
 > The same re-measurement found something this ADR could not have known: `sectionize.label()`
 > reads only the `Lbl` element's own marked content, and **100 of the 153 `Lbl` on disk hold

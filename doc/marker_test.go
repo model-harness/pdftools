@@ -140,11 +140,11 @@ func TestStripMarkerRequiresASeparator(t *testing.T) {
 // unit assertion can. For the other two the A/B is decisive and points opposite ways: "*" alone creates 3
 // false items in mupdf_explored.pdf, which are C comment continuation lines, and "-" alone
 // fixes 3 doubled markers in ISO_32000-2_sponsored_EC3.pdf, which are real. Those 3 are
-// *declared* RoleListItem blocks with a hyphen bullet and no /Lbl — the tagged path's defect,
-// recorded open in DESIGN.md's open questions, under the bullet "A producer that sets a hyphen
-// as its bullet and declares no /Lbl still emits a doubled marker", and not this
-// allowlist's. A glyph rule firing on inferred geometry has to weigh the C code; one firing on
-// a producer's own declaration does not.
+// *declared* RoleListItem blocks with a hyphen bullet and no /Lbl, so they are the declared
+// path's to fix and not this allowlist's — a glyph rule firing on inferred geometry has to
+// weigh the C code, one firing on a producer's own declaration does not. It is fixed there,
+// by declaredMarkers; the hyphen row below stays because the exclusion on *this* path is
+// what keeps the C code out, and TestDeclaredMarkersAddOnlyTheHyphen holds the other side.
 func TestListMarkerExcludesTheAmbiguousGlyphs(t *testing.T) {
 	// Annex D rows, ISO_32000-2_sponsored_EC3.pdf, as Block.Text() yields them. Each opens
 	// with the glyph its own first column names — the requirement the U+02D9 case exists to
@@ -216,6 +216,86 @@ func TestStripMarkerReadsTheWingdingsSquareBullet(t *testing.T) {
 	}
 	if b.Enumerated() {
 		t.Error("Enumerated = true, want false: a PUA bullet is not an ordered label")
+	}
+}
+
+// TestStripDeclaredMarkerReadsTheHyphen is the declared path's wider vocabulary, on the 3
+// items that motivate it.
+//
+// The text is ISO 32000-2's own, from the items that emitted "- *-  Markup3D (PDF 1.7)*"
+// before this: the sink's "- ", then the producer's hyphen, both inside the italic run the
+// item opens with. All 3 are Cambria-Italic at 10pt, separated from their text by two
+// spaces, and declare no /Lbl — so markItem has only the glyph, and StripMarker declined
+// because listMarkers holds the hyphen out for the untagged path's sake.
+//
+// The pairing with the next test is the assertion. Here the same input strips; there it does
+// not through StripMarker. Neither claim alone says anything — a vocabulary that admitted the
+// hyphen everywhere would pass this one, and the empty map would pass that one — and together
+// they are the split.
+func TestStripDeclaredMarkerReadsTheHyphen(t *testing.T) {
+	b := item("-  Markup3D (PDF 1.7)")
+	if !b.StripDeclaredMarker() {
+		t.Fatal("StripDeclaredMarker = false, want true: a declared item's hyphen is its bullet")
+	}
+	if got := b.Text(); got != "Markup3D (PDF 1.7)" {
+		t.Errorf("text = %q, want %q: the hyphen and both spaces gone", got, "Markup3D (PDF 1.7)")
+	}
+	if b.Marker != "-" {
+		t.Errorf("marker = %q, want %q kept in the field", b.Marker, "-")
+	}
+	// The half that the A/B caught: with Enumerated reading listMarkers, this returned true
+	// and the sink wrote the recovered hyphen back into the line as "- \- Markup3D", which is
+	// the same doubling one escape further along.
+	if b.Enumerated() {
+		t.Error("Enumerated = true, want false: a hyphen bullet is not an ordered label")
+	}
+}
+
+// TestStripMarkerStillDeclinesTheHyphen is the other side of that split, and the reason
+// StripDeclaredMarker is a separate method rather than a widened listMarkers.
+//
+// The untagged path must keep declining it: over the RoleParagraph blocks layout.Lists
+// considers, the hyphen is block-initial 11 times and separated in 0 of them, and admitting
+// it on the shared map is what created 3 false items out of C comment continuations. A
+// mutation pointing StripMarker at declaredMarkers passes every other test in this package.
+func TestStripMarkerStillDeclinesTheHyphen(t *testing.T) {
+	const txt = "-  Markup3D (PDF 1.7)"
+	b := item(txt)
+	if b.StripMarker() {
+		t.Errorf("StripMarker(%q) = true, want false: the hyphen is the declared path's alone", txt)
+	}
+	if got := b.Text(); got != txt {
+		t.Errorf("text = %q, want %q unchanged", got, txt)
+	}
+}
+
+// TestDeclaredMarkersAddOnlyTheHyphen holds the size of the widening, which is the claim no
+// output can check.
+//
+// Measured over all 1825 declared list items in the corpus, exactly 3 open with a glyph
+// listMarkers excludes and all 3 are the hyphen: "*", ">", U+00B7 and U+02D9 occur 0 times
+// each on the declared path, so admitting any of them would change nothing in 50 documents
+// and nothing in the goldens either. That is the same unpinnable shape
+// TestListMarkerExcludesTheAmbiguousGlyphs exists for, one map along.
+//
+// The superset half is not decoration. declaredMarkers is built from listMarkers at init, and
+// a mutation replacing that loop with a literal — or dropping a glyph from it — leaves a
+// declared item's bullet unrecognized on a path whose whole job is recognizing it.
+func TestDeclaredMarkersAddOnlyTheHyphen(t *testing.T) {
+	for r := range listMarkers {
+		if !declaredMarkers[r] {
+			t.Errorf("declaredMarkers is missing %q (U+%04X): it must be a superset of listMarkers", r, r)
+		}
+	}
+	for r := range declaredMarkers {
+		if !listMarkers[r] && r != '-' {
+			t.Errorf("declaredMarkers admits %q (U+%04X): the hyphen is the only measured addition", r, r)
+		}
+	}
+	for _, r := range []rune{'*', '>', '·', '˙'} {
+		if declaredMarkers[r] {
+			t.Errorf("declaredMarkers admits %q (U+%04X): it occurs 0 times on the declared path", r, r)
+		}
 	}
 }
 

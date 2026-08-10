@@ -91,6 +91,49 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-10
 
+- **A hyphen is a bullet on the declared path and not on the inferring one, so it has its own
+  vocabulary.** 3 items in ISO 32000-2 emitted `- *-  Markup3D (PDF 1.7)* for a 3D comment.` —
+  the sink's own `- ` followed by the producer's hyphen, still inside the italic run the item
+  opens with. All 3 are declared `RoleListItem` and declare no `/Lbl`, so `markItem` fell
+  through to the glyph, and `doc.listMarkers` excludes `-` on purpose: over the untagged
+  paragraphs `layout.Lists` considers, a block-initial hyphen occurs 11 times and is separated
+  from its text in **0** of them, and admitting it to the shared map turned 3 C comment
+  continuations in `mupdf_explored.pdf` into list items. Both exclusions are right. They are
+  answers to different questions.
+
+  `doc.declaredMarkers` is `listMarkers` plus the hyphen, reached only through
+  `Block.StripDeclaredMarker`, which `sectionize.markItem` calls. Built from the shared map at
+  init rather than written out again, so a glyph admitted for both paths cannot fall out of
+  this one — and a separate method rather than a `vocab` parameter on `StripMarker`, because
+  which vocabulary applies follows from whether a declaration exists, which only `sectionize`
+  knows. A boolean argument would let `layout` pass the wrong one and the compiler would not
+  care.
+
+  **The hyphen is the only addition, because it is the only one this path can see.** Measured
+  over all 1825 declared list items: exactly 3 open with a glyph `listMarkers` excludes and all
+  3 are that hyphen — `*`, `>`, U+00B7 and U+02D9 occur **0 times each** here, so admitting any
+  of them would be speculation with nothing to check it against. The 3 are separated from their
+  text, `Cambria-Italic` at 10pt, and declare no `Lbl` element at all, so none can enter the
+  agreement population and its **124 of 124** is unmoved rather than merely still passing. It is
+  also the cheapest possible mistake in this direction: if one of the 3 is not a bullet, what is
+  lost is one `-` from an item the producer already called an item, where the old behaviour lost
+  nothing and doubled a marker. `*` has no such asymmetry, which is why it stays out of both.
+
+  **`Enumerated` had to move too, and only the corpus A/B found it.** It asks whether a marker
+  already in hand is a bullet, and it asked `listMarkers` — so the hyphen `StripDeclaredMarker`
+  had just recovered came back as an ordered label and the sink wrote it into the line as
+  `- \- *Markup3D…*`: the same doubling one escape further along, and every unit test still
+  green. It reads `declaredMarkers` now, where there is no false positive to weigh, since
+  `layout` cannot produce a marker this map admits and the shared one does not.
+
+  Result: **3 lines fixed, 0 changed elsewhere** in 50 documents. Four pins, each killing
+  mutations the others survive: `TestStripDeclaredMarkerReadsTheHyphen` and
+  `TestStripMarkerStillDeclinesTheHyphen` for the split, `TestDeclaredMarkersAddOnlyTheHyphen`
+  for its size and its superset property, and `sectionize.TestDeclaredItemsHyphenIsItsMarker`
+  for the wiring. That last one is the load-bearing one and was written last, because the first
+  mutation run showed why: pointing `markItem` back at `StripMarker` — the whole change,
+  reverted at the call site — passed every test in `sectionize`. A vocabulary can be written,
+  unit-tested, documented, and never reached.
 - **`U+F0A7`, Wingdings' square bullet, is a list marker.** 2 items in
   `PDF20_AN001-BPC.pdf` emitted `- ****  How those brand colours are specified…` — the sink's
   own `- ` followed by a bold PUA glyph that Markdown renders as empty emphasis. Both are
@@ -103,7 +146,8 @@ All notable changes to this project are documented here, following
   never occurs there — so no amount of re-reading that tally could have found it. Asking the
   other question instead, "which items did a producer declare `RoleListItem` while
   `StripMarker` declined", found 5 across 2 files: these 2, and 3 hyphens in ISO 32000-2 that
-  stay open deliberately. **A survey scoped to one path cannot complete an allowlist both
+  are the entry above — this one's "stay open deliberately" describes the state between the two
+  changes, not the state now. **A survey scoped to one path cannot complete an allowlist both
   paths share.**
 
   Admitted to the shared map rather than a declared-path-only set because it has no ambiguity
@@ -127,6 +171,13 @@ All notable changes to this project are documented here, following
   are direct kids of their `LI`, **1672** items declare none, and removing the label leaves the
   item opening with whitespace in **139 of 153** — the figure `SetMarker` exists for, quoted as
   `133 of 147` above.
+
+  Two of these are now scoped rather than superseded, by the hyphen entry above: `1412` and
+  `1288` are the counts under `listMarkers`, which is still exactly what they were measured as,
+  and the declared path reads **1415** and **1291** through `declaredMarkers`. The other figures
+  are unmoved — the 3 hyphens declare no `Lbl`, so `153`, `124 of 124`, `16` and `139 of 153`
+  cannot see them. That the *agreement* figure is the one that stayed still is the point of the
+  last paragraph below, and this is the first admission to test it.
 
   `139 of 153` and `0 ordered items emptied` were re-derived independently rather than carried
   over, by reproducing the declared path outside the package: join `Lbl` and `LBody` marked

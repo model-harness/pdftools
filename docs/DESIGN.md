@@ -916,10 +916,10 @@ OKF-ified spec.
   indistinguishably from its content. The tagged path was described here as having no gaps;
   `clauses` matching exactly did not catch it because that fixture has no lists.
 
-  **The declaration is read where there is one, the glyph where there is not.** Of 1412
+  **The declaration is read where there is one, the glyph where there is not.** Of 1415
   declared list items whose text opens with a marker glyph, 124 also declare a `Lbl` — and
   the label's first rune is that glyph in **124 of 124, with 0 disagreeing**, which is the
-  strongest available check on the `layout` allowlist. 1288 declare no label at all, so the
+  strongest available check on the `layout` allowlist. 1291 declare no label at all, so the
   glyph rule has to run on this path too. That is not `inferRoles` over a declaration: the
   block is *already* declared `RoleListItem` and the only question is which of its runes is
   the label it was declared to have. What the declaration adds that no glyph could is 16
@@ -928,13 +928,20 @@ OKF-ified spec.
   Wingdings square is *glued* to its text with no separator, which `ListMarker` rejects
   outright.
 
+  That 124 is a label read that descends into the `Lbl`; `label()` reads only the element's
+  own marked content and so sees 24 of it, the other 100 holding their marker in a `Span`
+  kid. Both numbers come from the same pass, which is how the shallow-read defect recorded
+  below is measurable from this side.
+
   Three of those figures moved after the fact and it is worth saying why, since none of the
   three is a re-measurement of the same population: `testdata/reference/tagged-lists.pdf` was
   committed later and contributes 3 marker-opening items but 6 declared labels — it holds 6
   `LI`, all 6 declaring a label, only 3 of which open with an allowlist glyph — including the 3
   ordered `1.`–`3.`, while admitting `U+F0A7` to the allowlist contributes the other 2 items. The
   two populations therefore take different amounts from one fixture, which is why 1412 moved by
-  5 and 153 by 6. A figure
+  5 and 153 by 6. Then `declaredMarkers` took it to **1415**, by admitting the hyphen on this
+  path alone — 3 items, all in ISO 32000-2, none declaring a `Lbl`, so the agreement half is
+  untouched at 124 of 124 rather than merely still passing. A figure
   defined by the allowlist moves when the allowlist does, which is the thing to check when a
   glyph joins it — the agreement count is the one that would expose a bad admission.
 
@@ -1032,13 +1039,13 @@ OKF-ified spec.
   it contradicts them — 186 lines open with an `a)`-shaped token after the bullet — and those
   are item text rather than markers, which is what the 623 accounts for. A label the producer
   never declared is not a label this sink can move.
-- **A producer that sets a hyphen as its bullet and declares no `/Lbl` still emits a doubled
-  marker: 3 items, all in ISO 32000-2. Open, measured, and deliberately not fixed here.**
+- **~~A producer that sets a hyphen as its bullet and declares no `/Lbl`~~ emitted a doubled
+  marker: 3 items, all in ISO 32000-2. Closed — fixed by a second vocabulary, not a wider one.**
 
   The 3 read `- *-  Markup3D (PDF 1.7)* for a 3D comment.` — the sink's own `- ` followed by
   the producer's hyphen still in the text, which is the 1363-item defect above in the one
-  shape its fix cannot reach. They are declared `RoleListItem`, so `markItem` runs, but they
-  declare no label, so it falls to `StripMarker`, and `doc.listMarkers` excludes `-`
+  shape its fix could not reach. They are declared `RoleListItem`, so `markItem` runs, but they
+  declare no label, so it fell to `StripMarker`, and `doc.listMarkers` excludes `-`
   deliberately: on the *inferring* path a leading hyphen is overwhelmingly not a bullet.
 
   **The exclusion is right for the path it was measured on and wrong for this one, and the
@@ -1075,14 +1082,40 @@ OKF-ified spec.
   figure or a case named by rendered appearance rather than by codepoint is not checkable, and
   agreement across sites is not evidence when every site inherited the same name.
 
-  Not fixed alongside the negative assertion that pins the exclusion
-  (`TestListMarkerExcludesTheAmbiguousGlyphs`), because the fix is a second entry point into
-  `doc`'s vocabulary rather than an edit to the allowlist, and bundling an interface change
-  into a test-coverage change would land it unargued. What it needs, when it lands: a
-  declared-path marker set that is the inferring one plus the glyphs whose ambiguity is with
-  *drawn* text, and the evidence for each addition measured on tagged files only. The cost of
-  leaving it is 3 lines in one document; the cost of getting it wrong is 3 false items in
-  another, and only one of those is currently pinned by a test.
+  **The fix is `doc.declaredMarkers`: `listMarkers` plus the hyphen, reached only through
+  `Block.StripDeclaredMarker`, which `markItem` calls.** A superset built from the shared map
+  at init rather than a second literal, so a glyph admitted for both paths cannot fall out of
+  this one, and a method rather than a parameter on `StripMarker` — the choice of vocabulary
+  follows from whether a declaration exists, which only `sectionize` knows, and a boolean
+  argument would let `layout` pass the wrong one with the compiler indifferent.
+
+  **The hyphen is the only addition, because it is the only one the declared path can see.**
+  Measured over all 1825 declared list items in the corpus, exactly 3 open with a glyph
+  `listMarkers` excludes and all 3 are that hyphen: `*`, `>`, U+00B7 and U+02D9 occur **0
+  times each** on this path, so admitting them would be speculation with no occurrence to
+  check it against. The 3 are separated from their text, `Cambria-Italic` at 10pt, and declare
+  no `Lbl` element at all — so none enters the 124-of-124 agreement population, which is
+  unmoved rather than merely still passing.
+
+  A hyphen is also the least costly possible mistake in this direction: if one of the 3 is not
+  a bullet, what is lost is a single `-` from an item the producer already called an item,
+  where the previous behaviour lost nothing and doubled a marker. That asymmetry does not hold
+  for `*`, where the same reading over untagged prose broke 3 lines of C.
+
+  **`Enumerated` had to move too, and only the A/B found it.** It asks whether a marker in
+  hand is a bullet, and it asked `listMarkers` — so the hyphen `StripDeclaredMarker` had just
+  recovered came back as an ordered label and the sink wrote it into the line as
+  `- \- Markup3D`: the same doubling, one escape further along. It reads `declaredMarkers`
+  now, which has no false positive to weigh, since `layout` cannot set a marker this map
+  admits and the shared one does not.
+
+  Result: **3 lines fixed, 0 changed elsewhere** across all 50 documents. Pinned in three
+  places, each killing a mutation the others survive — `TestStripDeclaredMarkerReadsTheHyphen`
+  and `TestStripMarkerStillDeclinesTheHyphen` for the split, `TestDeclaredMarkersAddOnlyTheHyphen`
+  for its size, and `sectionize.TestDeclaredItemsHyphenIsItsMarker` for the wiring. That last
+  one is the load-bearing test and was the last written: every test in `sectionize` passed with
+  `markItem` still calling `StripMarker`, so the vocabulary could have been written, unit-tested,
+  and never reached — which is exactly what the first mutation run showed.
 
   **What the assertion does buy is `>` and the two dots, and it is the only thing that could.**
   Their A/B is 0 files either way, so no corpus golden and no character-conservation total can
@@ -1090,8 +1123,8 @@ OKF-ified spec.
   and unobservable at the same time. That is the shape of debt a golden-file suite is structurally
   unable to carry, which is the general point worth taking from this item.
 
-  **The Wingdings half of that defect is fixed and the hyphen half is not, because the two
-  glyphs are not alike.** The same census that measured the hyphen found a second glyph the
+  **Both halves are fixed and they went to different places, because the two glyphs are not
+  alike.** The same census that measured the hyphen found a second glyph the
   declared path could not read: `U+F0A7`, Wingdings' square bullet, 2 items in
   `PDF20_AN001-BPC.pdf` emitting `- ****  How those brand colours…` — the sink's own `- `
   followed by a bold PUA glyph that Markdown renders as empty emphasis. It went into the

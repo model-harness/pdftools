@@ -575,11 +575,28 @@ func alt(e *tag.Elem) string {
 // declared to have, and a marker glyph followed by whitespace at the start of a declared
 // list item is not a coincidence anyone has to weigh.
 //
-// The measurement says so directly. Of 1412 declared list items on disk whose text opens
+// That is also why the strip is StripDeclaredMarker and not StripMarker: the declaration
+// buys a wider vocabulary. layout, reading the same glyph off a page that declared nothing,
+// has to weigh a hyphen against the command-line flags and C comments it is glued to in 12
+// of 13 occurrences; here the role is settled before the glyph is read. doc.declaredMarkers
+// records the one glyph that difference admits and the 3 items it fixes.
+//
+// The measurement says so directly. Of 1415 declared list items on disk whose text opens
 // with a marker glyph, 124 also declare a /Lbl saying what their label is — and the
 // label's first rune is that glyph in 124 of 124, with 0 disagreeing. So on every case
 // where a declaration exists to check the glyph against, the glyph is right. The
-// remaining 1288 declare no label, and without this they emit "- ■ text".
+// remaining 1291 declare no label, and without this they emit "- ■ text".
+//
+// The 3 that the hyphen added all landed in that second half: each declares no /Lbl element
+// at all, so none can enter the agreement population, and 124 of 124 is unmoved rather than
+// merely still passing. Each figure was re-walked rather than adjusted — 1288 + 3 = 1291 is
+// arithmetic that assumes the conclusion, where a walk reporting 1412 and 1415 from the same
+// pass says the +3 is the only difference.
+//
+// That 124 is a label read that *descends* into the Lbl, which is not the read label() does:
+// 24 of the 124 own their marker directly and the other 100 hold it in a Span kid. So the
+// agreement figure is about what the producer declared, and label() sees a quarter of it —
+// the gap that comment records, arrived at from the other side.
 //
 // # What the declaration adds that no glyph could
 //
@@ -594,7 +611,7 @@ func markItem(blk *doc.Block, marker string) {
 		blk.SetMarker(marker)
 		return
 	}
-	blk.StripMarker()
+	blk.StripDeclaredMarker()
 }
 
 // listDepth returns how deeply a list item is nested, 1-based, by counting enclosing
