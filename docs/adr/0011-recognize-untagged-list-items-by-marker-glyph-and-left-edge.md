@@ -147,6 +147,51 @@ number, which is also what a numbered heading is, and what a table row is. Nothi
 disk separates them, and inventing a rule here would collide with ADR 0008's, which reads
 exactly that leading number as a heading's level.
 
+> **Closed, 2026-08-10.** The objection holds for a *single* block and is what
+> `layout.OrderedLists` is built around: it promotes nothing on one numbered paragraph. What
+> separates an item from a heading is a **consecutive incrementing run at one left edge** —
+> `1.` then `2.` then `3.`, same label form, same margin — which is evidence no single block
+> carries and which neither a heading nor a table row makes accidentally. The delimiter is
+> required, so `7.4 Filters` and `1 Scope` are not candidates at all; a dotted clause number
+> has no single value to increment and therefore cannot form a run, which is the collision
+> with ADR 0008 resolved structurally rather than by tolerance. Precedence does the rest:
+> `Tables` and `Headings` run first in `inferRoles`, so anything they promoted is no longer
+> `RoleParagraph` and cannot be reconsidered.
+>
+> Measured over all 50 documents: 70 runs of 260 items, forms `a)` 174, `n.` 43,
+> `[n]` 21, `n)` 17, `a.` 5, run lengths 2–11 with 25 runs of exactly 2. The label vocabulary
+> is those five forms and no more: `(1)` and `(a)` look like obvious siblings of `[1]`, were
+> written, measured at **zero occurrences**, and removed — a removal proven output-neutral on
+> all 50 documents, which is the proof they were unreachable. Reading every run, 4 are tables of contents —
+> the only false positives on disk, and all 4 sit in *tagged* files where `inferRoles` never
+> runs. On the untagged path the pass actually serves, the effect is **5 runs of 25 items,
+> all in `mupdf_explored.pdf`, all genuine**, plus 3 lone numbered paragraphs correctly left
+> as prose. Validated against producers' own declarations, this ADR's own standard: of the
+> tagged list items declaring a `/Lbl` that holds an ordered label, `doc.OrderedLabel` reads
+> the same form off the item's text in **16 of 16**, disagreeing in 0.
+>
+> A table-of-contents guard (a page-number tail) was measured and would catch 3 of the 4 at
+> zero cost to a genuine item. It is not shipped: it cannot fire on any file this pass runs
+> on, and untestable code is worse than a recorded measurement.
+>
+> The one limitation worth recording is that a run crossing a page break splits into two,
+> because the loop is per page. Measured, not assumed: 5 such continuations exist in the
+> corpus and all 5 are in tagged documents, so 0 reach this pass. Joining them means carrying
+> run state between pages, which no inference pass keeps; each item carries its own label, so
+> the split costs a sink nothing until one renumbers from the first item.
+>
+> `sameEdge`'s half-point tolerance is measured on the same standard as `ListStep` below. Of
+> the 192 adjacent block pairs that agree on label form and increment by one, 180 have
+> left-edge gaps of exactly 0 and 10 are below 0.1pt, then nothing until 2.18pt — so every
+> value in [0.1, 2.1) separates the two populations identically and 0.5 is the middle of an
+> empty band.
+>
+> Note the asymmetry with the run minimum **rejected** above for bullets. There, requiring
+> two consecutive items cost 136 genuine promotions to catch about 3 strays. Here the run is
+> not a guard on top of the evidence — it *is* the evidence, so there is no promotion without
+> it. The two rules differ because a bullet glyph means something by itself and a number does
+> not.
+
 **Nesting rests on one document.** `lists.pdf`'s 2.403 is the only genuine left-edge gap
 inside a marker run anywhere on disk, which is why that fixture is enforced exactly: a
 change that broke nesting would show up nowhere else, and the corpus tests would stay

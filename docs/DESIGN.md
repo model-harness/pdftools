@@ -382,9 +382,9 @@ corpus (1442 promotions, 5 false) rather than assumed.
 **Docling's data model is the one to copy, and it is a model rather than a heuristic.**
 Keeping the marker as its own field instead of a prefix of the text is what makes
 ordered lists representable at all — ADR 0011 records that a numbered item is
-indistinguishable from a numbered heading *given only the glyphs*, and a `marker` +
-`enumerated` pair is where that stops being true, because a tagged PDF declares both.
-That is the shape §10's remaining list work should take.
+indistinguishable from a numbered heading *given only one block's glyphs*, and a `marker` +
+`enumerated` pair is where that stops being true, because a tagged PDF declares both and an
+untagged one betrays a run of them. Both producers fill the same two fields.
 
 `oar-ocr` is worth revisiting for the OCR path rather than this one: Apache-2.0 and
 native Rust matches §9's linkage rule, but it is ONNX-plus-weights, which puts it in
@@ -847,12 +847,30 @@ OKF-ified spec.
     obvious were measured and rejected: requiring a run of two items drops 136 genuine
     promotions, and rejecting a block whose marker recurs inside it costs 33 to catch 3.
 
-    Two limits remain. An *ordered* list is not recognized — a numbered item is a paragraph
-    opening with a number, which is also what a numbered heading and a table row are, and no
-    fixture separates them. And nesting rests on a single case: `lists.pdf`'s 2.403 type-size
-    indent is the only genuine left-edge gap inside a marker run anywhere on disk, the other
-    seven being 0.011 float noise and one 0.241 glyph-width difference, so `ListStep: 1.0`
-    sits in the middle of an empty band rather than at a fitted point.
+    **Ordered lists are recognized too, and the run is what makes them separable.** ADR 0011
+    recorded them as unreachable because a numbered item is a paragraph opening with a number,
+    which is also what a numbered heading and a table row are. True of one block — so
+    `layout.OrderedLists` never promotes one. It promotes a *consecutive incrementing run at
+    one left edge*: `1.` `2.` `3.`, same label form, same margin, which is a claim about a
+    sequence that no heading and no table row makes accidentally. The delimiter is required,
+    which excludes `7.4 Filters` and `1 Scope`, and a dotted clause number has no single value
+    to increment and so cannot form a run at all — ADR 0008's collision closed by construction
+    rather than by threshold. Corpus-wide: 70 runs of 260 items, all read; the 4
+    false positives are tables of contents and all 4 sit in *tagged* files, where `inferRoles`
+    never runs. Live effect on the untagged path: 5 runs of 25 items in `mupdf_explored.pdf`,
+    all genuine, with 3 lone numbered paragraphs correctly left as prose. Against producers'
+    own `/Lbl` declarations, `doc.OrderedLabel` reads the same form in 16 of 16.
+
+    Note that the run minimum ADR 0011 *rejected* for bullets at 136-to-3 is *required* here,
+    and the asymmetry is not a contradiction: for a bullet the run is a guard on top of the
+    glyph's own evidence, and for a number it is the only evidence there is.
+
+    One limit remains. Nesting rests on a single case: `lists.pdf`'s 2.403 type-size indent is
+    the only genuine left-edge gap inside a marker run anywhere on disk, the other seven being
+    0.011 float noise and one 0.241 glyph-width difference, so `ListStep: 1.0` sits in the
+    middle of an empty band rather than at a fitted point. Ordered items are all level 1 for
+    the same reason inverted — no indented ordered sub-list exists on disk, so there is nothing
+    to fit a tier rule to.
 
     **The "extract fused several items into one block" defect this recorded does not reach
     the output, and chasing it would have been wasted work.** Measured at the line level
@@ -960,8 +978,10 @@ OKF-ified spec.
   any parser and lose what the page says. Those keep the bullet and are written into the line
   as text, which is what this repo did for every label before. The fixture holds the only
   arabic markers on disk, so without it neither branch would be pinned by anything: the
-  untagged path contributes none, since ADR 0011 records an ordered item as unrecognizable
-  from glyphs alone.
+  untagged path contributed none at the time, since ADR 0011 then recorded an ordered item as
+  unrecognizable from glyphs alone. `layout.OrderedLists` has since closed that — it reads a
+  run of them and now supplies 25 arabic and lettered labels from `mupdf_explored.pdf` — which
+  makes the fixture the pin for the sink's rendering rather than for the labels' existence.
 
   The delimiter is normalized to `.` where the number is preserved, and the asymmetry is the
   point — `1)` and `1.` are the same marker to a parser, so the delimiter is syntax here and

@@ -158,15 +158,23 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 // heading count, and on every measured body size — 0 files differ. So the order is a
 // statement about which evidence outranks which, and nothing on disk depends on it.
 //
+// OrderedLists last, and here the order is a precedence claim that matters. Its evidence is
+// a run of incrementing numbers, and a numbered *heading* is exactly the block that could be
+// misread as one — which is ADR 0011's stated objection to recognizing ordered lists at all.
+// Running Headings first answers it structurally rather than by argument: a heading ADR 0008
+// promoted is no longer RoleParagraph, so it is not a candidate and cannot join a run. Tables
+// first removes the other collision the ADR names, a numeric first column.
+//
 // Shared by md and ocr so the two agree. They have to — ocr on a born-digital document
 // writes what md writes and consults no model, and
 // TestOCRVerbWithoutModelOnDigitalDocument holds them to it. Recognized pages are
-// unaffected either way: doctags assigns RoleHeading and RoleListItem itself, and both
+// unaffected either way: doctags assigns RoleHeading and RoleListItem itself, and all
 // passes consider only paragraphs.
 func inferRoles(d *doc.Document) {
 	layout.Tables(d, layout.DefaultOptions)
 	layout.Headings(d, layout.DefaultOptions)
 	layout.Lists(d, layout.DefaultOptions)
+	layout.OrderedLists(d, layout.DefaultOptions)
 }
 
 func writeOutline(o *doc.Outline, out string, opt markdown.Options) error {

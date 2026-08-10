@@ -5,6 +5,90 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-08-10
+
+- **Untagged ordered lists are recognized, closing the consequence ADR 0011 recorded as
+  unreachable.** The ADR's objection was exact and still holds: a numbered item is a paragraph
+  opening with a number, which is also what a numbered heading is and what a table row is, and
+  nothing on disk separates them. Nothing separates *one block*. `layout.OrderedLists` promotes
+  a **consecutive incrementing run at one left edge** — `1.` `2.` `3.`, same label form, same
+  margin — which is a claim about a sequence that no heading and no table row makes by
+  accident, and it promotes nothing at all on a single numbered paragraph. Measured over all 50
+  documents: 70 runs of 260 items, forms `a)` 174, `n.` 43, `[n]` 21, `n)` 17, `a.` 5, lengths
+  2–11 with 25 runs of exactly 2. Every run was read; the 4 false positives are tables of
+  contents, and all 4 sit in *tagged* files where `inferRoles` never runs, so the live effect is
+  **5 runs of 25 items in `mupdf_explored.pdf`, all genuine**, with 3 lone numbered paragraphs
+  correctly left as prose. Character accounting on the one changed file is exact: 45 fewer
+  bytes, being 25 removed `\.` escapes and 20 inter-item blank lines, with the
+  whitespace-normalized text identical.
+- `doc.OrderedLabel` and `doc.Block.StripOrderedLabel`, beside `ListMarker` and `StripMarker`
+  and in `doc` for the same reason: the marker vocabulary belongs where both producers can
+  reach it, since `sectionize` reads what a tree declares and `layout` infers from what a page
+  draws, and two copies of the policy is how they come to disagree. Five label forms — `1.`
+  `1)` `[1]` `a.` `a)` — which is exactly what the corpus contains and no more. `(1)` and `(a)`
+  look like obvious siblings of `[1]`, were written, measured at **zero occurrences**, and
+  removed; their removal changed no byte of output on any of the 50 documents, which is the
+  proof they were unreachable. Admitting a form on the strength of it seeming plausible is the
+  speculative code this repo does not keep — no fixture could reach it, so nothing would catch
+  it going wrong. The delimiter is required and is what does the separating: `7.4 Filters` and
+  `1 Scope` are clause numbers with no delimiter, and a dotted number has no single value to
+  increment, so `N.N` cannot form a run and ADR 0008's rule cannot collide with this one.
+  Digits cap at three (a longer run is a year or a byte count) and letters are single and
+  lowercase (an uppercase `A. ` opens far too much prose). Validated the way ADR 0011 validated
+  its glyph allowlist — against producers' own declarations: of the tagged items declaring a
+  `/Lbl` holding an ordered label, `OrderedLabel` reads the same form off the item's text in
+  **16 of 16**, disagreeing in 0.
+- `StripOrderedLabel` is separate from `StripMarker` rather than a branch inside it, because a
+  bullet is one rune and a label is up to five and can be split across spans by a style change
+  on the delimiter — a producer setting the number bold and the bracket roman writes `1` then
+  `) text`. It consumes a rune count across as many spans as it takes, where `StripMarker`
+  decodes a single rune.
+- `layout.OrderedLists` runs last in `inferRoles`, and there the order is a precedence claim
+  rather than the "nothing depends on it" the Headings/Lists pair measured. A numbered heading
+  is precisely the block that could be misread as an item, so `Headings` running first answers
+  ADR 0011's objection structurally: a promoted heading is no longer `RoleParagraph`, so it is
+  not a candidate. Same for a table cell, which `Tables` produces.
+- `sameEdge`'s tolerance is half a point, and it is measured rather than asserted, which is the
+  only defensible reason to state a number. Censused over the corpus: of the 192 adjacent block
+  pairs that agree on label form and increment by one, 180 have left-edge gaps of exactly 0, 10
+  are below 0.1pt, and then there is nothing at all until 2.18pt. Every value in [0.1, 2.1)
+  separates the two populations identically, so 0.5 is the middle of an empty band — the same
+  shape as ADR 0011's `ListStep`.
+- A run that crosses a page break splits into two, and that is a measured limitation rather than
+  a preference: the loop is per page, so `a)…d)` ending one page and `e)…g)` opening the next
+  promote separately. 5 such continuations exist in the corpus and **all 5 are in tagged
+  documents, so 0 reach this pass**. Joining them means carrying run state between pages, which
+  no other inference pass keeps; a sink that renumbered from the first item would need it closed
+  first, and the markdown sink re-emits each item's own label.
+- 6 tests in `doc/marker_test.go` and 11 in `layout/ordered_test.go`. Every check in the new
+  code was mutation-verified — the run minimum, each of the three run conditions, both halves
+  of the form comparison, the paragraph role gate, the strip invocation, the label separator
+  and content requirements, the digit cap, the lowercase-only rule, the leading-space rune
+  count, and the post-label gap close. Two mutations survived their first pass and both were
+  real test gaps. `sameForm`'s delimiter comparison passed every test when it compared lengths
+  instead of strings, because `1.`/`2)` and `[1]`/`2]` have same-length delimiters — both pairs
+  are now asserted. And the accepted run's advance passed when it skipped one block past the
+  run, because every test had a non-candidate after its list; two adjacent runs is now a test.
+  The *rejected* run's advance survives as an equivalent mutation, which is correct rather than
+  a gap: a rejected candidate is always exactly one block long.
+- Review found the digit cap pinned in one direction only. `2026.` proved the cap rejects four
+  digits, so loosening 3 to 4 died — but tightening 3 to 2 passed the entire suite, because
+  nothing asserted that three digits are *admitted*. `100.` is now a case, and both mutations
+  die. `OrderedLists` accepting an `Options` it never reads was the review's other finding, and
+  it is answered in a comment rather than a knob: `MaxHeading` and `MaxLevel` bound a heading,
+  `ListStep` is a nesting step for tiers this pass does not produce, and `sameEdge`'s tolerance
+  is a different question from `ListStep` — how close two edges must be to mean one margin,
+  not how far apart to mean two depths. The parameter stays for the signature the four passes
+  share; adding a setting for a value that sits in an empty band is configurability no caller
+  asked for.
+- Not shipped, and recorded rather than written: a table-of-contents guard reading a
+  page-number tail. It catches 3 of the 4 false positives at zero cost to a genuine item — a
+  clean separation, unlike the run minimum ADR 0011 rejected at 136-to-3 — but it cannot fire
+  on any file this pass runs on, and code no fixture can reach is worse than a measurement in
+  a comment. Nesting is not attempted either: every promoted item is level 1, because no
+  indented ordered sub-list exists on disk and a tier rule fitted to no positive case is
+  fitted to noise, which is ADR 0011's own reason for stating `ListStep` rather than tuning it.
+
 ### Added — 2026-08-09
 
 - **`pdfspec okf` converts an untagged PDF.** It used to refuse one outright, because a bundle

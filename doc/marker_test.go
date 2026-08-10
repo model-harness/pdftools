@@ -135,10 +135,9 @@ func TestSetMarkerStopsAtContent(t *testing.T) {
 // the field is a string rather than a rune.
 //
 // The ordered cases are the corpus's, all from Well-Tagged-PDF-WTPDF-1.0.pdf: "a.", "b.",
-// and "[1]" through "[7]". They are unreachable from the glyph side — ADR 0011 records
-// why, a leading number being also what a heading and a table row open with — so they
-// exist here only because a producer declared them, and they are exactly the labels a
-// sink must re-emit rather than drop.
+// and "[1]" through "[7]". They arrive by either of two routes now — a producer's declared
+// /Lbl, or OrderedLabel reading a run of them off an untagged page — and they are exactly
+// the labels a sink must re-emit rather than drop.
 func TestEnumeratedSeparatesLabelsFromBullets(t *testing.T) {
 	cases := []struct {
 		marker string
@@ -158,5 +157,145 @@ func TestEnumeratedSeparatesLabelsFromBullets(t *testing.T) {
 		if got := b.Enumerated(); got != c.want {
 			t.Errorf("Enumerated(%q) = %v, want %v", c.marker, got, c.want)
 		}
+	}
+}
+
+// TestOrderedLabelReadsTheFormsOnDisk is the vocabulary itself: the five shapes the corpus
+// contains, and the near-misses that must not read as labels.
+//
+// The negatives are the point. A leading number is what a numbered heading opens with and
+// what a table's first column holds, which is ADR 0011's objection, so what keeps this from
+// firing on those is the delimiter and the separator — "7.4 Filters" has no delimiter after
+// its number, and "1.5" has no separator after its. Each negative below is a form that
+// occurs in the corpus and must stay unrecognized.
+func TestOrderedLabelReadsTheFormsOnDisk(t *testing.T) {
+	cases := []struct {
+		txt  string
+		lbl  string
+		val  int
+		note string
+	}{
+		{"1. Introduction to it.", "1.", 1, "arabic with a period"},
+		{"10) The tenth step.", "10)", 10, "two digits"},
+		{"[7] ISO/IEC 8825-1, ASN.1.", "[7]", 7, "a bibliography entry"},
+		{"100. The hundredth.", "100.", 100, "three digits is the cap, and it is inclusive"},
+		{"a. The first alternative.", "a.", 1, "alphabetic starts the sequence at 1"},
+		{"c) Accumulate the sequence.", "c)", 3, "the corpus's most common form"},
+		{"  1. Leading space is trimmed.", "1.", 1, "Text() carries the page's own spacing"},
+		{"1. A non-breaking separator.", "1.", 1, "producers use U+00A0 routinely"},
+
+		{"7.4 Filters", "", 0, "a clause number: no delimiter after the number"},
+		{"1 Scope", "", 0, "the same, single digit"},
+		{"1.5 is a value.", "", 0, "no separator after the period"},
+		{"Figure 1. The graph.", "", 0, "a label must open the block"},
+		{"1.", "", 0, "no content: a table cell or a figure number"},
+		{"1) ", "", 0, "whitespace is not content"},
+		{"A. A sentence opening.", "", 0, "uppercase is not admitted: too much prose"},
+		{"aa) Two letters.", "", 0, "not a form on disk"},
+		{"(1) Parenthesized arabic.", "", 0, "measured at zero occurrences, so not admitted"},
+		{"(b) Parenthesized letter.", "", 0, "the same"},
+		{"2026. A year.", "", 0, "four digits is not a label"},
+		{"- An item.", "", 0, "a bullet is ListMarker's, not this"},
+		{"", "", 0, ""},
+	}
+	for _, c := range cases {
+		lbl, val := OrderedLabel(c.txt)
+		if lbl != c.lbl || val != c.val {
+			t.Errorf("OrderedLabel(%q) = %q, %d, want %q, %d (%s)",
+				c.txt, lbl, val, c.lbl, c.val, c.note)
+		}
+	}
+}
+
+// TestStripOrderedLabelMovesItToTheField is StripMarker's property for the ordered form:
+// out of the text, still in the model, and the separator gone with it.
+func TestStripOrderedLabelMovesItToTheField(t *testing.T) {
+	b := item("[3] ISO 32000-2.")
+	if !b.StripOrderedLabel() {
+		t.Fatal("StripOrderedLabel = false, want true")
+	}
+	if got := b.Text(); got != "ISO 32000-2." {
+		t.Errorf("text = %q, want %q", got, "ISO 32000-2.")
+	}
+	if b.Marker != "[3]" {
+		t.Errorf("marker = %q, want %q", b.Marker, "[3]")
+	}
+	if !b.Enumerated() {
+		t.Error("Enumerated = false, want true: the sink switches on this to write the label")
+	}
+}
+
+// TestStripOrderedLabelAcrossSpans is the case that makes this a separate function rather
+// than a branch in StripMarker: a label is several runes and a style change can split it.
+//
+// A producer setting the number bold and the delimiter roman writes "1" and ") text". A
+// strip that decoded one rune like StripMarker's would leave ") text" behind, and one that
+// edited only the first span would leave the delimiter.
+func TestStripOrderedLabelAcrossSpans(t *testing.T) {
+	b := item("1", ") The first step.")
+	if !b.StripOrderedLabel() {
+		t.Fatal("StripOrderedLabel = false, want true")
+	}
+	if got := b.Text(); got != "The first step." {
+		t.Errorf("text = %q, want %q", got, "The first step.")
+	}
+	if b.Marker != "1)" {
+		t.Errorf("marker = %q, want %q", b.Marker, "1)")
+	}
+	if len(b.Spans) != 2 || b.Spans[0].Text != "" {
+		t.Errorf("spans = %+v, want the label's span kept and empty", b.Spans)
+	}
+}
+
+// TestStripOrderedLabelPastALeadingSpaceSpan is StripMarker's whitespace-span case, which
+// applies here for the same reason: OrderedLabel trims before matching, so a block can be
+// admitted on a label that lives past a span holding nothing but spacing.
+//
+// The rune count this walks includes that leading whitespace, which is what makes the two
+// halves agree — counting only the label's own runes would stop one span early and leave
+// "[10]" in the text.
+//
+// It is also the case where the label ends exactly on a span boundary, which takes the
+// len(rs) <= n branch with equality rather than the split branch: the count reaches zero with
+// no runes of that span left over, so the following span has to supply the content.
+func TestStripOrderedLabelPastALeadingSpaceSpan(t *testing.T) {
+	b := item("  ", "[10]", " Item ten.")
+	if !b.StripOrderedLabel() {
+		t.Fatal("StripOrderedLabel = false, want true")
+	}
+	if got := b.Text(); got != "Item ten." {
+		t.Errorf("text = %q, want %q", got, "Item ten.")
+	}
+	if b.Marker != "[10]" {
+		t.Errorf("marker = %q, want %q", b.Marker, "[10]")
+	}
+}
+
+// TestStripOrderedLabelLeavesUnlabelledTextAlone is the gate: a block that will not be
+// promoted must not be edited. Without it a heading's clause number would be stripped by
+// any caller that asked.
+func TestStripOrderedLabelLeavesUnlabelledTextAlone(t *testing.T) {
+	b := item("7.4 ", "Filters")
+	if b.StripOrderedLabel() {
+		t.Fatal("StripOrderedLabel = true on a clause number, want false")
+	}
+	if got := b.Text(); got != "7.4 Filters" {
+		t.Errorf("text = %q, want it untouched", got)
+	}
+	if b.Marker != "" {
+		t.Errorf("marker = %q, want empty", b.Marker)
+	}
+}
+
+// TestStripOrderedLabelStopsAtContent is the trim's bound, and it is the mutation the other
+// cases do not catch: a strip that kept trimming would eat the indentation of a continuation
+// line inside the item.
+func TestStripOrderedLabelStopsAtContent(t *testing.T) {
+	b := item("a) First.", "  and its continuation.")
+	if !b.StripOrderedLabel() {
+		t.Fatal("StripOrderedLabel = false, want true")
+	}
+	if got := b.Text(); got != "First.  and its continuation." {
+		t.Errorf("text = %q, want the second span's spacing kept", got)
 	}
 }

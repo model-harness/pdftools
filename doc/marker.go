@@ -90,6 +90,106 @@ func ListMarker(txt string) rune {
 	return rs[0]
 }
 
+// orderedForms are the ordered-label shapes a producer writes.
+//
+// A closed list of shapes rather than "a number then punctuation", because the risk here is
+// not which glyph follows the number — it is what else in a document opens with one.
+//
+// These five are exactly the forms the corpus contains, and the tally is the whole
+// justification: of the 260 items layout.OrderedLists promotes across all 50 documents, "a)"
+// is 174, "n." 43, "[n]" 21, "n)" 17 and "a." 5. Parenthesized labels — "(1)" and "(a)" —
+// look like obvious siblings of "[1]" and were written, measured at **zero occurrences**, and
+// removed. Admitting a sixth form on the strength of it seeming plausible is the speculative
+// code this repo does not keep: no fixture could reach it, so nothing would catch it going
+// wrong. If one turns up, the evidence arrives with it.
+//
+// The delimiter is required and is what does the separating. A numbered *heading* is
+// "7.4 Filters" or "1 Scope" — a clause number followed by space, no delimiter — and a
+// dotted number has no single sequence value to increment, which is why "N.N" cannot form a
+// run at all and needs no exclusion. Measured over every document on disk, no dotted clause
+// number chains under layout.OrderedLists' rule.
+var orderedForms = []struct {
+	// prefix and suffix bracket the label: ("", ".") reads "1." and ("[", "]") reads "[1]".
+	prefix, suffix string
+	// alpha reads a single letter rather than digits.
+	alpha bool
+}{
+	{"", ".", false},  // 1.
+	{"", ")", false},  // 1)
+	{"[", "]", false}, // [1]
+	{"", ".", true},   // a.
+	{"", ")", true},   // a)
+}
+
+// OrderedLabel returns the ordered label txt opens with and its sequence value, or "" and 0.
+//
+// The value is what makes a run checkable: 1 for "1." and for "a.", so a rule can require
+// that consecutive items increment by one. Letters are single and lowercase only — "aa." is
+// not a form on disk, and an uppercase letter opens far too much prose ("A. " begins a
+// sentence) to admit on this evidence.
+//
+// The separator requirement is the same one ListMarker makes and it matters more here,
+// because the label is far more common as ordinary text than a bullet glyph is: "1.5" and
+// "Figure 1." must not read as labels, and neither does, the first for having no separator
+// and the second for not being at the start.
+//
+// Exported for the same reason ListMarker is: deciding to promote a block and editing its
+// text are separate steps, and a block that will not be promoted must not be edited.
+func OrderedLabel(txt string) (string, int) {
+	rs := []rune(strings.TrimLeftFunc(txt, unicode.IsSpace))
+	for _, f := range orderedForms {
+		lbl, val, ok := matchForm(rs, f.prefix, f.suffix, f.alpha)
+		if ok {
+			return lbl, val
+		}
+	}
+	return "", 0
+}
+
+func matchForm(rs []rune, prefix, suffix string, alpha bool) (string, int, bool) {
+	i := 0
+	for _, p := range prefix {
+		if i >= len(rs) || rs[i] != p {
+			return "", 0, false
+		}
+		i++
+	}
+	start, val := i, 0
+	if alpha {
+		if i >= len(rs) || rs[i] < 'a' || rs[i] > 'z' {
+			return "", 0, false
+		}
+		val = int(rs[i]-'a') + 1
+		i++
+	} else {
+		// Three digits at most. A longer run of them is a year, a byte count or a code
+		// point, not a list label, and the corpus's longest ordered label is two digits.
+		for i < len(rs) && i-start < 3 && rs[i] >= '0' && rs[i] <= '9' {
+			val = val*10 + int(rs[i]-'0')
+			i++
+		}
+		if i == start {
+			return "", 0, false
+		}
+	}
+	for _, s := range suffix {
+		if i >= len(rs) || rs[i] != s {
+			return "", 0, false
+		}
+		i++
+	}
+	// A separator, then content. Both required, for ListMarker's reasons: without the
+	// separator "1.5" is a label, and without content a lone "1." is a table cell or a
+	// figure number rather than an item.
+	if i >= len(rs) || !unicode.IsSpace(rs[i]) {
+		return "", 0, false
+	}
+	if strings.TrimSpace(string(rs[i:])) == "" {
+		return "", 0, false
+	}
+	return string(rs[:i]), val, true
+}
+
 // StripMarker moves a leading marker glyph out of the block's spans into Marker, and
 // reports whether it found one.
 //
@@ -153,6 +253,63 @@ func (b *Block) StripMarker() bool {
 		return false
 	}
 	b.Marker = string(found)
+	return true
+}
+
+// StripOrderedLabel moves a leading ordered label out of the block's spans into Marker, and
+// reports whether it found one.
+//
+// Separate from StripMarker rather than folded into it, because the two remove different
+// shapes and only one of them is a single rune. A bullet is one glyph, so StripMarker can
+// decode a rune and trim; a label is up to five ("[100]") and may be split across spans by a
+// style change on the delimiter — a producer setting the number bold and the bracket roman
+// gives "1" and ") text" — so this consumes a rune count across as many spans as it takes.
+//
+// Marker holds the label with its delimiter and without the separator ("1.", "[3]", "a)"),
+// which is what a sink needs: Block.Enumerated reads it to tell an ordered item from a
+// bullet, and the markdown sink reads the digits back out to write CommonMark's own syntax.
+// The separator goes because it is spacing rather than content, exactly as in StripMarker.
+//
+// An empty span left behind stays in place rather than being removed, for StripMarker's
+// reason: span indices a caller holds stay valid, and Span.MCID survives for diagnosis.
+func (b *Block) StripOrderedLabel() bool {
+	lbl, _ := OrderedLabel(b.Text())
+	if lbl == "" {
+		return false
+	}
+	// The count includes any whitespace before the label, which Text() carries and
+	// OrderedLabel trimmed off before matching.
+	n := len([]rune(lbl))
+	txt := b.Text()
+	n += len([]rune(txt)) - len([]rune(strings.TrimLeftFunc(txt, unicode.IsSpace)))
+
+	for i := range b.Spans {
+		s := &b.Spans[i]
+		if n <= 0 {
+			// The label is gone; close the gap it left, then stop at the first span with
+			// content so the trim cannot reach into the item's own prose.
+			if s.Text == "" {
+				continue
+			}
+			s.Text = strings.TrimLeftFunc(s.Text, unicode.IsSpace)
+			if s.Text != "" {
+				break
+			}
+			continue
+		}
+		rs := []rune(s.Text)
+		if len(rs) <= n {
+			n -= len(rs)
+			s.Text = ""
+			continue
+		}
+		s.Text = strings.TrimLeftFunc(string(rs[n:]), unicode.IsSpace)
+		n = 0
+		if s.Text != "" {
+			break
+		}
+	}
+	b.Marker = lbl
 	return true
 }
 
