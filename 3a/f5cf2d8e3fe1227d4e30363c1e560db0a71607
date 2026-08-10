@@ -1,0 +1,32 @@
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_08bf756d355ef2 92-127
+objects/objects.go
+  s_5cd1b28ed520c1::t_05b9f797f43a21 357-360
+  s_5cd1b28ed520c1::t_a3d9b9bad25942 314,320,323-328
+objects/objects_test.go
+  s_5cd1b28ed520c1::t_f335f4ae494abb 207-209
+docs/adr/0012-decode-a-text-string-through-annex-d-2.md
+  s_5cd1b28ed520c1::t_af0444fb3b0d22 145-159
+  s_5cd1b28ed520c1::t_9da1bdbdf11109 1-46,51,54-62,65,68-110,116-144,160-175
+  s_5cd1b28ed520c1::t_63c3c10e270c6e 66-67
+  s_5cd1b28ed520c1::t_541468bc9eba18 52-53
+  s_5cd1b28ed520c1::t_5ece2a7ebff0ce 47-50
+  s_5cd1b28ed520c1::t_c838efb93f17ed 63-64
+  s_5cd1b28ed520c1::t_3edc09cc4a618c 111-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3af5cf2d8e3fe1227d4e30363c1e560db0a71607",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
