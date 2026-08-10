@@ -916,16 +916,27 @@ OKF-ified spec.
   indistinguishably from its content. The tagged path was described here as having no gaps;
   `clauses` matching exactly did not catch it because that fixture has no lists.
 
-  **The declaration is read where there is one, the glyph where there is not.** Of 1407
-  declared list items whose text opens with a marker glyph, 121 also declare a `Lbl` — and
-  the label's first rune is that glyph in **121 of 121, with 0 disagreeing**, which is the
-  strongest available check on the `layout` allowlist. 1286 declare no label at all, so the
+  **The declaration is read where there is one, the glyph where there is not.** Of 1412
+  declared list items whose text opens with a marker glyph, 124 also declare a `Lbl` — and
+  the label's first rune is that glyph in **124 of 124, with 0 disagreeing**, which is the
+  strongest available check on the `layout` allowlist. 1288 declare no label at all, so the
   glyph rule has to run on this path too. That is not `inferRoles` over a declaration: the
   block is *already* declared `RoleListItem` and the only question is which of its runes is
-  the label it was declared to have. What the declaration adds that no glyph could is 13
-  ordered labels — `a.`, `b.`, `[1]`–`[7]` — exactly the case ADR 0011 records as unreachable
-  from glyphs alone. It also reaches 11 items in PDF-Declarations whose bold Wingdings square
-  is *glued* to its text with no separator, which `ListMarker` rejects outright.
+  the label it was declared to have. What the declaration adds that no glyph could is 16
+  ordered labels — `a.`, `b.`, `[1]`–`[7]` and `1.`–`3.` — exactly the case ADR 0011 records
+  as unreachable from glyphs alone. It also reaches 11 items in PDF-Declarations whose bold
+  Wingdings square is *glued* to its text with no separator, which `ListMarker` rejects
+  outright.
+
+  Three of those figures moved after the fact and it is worth saying why, since none of the
+  three is a re-measurement of the same population: `testdata/reference/tagged-lists.pdf` was
+  committed later and contributes 3 marker-opening items but 6 declared labels — it holds 6
+  `LI`, all 6 declaring a label, only 3 of which open with an allowlist glyph — including the 3
+  ordered `1.`–`3.`, while admitting `U+F0A7` to the allowlist contributes the other 2 items. The
+  two populations therefore take different amounts from one fixture, which is why 1412 moved by
+  5 and 153 by 6. A figure
+  defined by the allowlist moves when the allowlist does, which is the thing to check when a
+  glyph joins it — the agreement count is the one that would expose a bad admission.
 
   Docling's model, followed: `Marker` as a field beside the text, `Enumerated()` derived from
   it rather than stored, so the two cannot disagree. `doc/marker.go` rather than `layout`,
@@ -1078,6 +1089,45 @@ OKF-ified spec.
   tell whether they are in the allowlist or out of it — the exclusion was documented, unpinned,
   and unobservable at the same time. That is the shape of debt a golden-file suite is structurally
   unable to carry, which is the general point worth taking from this item.
+
+  **The Wingdings half of that defect is fixed and the hyphen half is not, because the two
+  glyphs are not alike.** The same census that measured the hyphen found a second glyph the
+  declared path could not read: `U+F0A7`, Wingdings' square bullet, 2 items in
+  `PDF20_AN001-BPC.pdf` emitting `- ****  How those brand colours…` — the sink's own `- `
+  followed by a bold PUA glyph that Markdown renders as empty emphasis. It went into the
+  shared allowlist rather than a declared-path set because it has no ambiguity to weigh in
+  either direction: every occurrence in the corpus is a bullet (both `Wingdings-Regular`,
+  both alone in their span at 12pt, both block-initial and separated, both on a declared
+  `RoleListItem`, and there is no third), where a hyphen's whole problem is that it is
+  something else 12 times out of 13. A PUA codepoint has no Unicode meaning to appeal to, so
+  corpus use is the only evidence there can be — which is thin, and stated as thin in
+  `doc/marker.go` rather than dressed up. Its A/B changes 2 lines in 1 document of 50 and
+  nothing else.
+- **`label()` reads only the `Lbl` element's own marked content, so 100 of the 153 declared
+  labels on disk read as empty. Open, measured, benign in output today.**
+
+  The producer's marker usually sits one level below the `Lbl`, in a `Span` inside it — 92
+  cases as a single `Span` and 8 split across two — and `label()` walks `e.Kids` only far
+  enough to find the `Lbl`, then reads `k.Content` and stops. So it returns `""` for 100 of
+  the 102 empties it produces, and `markItem` falls through to `StripMarker`, which recovers
+  the same `■` from the item's text. The output is right; the reason it is right is the glyph
+  rule, not the declaration the producer supplied.
+
+  **What makes it worth recording rather than fixing quietly is that the code's own comment
+  had the cause wrong**, attributing all 14 empties it then knew about to producers who "drew
+  the marker outside the element" — a property of the file. Measured against production
+  `label()` by compiling counters into it, the split is 2 that own no marked content at all
+  (the producer's version) and 100 that own it one level down (ours). A number that looks
+  measured but was never attributed is the same failure this section records for the two dots
+  and for the populations above.
+
+  Not fixed here for the reason the hyphen is not: it changes what `label()` means rather
+  than what a figure says, and it is not free. Descending into the `Lbl`'s subtree has to
+  stop before it reaches a nested list's own items — `TestLabelIsNotTakenFromANestedItem`
+  exists because the *element* search must not recurse — so a text read that descends needs
+  its own bound, and no fixture covers the `Span`-kid shape at all today. The safety margin
+  is that all 16 ordered labels, the only case with no glyph fallback, are owned by their
+  `Lbl` directly, so the 100 are exactly the cases where the fallback works.
 - **A block boundary inside one marked-content element loses no space, and this item is
   closed as *unreachable* — the census that was meant to size it found no case to fix and a
   different defect instead.** The premise was sound: the wrap space is inferred only

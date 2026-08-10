@@ -97,17 +97,22 @@ func TestDeclaredLabelReachesAnOrderedList(t *testing.T) {
 	}
 }
 
-// TestUndeclaredMarkerIsStrippedFromADeclaredItem is the other 1286.
+// TestUndeclaredMarkerIsStrippedFromADeclaredItem is the other 1288.
 //
 // Most producers declare the list item and draw the bullet without declaring a Lbl for
-// it — 1286 of the 1407 marker-opening items on disk. Without this they emit "- ■ text"
+// it — 1288 of the 1412 marker-opening items on disk. Without this they emit "- ■ text"
 // just as the declared ones did.
 //
 // It is not the same act as inferring a role. The block is already declared RoleListItem;
 // the only question is which of its runes is the label it was declared to have. And the
 // answer is checkable: of the items that open with a marker glyph *and* declare a Lbl, the
-// label's first rune is that glyph in 121 of 121, with 0 disagreeing. So on every case
+// label's first rune is that glyph in 124 of 124, with 0 disagreeing. So on every case
 // where evidence exists to check the glyph against, the glyph is what the producer meant.
+//
+// The path this covers is wider than those 1288, because label() reads only the Lbl's own
+// marked content and 100 of the 153 Lbl on disk hold their marker in a Span inside it. So
+// this fallback, not the declaration, is what supplies the marker for two thirds of the
+// items that declare one — recorded in label()'s own comment and in DESIGN.md.
 func TestUndeclaredMarkerIsStrippedFromADeclaredItem(t *testing.T) {
 	d := docWith(
 		sp{1, 0, "1 Scope"},
@@ -156,13 +161,18 @@ func TestDeclaredLabelOutranksTheGlyph(t *testing.T) {
 	}
 }
 
-// TestEmptyLabelFallsBackToTheGlyph is the shape 14 of the 147 declared labels on disk
-// have: a Lbl element with no text of its own, because the producer drew the marker
-// outside the element it declared for it.
+// TestEmptyLabelFallsBackToTheGlyph is the shape 2 of the 153 declared labels on disk
+// have: a Lbl element that owns no marked content at all, because the producer drew the
+// marker outside the element it declared for it.
 //
 // An empty declaration is not a declaration. Treating it as one — taking "" as the marker
 // and stopping — would leave the drawn bullet in the text and re-emit the defect on
 // exactly the documents that tried hardest to tag correctly.
+//
+// Those 2 are not the only empties label() returns; there are 102, and the other 100 own
+// their marker in a Span one level down, which label() does not read. This test covers the
+// producer's version of empty, not that one — the shape with a Span kid has no case here
+// at all, which is what DESIGN.md's open question records.
 func TestEmptyLabelFallsBackToTheGlyph(t *testing.T) {
 	d := docWith(
 		sp{1, 0, "1 Scope"},
@@ -188,7 +198,7 @@ func TestEmptyLabelFallsBackToTheGlyph(t *testing.T) {
 // TestLabelIsNotTakenFromANestedItem is why label reads only direct children.
 //
 // Measured over every tagged list item on disk that declares one, the Lbl is a direct kid
-// of its LI in 147 of 147 — so a recursive search buys nothing, and it would cost: the
+// of its LI in 153 of 153 — so a recursive search buys nothing, and it would cost: the
 // first Lbl below an outer item can belong to an inner list's first item, and taking it
 // would label the outer item with the inner one's marker and strip that marker from a
 // block it does not belong to.
@@ -427,7 +437,7 @@ func TestLabelOutsideAListItemIsLeftAsText(t *testing.T) {
 // TestLabelOnlyItemIsDropped is the emptying case, which measurement says does not occur
 // on disk and which must still not lose content silently.
 //
-// Of the 1407 marker-opening items, 0 would be emptied by removing the marker, and all 13
+// Of the 1412 marker-opening items, 0 would be emptied by removing the marker, and all 16
 // ordered labels leave non-empty content. But a producer can declare an item that is only a
 // label — a numbered placeholder whose body is elsewhere — and the block then has no spans.
 // The honest answer is that a marker is not content: such an item *is* empty and IsEmpty

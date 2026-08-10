@@ -89,6 +89,100 @@ All notable changes to this project are documented here, following
   indented ordered sub-list exists on disk and a tier rule fitted to no positive case is
   fitted to noise, which is ADR 0011's own reason for stating `ListStep` rather than tuning it.
 
+### Fixed — 2026-08-10
+
+- **`U+F0A7`, Wingdings' square bullet, is a list marker.** 2 items in
+  `PDF20_AN001-BPC.pdf` emitted `- ****  How those brand colours are specified…` — the sink's
+  own `- ` followed by a bold PUA glyph that Markdown renders as empty emphasis. Both are
+  declared `RoleListItem`, so `markItem` ran and `StripMarker` declined, because
+  `doc.listMarkers` did not contain the glyph. It does now, and the A/B over all 50 documents
+  changes those 2 lines and nothing else.
+
+  **Found by a census of the declared path, which is the part worth recording.** The survey
+  that built the allowlist read block-initial runes over *untagged* paragraphs, and `U+F0A7`
+  never occurs there — so no amount of re-reading that tally could have found it. Asking the
+  other question instead, "which items did a producer declare `RoleListItem` while
+  `StripMarker` declined", found 5 across 2 files: these 2, and 3 hyphens in ISO 32000-2 that
+  stay open deliberately. **A survey scoped to one path cannot complete an allowlist both
+  paths share.**
+
+  Admitted to the shared map rather than a declared-path-only set because it has no ambiguity
+  in either direction: both occurrences are `Wingdings-Regular`, alone in their span at 12pt,
+  the block's leading rune followed by whitespace, on a declared `RoleListItem`, and there is
+  no third occurrence anywhere in the corpus. That is the strongest evidence a Private Use
+  Area codepoint can have — a PUA glyph has no Unicode meaning to appeal to — and
+  `doc/marker.go` says so in those terms rather than implying more.
+  `TestStripMarkerReadsTheWingdingsSquareBullet` pins it, and has to: the 2 lines live in a
+  gitignored file, so no golden covers them, and a mutation deleting the map entry fails only
+  that test and the `Enumerated` case beside it. Its span split turned out to be a shape no
+  other case reached — three spans with the separator alone in the middle one.
+
+### Changed — 2026-08-10
+
+- **The `/Lbl` figures, re-measured again — the 08-08 entry's `1407 / 121 of 121 / 1286 / 13`
+  and its `147` labels are all superseded.** Current: **1412** declared list items open with an
+  allowlist glyph, **1288** declare no label, **124** declare one and the label's first rune is
+  that glyph in **124 of 124 with 0 disagreeing**, **16** declared labels are ordered (`a.`,
+  `b.`, `[1]`–`[7]` in WTPDF, `1.`–`3.` in `tagged-lists.pdf`), **153** `Lbl` exist and all 153
+  are direct kids of their `LI`, **1672** items declare none, and removing the label leaves the
+  item opening with whitespace in **139 of 153** — the figure `SetMarker` exists for, quoted as
+  `133 of 147` above.
+
+  `139 of 153` and `0 ordered items emptied` were re-derived independently rather than carried
+  over, by reproducing the declared path outside the package: join `Lbl` and `LBody` marked
+  content to page spans on `{page, mcid}`, then run the same `doc.Block.SetMarker`. Both come
+  back exact, along with 153 labels, 102 empty and 16 ordered. Note that `133 + 6 = 139` is a
+  coincidence rather than the derivation — the 6 new labels do all open with whitespace, but the
+  old 133 was measured over a 147-item population containing none of them.
+
+  Unlike 08-08's correction this is not the same population re-counted: there are two causes and
+  only one is ours. `testdata/reference/tagged-lists.pdf` was committed *after* the figures were
+  taken and contributes **3 items but 6 labels** — it holds 6 `LI`, every one declaring a
+  `Lbl`, and only 3 of them open with an allowlist glyph, so it lands in the two populations at
+  different sizes. Admitting `U+F0A7` contributes the other 2 items, both declaring no label.
+  `1412 − 2 − 3 = 1407` and `153 − 6 = 147` reconcile exactly, which is what makes the
+  attribution a measurement rather
+  than a story. **A figure defined by the allowlist moves when the allowlist does** — so the
+  agreement count is the one to re-run when a glyph joins the map, since a bad admission is a
+  glyph whose declared label disagrees, and that is the only figure where it would surface.
+- **The list-item total is 1825, and the old `147 / 1915` pair — implying 2062 — is retired as
+  unreproducible rather than corrected.** Adding a fixture cannot *remove* 237 items, so that
+  pair was not the same population counted differently; it was worth chasing rather than
+  quietly replacing, because `label()`'s "taking the last instead is a change no input
+  distinguishes" rests on the no-label count. Three independent counts agree on
+  **1825 = 153 + 1672**, with **0** items declaring two labels: a structural walk of
+  `tag.Tree`; a pointer-identity check confirming no element is reached twice through a shared
+  kid (1825 visits, 1825 distinct); and a store-wide count of every indirect `/S /LI`
+  dictionary, which is the one that does *not* depend on the walk.
+
+  Only the label half of the old pair reconciles: `153 − 6 = 147` for `tagged-lists.pdf`'s
+  contribution, so the `153` is the same measurement the old `147` was. The other half does
+  not, and no counting method I could construct reaches 2062 — not raw `/S` before `/RoleMap`
+  normalization (1819), not `LBody` (1819), not `L` (579), nor any sum of those. So what `1915`
+  counted is unknown, not diagnosed; what is measured is that 1672 is right and 1915 is not
+  reachable from this corpus.
+
+  That last count also turned up a corpus property worth knowing before anyone reaches for it
+  as a cross-check: `testdata/adobe-samples/sampleInvoice.pdf` holds **17** `/S /LI` objects
+  that the walk correctly reaches **none** of. Its single live `/S /Document` has no `/K` at
+  all, and the only inbound references to those 17 come from the `StructTreeRoot`'s IDTree
+  under `/Names` — a lookup index, not the hierarchy. The file's structure hierarchy is empty
+  in the revision we read, so **a store-wide object count over-reports by 17 and the walk is
+  right**. Conversely `tagged-lists.pdf` contributes 6 items the object count misses entirely,
+  because `lualatex` writes its structure elements direct rather than indirect. Neither is a
+  parser defect; both would corrupt a census that used object counts as ground truth.
+- **`label()`'s "14 of the 147 declare empty text" was wrong about the cause, and the real
+  figure is 102 of 153.** The comment attributed every empty label to a producer that "drew
+  the marker outside the element it declared for it" — a property of the file. Measured by
+  compiling counters into production `label()` and running the corpus through it, the split is
+  **2** that own no marked content at all (the producer's version, and the only shape any test
+  covers) and **100** that own their marker in a `Span` one level down, which `label()` does
+  not read. Recorded open in DESIGN.md rather than fixed here: the output is unaffected because
+  `markItem` falls through to `StripMarker` and recovers the same `■`, and all 16 ordered
+  labels — the case with no glyph fallback — are owned by their `Lbl` directly. But it means
+  the glyph rule, not the declaration, supplies the marker for two thirds of the items that
+  declared one, and *"a label exists"* was never *"a label was read"*.
+
 ### Documentation — 2026-08-10
 
 - **ADR 0012, "Decode a text string through Annex D.2."** The 2026-08-09 PDFDocEncoding change

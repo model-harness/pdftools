@@ -357,12 +357,28 @@ func wrapsText(role doc.Role) bool {
 // item into two. The label is not a block; it is a field of one.
 //
 // Only a direct child, and only the first. Measured over every tagged list item on disk
-// that declares one, the Lbl is a direct kid of its LI in 147 of 147 — so a recursive
-// search would buy nothing and would risk reaching into a nested list's items, whose
-// labels belong to them. "The first" is unmeasurable rather than measured: no item on disk
-// declares two, 147 declare exactly one and 1915 declare none, so taking the last instead
-// is a change no input distinguishes. First, because a second Lbl is a producer error and
-// the first is the one the item opens with.
+// that declares one, the Lbl is a direct kid of its LI in 153 of 153 — so searching deeper
+// for the *element* would buy nothing and would risk reaching into a nested list's items,
+// whose labels belong to them. "The first" is unmeasurable rather than measured: no item on
+// disk declares two, 153 declare exactly one and 1672 declare none of 1825 items, so taking
+// the last instead is a change no input distinguishes. First, because a second Lbl is a
+// producer error and the first is the one the item opens with.
+//
+// That 1825 is counted three ways because the earlier figure implied 2062 and no population
+// reaches it: the structural walk, a pointer-identity check that no element is reached twice,
+// and a store-wide count of indirect /S /LI dictionaries. The last disagrees on two files and
+// is wrong on both — sampleInvoice.pdf's 17 LI objects are referenced only from the IDTree
+// under /Names while its live /S /Document has no /K, and tagged-lists.pdf writes its elements
+// direct rather than indirect so the count misses 6. CHANGELOG.md records the reconciliation.
+//
+// The Lbl's *text* is a different question from the Lbl's position, and this reads only the
+// element's own marked content, which is not where most producers put it: 100 of the 153
+// hold the marker in a Span inside the Lbl, so this returns "" for them and markItem falls
+// through to the glyph. Benign on this corpus — StripMarker recovers the same "■" from the
+// text, and every one of the 16 ordered labels, the case with no glyph fallback, is owned
+// by the Lbl directly — but it means "a label exists" is not "a label was read", and the
+// declared path is running on the glyph rule in two thirds of the cases where a
+// declaration was available. DESIGN.md's open questions record it.
 //
 // The label's pages still reach the item's range, and not from here: Lbl has no block
 // role, so the gather that follows recurses into it and adds its pages the way it does for
@@ -378,9 +394,10 @@ func (b *builder) label(e *tag.Elem) string {
 		for _, sp := range b.index.take(k.Content) {
 			sb.WriteString(sp.Text)
 		}
-		// A Lbl with no text of its own, which 14 of the 147 on disk are: the producer
-		// declared the element and drew the marker outside it, or drew no marker at all.
-		// An empty string is the honest answer and leaves the glyph rule below to decide.
+		// Empty for 102 of the 153 Lbl on disk, and only 2 of those are the producer's
+		// doing — the other 100 own their marker one level down, in a Span. So the empty
+		// string is the honest answer about what this element *owns* and a misleading one
+		// about what the producer declared; the glyph rule below is what covers the gap.
 		return strings.TrimSpace(sb.String())
 	}
 	return ""
@@ -495,7 +512,7 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 		blk.MCIDs = append(blk.MCIDs, s.MCID)
 	}
 	// Before IsEmpty, though on this corpus it makes no difference: ListMarker requires
-	// content after the separator, so a strip cannot empty a block, and all 13 declared
+	// content after the separator, so a strip cannot empty a block, and all 16 declared
 	// ordered labels leave content behind. Ordered this way because the reverse asks
 	// IsEmpty about text that still holds a marker, and a block whose only content is its
 	// marker would then be emitted as a bullet with nothing after it.
@@ -558,19 +575,20 @@ func alt(e *tag.Elem) string {
 // declared to have, and a marker glyph followed by whitespace at the start of a declared
 // list item is not a coincidence anyone has to weigh.
 //
-// The measurement says so directly. Of 1407 declared list items on disk whose text opens
-// with a marker glyph, 121 also declare a /Lbl saying what their label is — and the
-// label's first rune is that glyph in 121 of 121, with 0 disagreeing. So on every case
+// The measurement says so directly. Of 1412 declared list items on disk whose text opens
+// with a marker glyph, 124 also declare a /Lbl saying what their label is — and the
+// label's first rune is that glyph in 124 of 124, with 0 disagreeing. So on every case
 // where a declaration exists to check the glyph against, the glyph is right. The
-// remaining 1286 declare no label, and without this they emit "- ■ text".
+// remaining 1288 declare no label, and without this they emit "- ■ text".
 //
 // # What the declaration adds that no glyph could
 //
-// 13 of the declared labels are not bullets: "a.", "b.", "[1]" through "[7]". An ordered
-// label is unreachable from the glyph side — ADR 0011 records why, a leading number being
-// also what a heading and a table row open with — and it is exactly the case where
-// dropping the marker instead of keeping it would lose text the page says. Stripping all
-// 13 leaves the item's own content non-empty, so none is a label masquerading as content.
+// 16 of the declared labels are not bullets: "a.", "b." and "[1]" through "[7]" in
+// Well-Tagged-PDF-WTPDF-1.0.pdf, and "1." through "3." in testdata/reference/tagged-lists.pdf.
+// An ordered label is unreachable from the glyph side — ADR 0011 records why, a leading
+// number being also what a heading and a table row open with — and it is exactly the case
+// where dropping the marker instead of keeping it would lose text the page says. Stripping
+// all 16 leaves the item's own content non-empty, so none is a label masquerading as content.
 func markItem(blk *doc.Block, marker string) {
 	if marker != "" {
 		blk.SetMarker(marker)

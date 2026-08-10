@@ -177,12 +177,54 @@ func TestListMarkerExcludesTheAmbiguousGlyphs(t *testing.T) {
 	}
 }
 
+// TestStripMarkerReadsTheWingdingsSquareBullet is U+F0A7, the allowlist's third Private Use
+// Area entry and the one no survey found — it was missed until a census of the *declared*
+// path went looking for items whose marker went unrecognized.
+//
+// The case is worth its own test rather than a row in another because the reason it is
+// admitted is different from every other glyph's. A PUA codepoint has no Unicode meaning to
+// appeal to, so "is this a bullet" cannot be answered from the character at all, only from
+// how the corpus uses it: both occurrences are Wingdings-Regular, alone in their span at
+// 12pt, the block's leading rune followed by whitespace, on a list item the producer itself
+// declared RoleListItem — and there is no third occurrence anywhere on disk. Before this,
+// the two lines emitted "- ****  How those brand colours…", the sink's own "- " followed by
+// a bold PUA glyph that markdown renders as empty emphasis.
+//
+// The text is PDF20_AN001-BPC.pdf's own and so is the span split, which turns out to be the
+// span arrangement no other case here reaches: three spans, and the middle one holds nothing
+// but the separator. The producer sets the bullet in Wingdings, a lone space in ArialMT, and
+// the content in SourceSansPro with a leading space of its own — so the strip has to empty
+// the marker's span, cross a whitespace-only span, and then trim the third before it finds
+// content. TestStripMarkerPastALeadingSpaceSpan has a whitespace-only span too, but *before*
+// the marker, which takes the other branch; this one is a real document's, not a constructed
+// case, and it is why the walk cannot stop at the first span it empties.
+//
+// The trailing space is the corpus's own and stays: StripMarker's contract is about the
+// marker and the separator after it, and trimming the end of a block is not this function's
+// business — the sink handles line ends.
+func TestStripMarkerReadsTheWingdingsSquareBullet(t *testing.T) {
+	b := item("", " ", " The configuration of the workflow used to prepare, colour manage and render the file. ")
+	if !b.StripMarker() {
+		t.Fatal("StripMarker = false, want true: U+F0A7 is Wingdings' square bullet")
+	}
+	const want = "The configuration of the workflow used to prepare, colour manage and render the file. "
+	if got := b.Text(); got != want {
+		t.Errorf("text = %q, want %q: the marker and both separator spans gone", got, want)
+	}
+	if b.Marker != "" {
+		t.Errorf("marker = %q, want U+F0A7 kept in the field", b.Marker)
+	}
+	if b.Enumerated() {
+		t.Error("Enumerated = true, want false: a PUA bullet is not an ordered label")
+	}
+}
+
 // TestSetMarkerClosesTheGap is the declared path's whole reason for existing separately.
 //
 // sectionize takes the label's spans out of the item before gathering it, so there is no
 // marker left in the text to strip — but there is whitespace where it was. Measured over
 // every tagged list item on disk that declares a /Lbl, dropping the label's spans leaves
-// the item's text opening with whitespace in 133 of 147, which a sink writing its own
+// the item's text opening with whitespace in 139 of 153, which a sink writing its own
 // "- " renders as two spaces.
 func TestSetMarkerClosesTheGap(t *testing.T) {
 	b := item("  Adobe Acrobat Reader")
@@ -226,6 +268,7 @@ func TestEnumeratedSeparatesLabelsFromBullets(t *testing.T) {
 		{"•", false},
 		{"■", false},
 		{"\uf06e", false}, // Wingdings' square via the PUA is still a bullet
+		{"\uf0a7", false}, // and its square bullet, the other Wingdings entry
 		{"a.", true},
 		{"[1]", true},
 		{"1.", true},

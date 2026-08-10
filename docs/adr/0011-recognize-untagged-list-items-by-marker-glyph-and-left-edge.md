@@ -114,6 +114,21 @@ something else every time — C code (`*/ fz_stream *…`), flags, and Annex D r
 > either way, so nothing but that test holds them out. The decision this section records is
 > unaffected — both were excluded all along, one of them accidentally.
 
+> **The allowlist is thirteen glyphs now, not twelve: `U+F0A7`, Wingdings' square bullet, was
+> added after this ADR was accepted.** It was missed by the survey this section describes, which
+> read block-initial runes over *untagged* paragraphs — and `U+F0A7` never appears there. It
+> surfaced instead from a census of the *declared* path, looking for items a producer tagged
+> `RoleListItem` whose leading glyph `doc.listMarkers` did not recognize: 2 items in
+> `PDF20_AN001-BPC.pdf`, emitting `- ****  How those brand colours…`, the sink's own `- ` plus a
+> bold PUA glyph Markdown renders as empty emphasis. Every occurrence in the corpus is a bullet
+> — both `Wingdings-Regular`, both alone in their span at 12pt, both block-initial and
+> separated, both on a declared `RoleListItem`, no third anywhere — so it joined the shared map
+> rather than a declared-path-only set. `TestStripMarkerReadsTheWingdingsSquareBullet` pins it;
+> nothing else can, since the 2 lines live in a gitignored file and no golden covers them.
+> The methodological point is the one worth keeping: **a survey scoped to one path cannot
+> complete an allowlist both paths share.** The rule this ADR decides is unchanged, and so is
+> the PUA reasoning it already gives for `U+F0B7` and `U+F06E`.
+
 **The marker leaves the text, here and not in the sink.** Promoting a block is the
 statement that its marker is structure rather than content, so it goes with the role.
 Leaving it would make every sink re-derive this allowlist to know which leading rune to
@@ -275,3 +290,24 @@ this rule: those items are reachable because a producer declared them, not becau
 was guessed at. The declaration is taken whenever it exists and the glyph is never consulted
 then. DESIGN.md §10 records the result, and the marker vocabulary now lives in `doc` so both
 paths read one copy of it.
+
+> **Those four figures have all moved, for two reasons that are not re-measurements of the
+> same population.** Current: **1412** declared items open with an allowlist glyph, **124**
+> also declare a `Lbl`, the label's first rune is that glyph in **124 of 124 with 0
+> disagreeing**, and **16** declared labels are ordered — `a.`, `b.`, `[1]`–`[7]` plus `1.`–`3.`
+> `testdata/reference/tagged-lists.pdf` was committed after this ADR and contributes 3 items to
+> the figures above but **6** to the 153 `Lbl` on disk — it holds 6 `LI`, all 6 declaring a
+> label, of which only 3 open with an allowlist glyph, so it enters the two populations at
+> different sizes. Admitting `U+F0A7` contributes the other 2 items, both declaring no label. **The agreement figure is the one to re-run when a glyph joins the map**,
+> because widening the allowlist widens the population that check runs over — a glyph whose
+> declared label disagreed with it would appear here as a nonzero second number, and it is the
+> only place such a mistake would show.
+>
+> The same re-measurement found something this ADR could not have known: `sectionize.label()`
+> reads only the `Lbl` element's own marked content, and **100 of the 153 `Lbl` on disk hold
+> their marker in a `Span` one level down**, so the declaration reads as empty and the glyph
+> rule — this ADR's rule — is what actually supplies the marker for two thirds of the items
+> that declare one. Benign today, because `StripMarker` recovers the same `■`, and because all
+> 16 ordered labels are owned by their `Lbl` directly. Recorded open in DESIGN.md; it makes
+> this rule load-bearing on the tagged path in a way "the declaration is taken whenever it
+> exists" understates.

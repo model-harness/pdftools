@@ -13,7 +13,7 @@ import (
 // neither may depend on the other. layout infers a list item from the glyph a page
 // draws; sectionize reads one the structure tree declares, and then has to handle the
 // items whose producer declared the role without declaring the label — measured at
-// 1286 of 1407 on disk. Two copies of a twelve-glyph allowlist is the split
+// 1288 of 1412 on disk. Two copies of a thirteen-glyph allowlist is the split
 // Block warns against for space inference, half the policy in one producer and half
 // in the other, and the failure mode is that the two disagree about the same document.
 //
@@ -31,11 +31,24 @@ import (
 // "/", 256 with "(", 134 with a quote. The glyphs below are what a survey of that tally
 // leaves once each candidate's own occurrences are read.
 //
-// The two U+F0xx entries are Private Use Area codepoints, which look like a mistake and
+// The three U+F0xx entries are Private Use Area codepoints, which look like a mistake and
 // are not: Symbol and Wingdings have no Unicode mapping for their bullet, so a producer
 // setting one emits a PUA codepoint and the extractor faithfully reports it. F0B7 is
-// Symbol's bullet and F06E is Wingdings' filled square, both measured in the corpus.
-// This is the same glyph-set debt DESIGN.md records for ZapfDingbats.
+// Symbol's bullet, F06E is Wingdings' filled square and F0A7 is Wingdings' square bullet,
+// all three measured in the corpus. This is the same glyph-set debt DESIGN.md records for
+// ZapfDingbats.
+//
+// F0A7 was found by the census this file's exclusions prompted, not by the survey that
+// built the list, which is why it is worth saying how thin the evidence for a PUA bullet
+// necessarily is. It occurs twice, in PDF20_AN001-BPC.pdf, and every property that could
+// distinguish a bullet from a character says bullet: both are Wingdings-Regular, both are
+// alone in their span at 12pt, both are the block's leading rune followed by whitespace,
+// both sit on a list item the producer declared RoleListItem, and there is no occurrence
+// anywhere in the corpus that is not one of those two. Admitting it fixes 2 lines that
+// emitted "- ****  text" — the sink's own "- " plus a bold PUA glyph markdown renders as
+// empty emphasis — and changes nothing else in 50 documents. A glyph whose every
+// occurrence is a bullet cannot be verified more strongly than that, and the alternative
+// was leaving 2 lines wrong to avoid a false positive no measurement can find.
 //
 // Deliberately excluded: "*", "-", ">", and both dots — U+00B7 MIDDLE DOT and U+02D9 DOT
 // ABOVE, which are two codepoints and not one. Each occurs block-initially in the corpus
@@ -63,7 +76,14 @@ import (
 // The allowlist is confirmed by declared evidence, which is the strongest check
 // available for a heuristic like this. Of the corpus's tagged list items that both open
 // with one of these glyphs and declare a /Lbl saying what their label is, the label's
-// first rune is that glyph in 121 of 121 and disagrees in 0.
+// first rune is that glyph in 124 of 124 and disagrees in 0.
+//
+// Those figures moved for two reasons and only one is this map's. Admitting F0A7 adds 2
+// items, both of which declare no label; the other 3 arrived with
+// testdata/reference/tagged-lists.pdf, a fixture committed after the figures were first
+// taken. The agreement count is the one to watch when a glyph joins this map, since
+// widening the allowlist widens the population the check runs over — a glyph whose
+// declared label disagreed with it would show up here as a nonzero second number.
 var listMarkers = map[rune]bool{
 	'•':      true, // BULLET
 	'‣':      true, // TRIANGULAR BULLET
@@ -76,6 +96,7 @@ var listMarkers = map[rune]bool{
 	'–':      true, // EN DASH
 	'—':      true, // EM DASH
 	'\uf06e': true, // Wingdings filled square, via the PUA
+	'\uf0a7': true, // Wingdings square bullet, via the PUA
 	'\uf0b7': true, // Symbol bullet, via the PUA
 }
 
@@ -341,7 +362,7 @@ func (b *Block) StripOrderedLabel() bool {
 // out of the item before gathering it, so there is no marker left in the text to find —
 // but there is usually whitespace where it was. Measured over every tagged list item on
 // disk that declares a /Lbl, dropping the label's spans leaves the item's text opening
-// with whitespace in 133 of 147 cases, which a sink writing its own "- " renders as two
+// with whitespace in 139 of 153 cases, which a sink writing its own "- " renders as two
 // spaces.
 //
 // The trim is the same one StripMarker does after the marker, and stops at the first
