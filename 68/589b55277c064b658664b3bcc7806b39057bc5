@@ -1,0 +1,39 @@
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_27b7c5d4c6cd5a 629-633
+  s_5cd1b28ed520c1::t_c933be94636185 422-426,432
+  s_5cd1b28ed520c1::t_c0d0f8b46f9cc0 374-397
+  s_5cd1b28ed520c1::t_e95144829c674c 433-435
+  s_5cd1b28ed520c1::t_944f5dd2de9817 410-413
+  s_5cd1b28ed520c1::t_7df5814ab9678f 419-421,427-430,437-438
+  s_5cd1b28ed520c1::t_04741d31fec90a 431,436
+docs/adr/0011-recognize-untagged-list-items-by-marker-glyph-and-left-edge.md
+  s_5cd1b28ed520c1::t_3ba204b091c1c5 316-327
+sectionize/marker_test.go
+  s_5cd1b28ed520c1::t_a63b7e960a3896 112-117
+  s_5cd1b28ed520c1::t_1a64a492febe4e 238-361
+  s_5cd1b28ed520c1::t_c837024e7ce9ab 211-215
+  s_5cd1b28ed520c1::t_479decc36d8f31 362-397
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_9ae228f979e0d0 277-281
+  s_5cd1b28ed520c1::t_e636453516407b 164-203
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_581c2567f8ccb2 931-936
+  s_5cd1b28ed520c1::t_720f68c41352bf 1141-1143,1146-1149
+  s_5cd1b28ed520c1::t_868e067b4b6d8b 1160-1184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "68589b55277c064b658664b3bcc7806b39057bc5",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
