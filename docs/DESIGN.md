@@ -1021,6 +1021,63 @@ OKF-ified spec.
   it contradicts them — 186 lines open with an `a)`-shaped token after the bullet — and those
   are item text rather than markers, which is what the 623 accounts for. A label the producer
   never declared is not a label this sink can move.
+- **A producer that sets a hyphen as its bullet and declares no `/Lbl` still emits a doubled
+  marker: 3 items, all in ISO 32000-2. Open, measured, and deliberately not fixed here.**
+
+  The 3 read `- *-  Markup3D (PDF 1.7)* for a 3D comment.` — the sink's own `- ` followed by
+  the producer's hyphen still in the text, which is the 1363-item defect above in the one
+  shape its fix cannot reach. They are declared `RoleListItem`, so `markItem` runs, but they
+  declare no label, so it falls to `StripMarker`, and `doc.listMarkers` excludes `-`
+  deliberately: on the *inferring* path a leading hyphen is overwhelmingly not a bullet.
+
+  **The exclusion is right for the path it was measured on and wrong for this one, and the
+  A/B says so per glyph rather than in aggregate.** Admitting all the excluded glyphs
+  changes 2 of 50 documents, which reads like a wash until the glyphs are separated:
+  admitting `-` alone changes 1 file and **fixes 3, breaking 0**; admitting `*` alone changes
+  1 file and **breaks 3, fixing 0** — three C comment continuation lines in
+  `mupdf_explored.pdf` (`* No operations are allowed to change the top level gstate.`)
+  becoming list items. Admitting `>`, U+00B7 or U+02D9 changes **0 files either way**, since
+  none occurs block-initially on the untagged path at all. So widening the shared vocabulary
+  trades 3 for 3, and the trade is unnecessary: the two paths are not asking the same question.
+  `markItem`'s own comment already draws the line — *"nothing is being guessed about what the
+  block is; the question is only which of its runes is the label it was declared to have"* —
+  and a rule that fires on a declared item can afford a vocabulary a rule that fires on
+  inferred geometry cannot.
+
+  **The two populations behind these figures are not the same and the earlier phrasing
+  conflated them**, which is worth recording because it is the kind of error that survives by
+  looking consistent. Block-initial occurrences, separated/glued, over every extracted block
+  on disk: `*` 5/8, `-` 1/12, U+00B7 3/0, U+02D9 2/0, `>` 3/6. Over the untagged
+  `RoleParagraph` blocks `layout.Lists` actually considers: `*` 3/8, `-` **0/11**, both dots
+  0/0, `>` 0/0. ADR 0011's "`-` is glued in 12 of its 13" is the all-blocks figure while its
+  surrounding prose is about untagged paragraphs, where the count is 11 and *none* is
+  separated. Same for the bullet: 1305 of 1305 over all blocks, 7 over untagged paragraphs.
+  The numbers were right and the attribution was not.
+
+  **The dot is two codepoints, and writing it as one glyph hid a gap the mutation pass was
+  supposed to close.** `·` U+00B7 MIDDLE DOT and `˙` U+02D9 DOT ABOVE both occur
+  block-initially and separated in ISO 32000-2's Annex D, and the D.3 row whose text
+  *describes* U+02D9 opens with U+00B7. A test case read off that row therefore pinned U+00B7
+  while appearing to cover "the dot", and a mutation admitting U+02D9 survived it. Both are
+  now asserted from rows whose leading glyph is their own subject, and each kills its own
+  mutation. The general lesson is the one this section already carries about populations: a
+  figure or a case named by rendered appearance rather than by codepoint is not checkable, and
+  agreement across sites is not evidence when every site inherited the same name.
+
+  Not fixed alongside the negative assertion that pins the exclusion
+  (`TestListMarkerExcludesTheAmbiguousGlyphs`), because the fix is a second entry point into
+  `doc`'s vocabulary rather than an edit to the allowlist, and bundling an interface change
+  into a test-coverage change would land it unargued. What it needs, when it lands: a
+  declared-path marker set that is the inferring one plus the glyphs whose ambiguity is with
+  *drawn* text, and the evidence for each addition measured on tagged files only. The cost of
+  leaving it is 3 lines in one document; the cost of getting it wrong is 3 false items in
+  another, and only one of those is currently pinned by a test.
+
+  **What the assertion does buy is `>` and the two dots, and it is the only thing that could.**
+  Their A/B is 0 files either way, so no corpus golden and no character-conservation total can
+  tell whether they are in the allowlist or out of it — the exclusion was documented, unpinned,
+  and unobservable at the same time. That is the shape of debt a golden-file suite is structurally
+  unable to carry, which is the general point worth taking from this item.
 - **A block boundary inside one marked-content element loses no space, and this item is
   closed as *unreachable* — the census that was meant to size it found no case to fix and a
   different defect instead.** The premise was sound: the wrap space is inferred only

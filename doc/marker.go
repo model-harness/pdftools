@@ -37,11 +37,28 @@ import (
 // Symbol's bullet and F06E is Wingdings' filled square, both measured in the corpus.
 // This is the same glyph-set debt DESIGN.md records for ZapfDingbats.
 //
-// Deliberately excluded: "*", "-", "·" and ">". Each occurs block-initially in the
-// corpus and every occurrence read was something else — C code (`*/ fz_stream *…`),
-// command-line flags (`-o - output file name`), and Annex D's glyph-name table rows
-// (`*  asterisk  052  052`). A hyphen especially is a Markdown marker but not a PDF one;
-// producers set a real bullet glyph.
+// Deliberately excluded: "*", "-", ">", and both dots — U+00B7 MIDDLE DOT and U+02D9 DOT
+// ABOVE, which are two codepoints and not one. Each occurs block-initially in the corpus
+// and every occurrence read was something else — C code (`*/ fz_stream *…`), command-line
+// flags (`-o - output file name`), and Annex D's glyph-name table rows
+// (`*  asterisk  052  052`). TestListMarkerExcludesTheAmbiguousGlyphs holds this, using the
+// five separated occurrences on disk; a glued one asserts nothing here, since the separator
+// gate rejects it whatever this map says. The two dots are named by codepoint there because
+// the D.3 row that *describes* U+02D9 opens with U+00B7, so a case read off that row pins
+// the wrong glyph — which is how U+02D9 stayed unasserted through a mutation pass.
+//
+// A hyphen is the one whose exclusion costs something, and the cost is measured: 3
+// declared list items in ISO 32000-2 have a hyphen bullet and no /Lbl, so StripMarker
+// declines and the sink doubles the marker. Admitting "-" here fixes those 3 and breaks
+// 0; admitting "*" breaks 3 and fixes 0. The trade is not worth taking on a map both
+// producers share — a rule firing on inferred geometry has to weigh the C code, and one
+// firing on a declared RoleListItem does not. DESIGN.md's open questions record it, under
+// "A producer that sets a hyphen as its bullet".
+//
+// The dots and ">" are the opposite case and the reason the assertion is a unit test rather
+// than a golden: admitting any of them changes 0 of 50 documents, because none occurs
+// block-initially on the untagged path at all. Nothing in the output can catch them being
+// admitted, so the only thing holding them out is the test.
 //
 // The allowlist is confirmed by declared evidence, which is the strongest check
 // available for a heuristic like this. Of the corpus's tagged list items that both open
@@ -71,8 +88,12 @@ var listMarkers = map[rune]bool{
 // mutation removing it survives every test, which is how it was found.
 //
 // The separator is what distinguishes a marker from the same glyph used as a character:
-// every one of the 1302 bullet-initial blocks in the corpus has it and none is glued to
-// its text, while the excluded "-" is glued in 12 of its 13 occurrences. The length
+// every bullet-initial block in the corpus has it and none is glued to its text — 1305 of
+// 1305 over every block on disk — while the excluded "-" is glued in 12 of its 13
+// block-initial occurrences. Both figures are the all-blocks population, which is the one to
+// state here because this vocabulary serves both producers; the untagged paragraphs
+// layout.Lists alone sees are a small subset of it, and marker_test.go records the per-glyph
+// split for the five excluded glyphs because there the two populations disagree. The length
 // requirement is the other measured case — mupdf_explored.pdf has blocks that are a lone
 // Wingdings square with no text, which are decoration and not items.
 //

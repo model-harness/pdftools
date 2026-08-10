@@ -41,6 +41,17 @@ requirement is what carries the discrimination, and the excluded `-` shows why: 
 glued in **12 of its 13** block-initial occurrences, because those are command-line flags
 (`-o - output file name`) rather than markers.
 
+> **The two figures in the paragraph above count every extracted block on disk, not the
+> untagged paragraphs this section is otherwise about, and the ADR is left unedited only
+> because an accepted ADR is immutable.** Over the blocks `layout.Lists` actually considers
+> the counts are `•` **7**, not 1302, and `-` **11 with none separated**, not 12 of 13. Both
+> numbers were correct measurements of the wrong population for the sentence they sit in, and
+> the conclusion they support is unaffected — on the untagged path a separated `-` does not
+> occur at all, which argues the exclusion more strongly than 12 of 13 does. `doc/marker.go`
+> and `TestListMarkerExcludesTheAmbiguousGlyphs` carry the per-glyph split against both
+> populations; DESIGN.md's open questions record why the distinction matters, since the
+> hyphen's real cost is on the *declared* path where this rule never runs.
+
 **The residue is 5 in 1442, and all 5 are the same thing.** With the allowlist below and
 the separator gate, the rule promotes 1442 blocks over the corpus. Reading every ambiguous
 one leaves five that are not list items, all rows of ISO 32000-2's Annex A and D glyph
@@ -90,6 +101,18 @@ faithfully. That is the same glyph-set debt DESIGN.md records for ZapfDingbats.
 Deliberately excluded: `*`, `-`, `·`, `>`, all of which occur block-initially and were
 something else every time — C code (`*/ fz_stream *…`), flags, and Annex D rows
 (`*  asterisk  052  052`).
+
+> **The `·` above is two codepoints, so the excluded set is five glyphs and not four; the ADR
+> is left unedited only because an accepted ADR is immutable.** `·` U+00B7 MIDDLE DOT and `˙`
+> U+02D9 DOT ABOVE both occur block-initially and separated in Annex D — 3 and 2 times over
+> every block on disk — and writing the exclusion as one rendered glyph is what let U+02D9 go
+> unasserted: the D.3 row whose text *describes* `U+02D9  DOT ABOVE` opens with U+00B7, so a
+> test case read off it pins the wrong character while appearing to cover "the dot". A mutation
+> admitting U+02D9 survived a pass that reported every glyph killed.
+> `TestListMarkerExcludesTheAmbiguousGlyphs` now asserts both, from rows whose leading glyph is
+> its own subject, and `doc/marker.go` names them by codepoint. Neither dot changes any output
+> either way, so nothing but that test holds them out. The decision this section records is
+> unaffected — both were excluded all along, one of them accidentally.
 
 **The marker leaves the text, here and not in the sink.** Promoting a block is the
 statement that its marker is structure rather than content, so it goes with the role.

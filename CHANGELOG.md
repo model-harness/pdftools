@@ -124,6 +124,60 @@ All notable changes to this project are documented here, following
   occurrences resolve to 11 distinct values, of which `0x80` (the bullet, 92 occurrences, all
   `/ActualText` in `Well-Tagged-PDF-WTPDF-1.0.pdf`) and `0x84` (the em dash, 25) are almost the
   whole population.
+- **`doc.listMarkers`' deliberate exclusion of `*`, `-`, `>` and the two dots is asserted for the
+  first time, and pinning it uncovered a defect on the other producer.** The exclusion was
+  documented with its measurement and held by nothing: admitting the glyphs passed every test in
+  the repo, the corpus goldens included. `TestListMarkerExcludesTheAmbiguousGlyphs` now covers it,
+  and each of the five cases is mutation-verified to fail on its own glyph alone — which the
+  first draft of the test was not. Its `-` case was `-o - output file name`, the flag the code
+  comment quotes, and that text is *glued*: `ListMarker`'s separator gate rejects it whatever
+  the allowlist holds, so the case killed no mutation and tested nothing. Re-measured over every
+  block on disk, `-` is block-initial and separated exactly **once** (and glued 12 times,
+  confirming the comment's 12-of-13), and the separated occurrences are Annex D rows whose first
+  column *is* the glyph. Those rows are the test's cases, verified byte-exact against
+  `Block.Text()`.
+- **The exclusion set is five glyphs, not four: `·` was one name for two codepoints, and the
+  mutation pass caught it.** U+00B7 MIDDLE DOT and U+02D9 DOT ABOVE both occur block-initially
+  and separated in Annex D (3 and 2 times over all blocks), and the D.3 row whose text
+  *describes* `U+02D9  DOT ABOVE` opens with U+00B7. The test case taken from that row therefore
+  asserted U+00B7 while reading as coverage of "the dot", so a mutation admitting U+02D9 survived
+  a pass that reported all glyphs killed. Both are now asserted from rows whose leading glyph is
+  their own subject, both kill their own mutation, and the code comments name them by codepoint.
+  A case or figure named by rendered appearance rather than codepoint is not checkable, and
+  agreement across sites is not evidence when every site inherited the same name — the same
+  failure shape as the population conflation below.
+- **Three of the five glyphs are unobservable in the output, which is why a unit assertion was
+  the only thing that could hold them.** Per-glyph A/B over all 50 documents: admitting `>`,
+  U+00B7 or U+02D9 changes **0 files**, because none occurs block-initially on the untagged path
+  at all — their block-initial occurrences are all in a tagged file, where `sectionize` declares
+  them table cells and `inferRoles` never runs. No corpus golden and no conservation total can
+  tell whether those three are in the allowlist or out of it, so the exclusion was documented,
+  unpinned and unobservable at once. That combination is the kind of debt a golden-file suite
+  is structurally unable to carry.
+- **The A/B that made the exclusion look like a wash was measuring the wrong granularity.**
+  Admitting all of them changes 2 of 50 documents, 3 lines each way. Per glyph the two effects
+  separate completely: `-` alone **fixes 3 and breaks 0**, `*` alone **breaks 3 and fixes 0**.
+  The 3 that `-` fixes are real — declared `RoleListItem` blocks in ISO 32000-2 with a hyphen
+  bullet and no `/Lbl`, emitted as `- *-  Markup3D (PDF 1.7)* for a 3D comment.` — and they are
+  the 1363-item doubled-marker defect in the one shape its fix could not reach. Recorded open in
+  DESIGN.md §10 rather than fixed here: the fix is a second entry point into the shared
+  vocabulary for the *declared* path, not a wider allowlist, since a rule firing on inferred
+  geometry has to weigh `mupdf_explored.pdf`'s C comment continuation lines and one firing on a
+  producer's own declaration does not.
+- **Corrected a population conflation in the marker figures, in `doc/marker.go`, `doc/marker_test.go`
+  and DESIGN.md.** ADR 0011's "`-` is glued in 12 of its 13 block-initial occurrences" is a count
+  over *every extracted block on disk*, while the prose around it is about the untagged
+  paragraph blocks `layout.Lists` considers — where the count is **11, none of them separated**.
+  The bullet figure has the same split: 1305 of 1305 over all blocks, 7 over untagged
+  paragraphs. Both numbers were right and the attribution was not, which is a failure mode that
+  survives review by looking internally consistent: four sites carried "12 of 13" in agreement
+  and none of them said which population it counted. The per-glyph split for every excluded
+  glyph is now recorded against both populations explicitly. ADR 0011's text is left unedited,
+  an accepted ADR being immutable, but it carries an appended note naming the population and
+  giving the untagged-path counts — the arrangement ADR 0005 already uses for a paragraph ADR
+  0007 withdrew, since silence would leave the next reader to re-derive the same mismatch. The
+  conclusion is unaffected and in fact strengthened: on the path that rule governs a separated
+  `-` does not occur at all, which argues the exclusion harder than 12 of 13 does.
 
 ### Added — 2026-08-09
 

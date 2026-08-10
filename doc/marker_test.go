@@ -76,10 +76,10 @@ func TestStripMarkerPastALeadingSpaceSpan(t *testing.T) {
 // TestStripMarkerRequiresASeparator is the gate that makes an allowlist of glyphs safe,
 // asserted here because it is the only thing standing between the allowlist and prose.
 //
-// A marker glued to its text is not a marker. Measured over the corpus, all 1302 blocks
-// opening with U+2022 separate it with a space and none glue it, while the excluded "-"
-// is glued in 12 of 13 — so requiring the separator is what distinguishes a bullet a
-// producer set from a rune that happens to lead a word.
+// A marker glued to its text is not a marker. Measured over the corpus, every block opening
+// with U+2022 separates it with a space and none glues it — 1305 of 1305 over all extracted
+// blocks — while the excluded "-" is glued in 12 of its 13. So requiring the separator is what
+// distinguishes a bullet a producer set from a rune that happens to lead a word.
 //
 // The last two cases are the length requirement: mupdf_explored.pdf sets a lone Wingdings
 // square as a page decoration, so a marker with nothing after it is not an item either.
@@ -94,6 +94,85 @@ func TestStripMarkerRequiresASeparator(t *testing.T) {
 		}
 		if b.Marker != "" {
 			t.Errorf("marker = %q, want empty", b.Marker)
+		}
+	}
+}
+
+// TestListMarkerExcludesTheAmbiguousGlyphs is the allowlist's negative half, and it is the
+// only thing that holds the exclusion in place.
+//
+// listMarkers' comment names "*", "-", ">" and two dots as deliberately excluded and gives
+// the measurement, and nothing asserted it. Admitting all five passes every test in this
+// repo, including the corpus goldens, so the exclusion was documented and unpinned.
+//
+// The cases are the corpus's own, and which ones they are is the point. A glued occurrence —
+// "-o - output file name", the flag listMarkers' comment quotes — proves nothing here: the
+// separator gate rejects it whatever the allowlist says, so it is a case
+// TestStripMarkerRequiresASeparator already covers and it kills no mutation. The cases below
+// are the *separated* occurrences on disk, four of them rows of ISO 32000-2's D.3
+// PDFDocEncoding character set and the last a row of D.2's glyph-name list, whose first
+// column is in each case the glyph itself. They are the Block.Text() the extractor produces,
+// which is the string ListMarker is asked about — not what the markdown sink emits, since
+// that reformats these same rows into table cells (`| **\*** | 42 | 0x2a | … |`) and so could
+// not be a case for this function at all. Each is a marker, whitespace, then content, so the
+// vocabulary is the only thing rejecting it — verified per glyph by mutation, each case
+// failing on its own glyph alone.
+//
+// The two dots are two codepoints, which is worth stating because the row naming one contains
+// the other: "·  27  0x1b  0033  U+02D9  DOT ABOVE" opens with U+00B7 MIDDLE DOT and only
+// *describes* U+02D9. Reading a case off that row is how a mutation adding U+02D9 came to
+// survive while the test looked like it covered "·" — the case exercised a glyph the row does
+// not name. Both are here now, each taken from a row whose leading glyph is its own subject,
+// and each kills its own mutation. Block-initial and separated over every block on disk,
+// U+00B7 occurs 3 times and U+02D9 twice, all in one tagged file.
+//
+// Two populations, and the counts differ enough that conflating them would mislead. Over
+// every block on disk, block-initial and separated/glued: "*" 5/8, "-" 1/12, U+00B7 3/0,
+// U+02D9 2/0, ">" 3/6. Over the untagged RoleParagraph blocks layout.Lists actually
+// considers: "*" 3/8, "-" 0/11, both dots 0/0, ">" 0/0. So on the path this allowlist
+// governs, "-" never appears separated at all and the dots and ">" never appear — their
+// block-initial occurrences are all in a tagged file, where sectionize declares them table
+// cells and inferRoles never runs.
+//
+// That is why this test is the whole pin for three of the five: a per-glyph A/B over all 50
+// documents changes **0 files** for either dot and for ">". Nothing in the output could catch
+// any of them being admitted, which is exactly the case a corpus golden cannot cover and a
+// unit assertion can. For the other two the A/B is decisive and points opposite ways: "*" alone creates 3
+// false items in mupdf_explored.pdf, which are C comment continuation lines, and "-" alone
+// fixes 3 doubled markers in ISO_32000-2_sponsored_EC3.pdf, which are real. Those 3 are
+// *declared* RoleListItem blocks with a hyphen bullet and no /Lbl — the tagged path's defect,
+// recorded open in DESIGN.md's open questions, under the bullet "A producer that sets a hyphen
+// as its bullet and declares no /Lbl still emits a doubled marker", and not this
+// allowlist's. A glyph rule firing on inferred geometry has to weigh the C code; one firing on
+// a producer's own declaration does not.
+func TestListMarkerExcludesTheAmbiguousGlyphs(t *testing.T) {
+	// Annex D rows, ISO_32000-2_sponsored_EC3.pdf, as Block.Text() yields them. Each opens
+	// with the glyph its own first column names — the requirement the U+02D9 case exists to
+	// enforce, since the D.3 row *naming* U+02D9 opens with U+00B7 and pins the wrong one.
+	// The fourth is a D.2 glyph-name row, which pairs two entries per line, so what matters
+	// is only that "Dotaccentsmall" is the first and U+02D9 is the rune it is spelled with.
+	for _, txt := range []string{
+		"*  42  0x2a  0052  U+002A  ASTERISK",
+		"-  45  0x2d  0055  U+002D  HYPHEN-MINUS",
+		"·  183  0xb7  0267  U+00B7  MIDDLE DOT",
+		"˙  Dotaccentsmall  372    ᴘ  Psmall  160",
+		">  62  0x3e  0076  U+003E  GREATER THAN SIGN (&gt;)",
+	} {
+		if got := ListMarker(txt); got != 0 {
+			t.Errorf("ListMarker(%q) = %q, want 0: the glyph is excluded", txt, got)
+		}
+		// The StripMarker half is not extra coverage of the span walk — ListMarker gates
+		// entry, so on these inputs the walk never runs. It asserts the composition: that
+		// the mutating operation consults the vocabulary rather than carrying a second
+		// copy of it, which is the split doc/marker.go's own header warns about. It is the
+		// text assertion after it that earns the lines, since "returned false" and "left
+		// the block alone" are different claims and only the second is what a caller sees.
+		b := item(txt)
+		if b.StripMarker() {
+			t.Errorf("StripMarker(%q) = true, want false", txt)
+		}
+		if got := b.Text(); got != txt {
+			t.Errorf("text = %q, want %q unchanged", got, txt)
 		}
 	}
 }

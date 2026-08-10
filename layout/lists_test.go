@@ -73,10 +73,13 @@ func TestListsStripsTheMarker(t *testing.T) {
 
 // TestListsRequiresASeparator is the gate that makes an allowlist of glyphs safe.
 //
-// A marker glued to its text is not a marker. Measured over the corpus, all 1302 blocks
-// opening with U+2022 separate it with a space and none glue it, while the excluded "-"
-// is glued in 12 of 13 — so requiring the separator is what distinguishes a bullet a
-// producer set from a rune that happens to lead a word.
+// A marker glued to its text is not a marker. Measured over the corpus, every block opening
+// with U+2022 separates it with a space and none glues it — 1305 of 1305 over all extracted
+// blocks, 7 of 7 over the untagged paragraphs this package is the one that sees. The excluded
+// "-" is the reason the gate is needed: glued in 12 of its 13 block-initial occurrences on
+// disk, and on this path *never separated at all* (0 of 11). So requiring the separator is
+// what distinguishes a bullet a producer set from a rune that happens to lead a word.
+// doc.TestListMarkerExcludesTheAmbiguousGlyphs carries the per-glyph split.
 //
 // The last two cases are the length requirement: mupdf_explored.pdf sets a lone Wingdings
 // square as a page decoration, so a marker with nothing after it is not an item either.
