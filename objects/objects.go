@@ -311,15 +311,21 @@ func AsNum(o Object) (float64, bool) {
 // twice over: 0xE9 is eacute and becomes a lone invalid byte rather than "é",
 // and the whole 0x18-0x1F and 0x80-0xA0 range is reassigned away from what
 // Latin-1 and ASCII put there, so "Table 15 <0x84> Entries" reads as a raw byte
-// where the file says an em dash. 137 strings in this repo's corpus decode
+// where the file says an em dash. 144 strings in this repo's corpus decode
 // wrongly without the table — 92 of them the /ActualText on a bullet, which is
 // 0x80 and so a control code by the old reading and "•" by the file's own.
 //
 // The risk this trades against is a producer that writes UTF-8 with no BOM, in
 // defiance of Annex D, whose output the old reading got right by accident. None
-// exists on disk: of the 103 BOM-less strings carrying a byte over 0x7F, 0 are
+// exists on disk: of the 142 BOM-less strings carrying a byte over 0x7F, 0 are
 // well-formed multi-byte UTF-8, which is what such a producer would leave. The
 // specification is followed where the corpus is silent.
+//
+// ADR 0012 records the decision and the full measurement. The figures there
+// supersede the 137 and 103 this comment first carried: those came from a walk
+// that marked a Ref seen and skipped it, so each string was attributed to
+// whichever path reached it first and Go's map order decided that. Such a walk
+// undercounts, and it moves between runs.
 func DecodeTextString(o Object) string {
 	switch t := o.(type) {
 	case String:
@@ -348,8 +354,10 @@ func decodeBytes(b []byte) string {
 // byte value, which is what the table already says everywhere it is defined
 // outside the two reassigned ranges, and keeps a byte from vanishing. That is
 // also what preserves tab, newline and carriage return: they have no glyph name,
-// so the encoding table is empty for them, and 192 carriage returns in the
-// corpus would be deleted by a table lookup that treated empty as nothing.
+// so the encoding table is empty for them, and 202 carriage returns in the
+// corpus would be deleted by a table lookup that treated empty as nothing. All
+// 202 are annotation /Contents in ISO_32000-2_sponsored_EC3.pdf, so this path is
+// exercised by markup text rather than by metadata.
 //
 // Two assignments are worth naming because they surprise: 0xA0 is the Euro sign
 // and not NO-BREAK SPACE, and 0xAD is a hyphen and not SOFT HYPHEN. Both are

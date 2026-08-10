@@ -89,6 +89,42 @@ All notable changes to this project are documented here, following
   indented ordered sub-list exists on disk and a tier rule fitted to no positive case is
   fitted to noise, which is ADR 0011's own reason for stating `ListStep` rather than tuning it.
 
+### Documentation — 2026-08-10
+
+- **ADR 0012, "Decode a text string through Annex D.2."** The 2026-08-09 PDFDocEncoding change
+  shipped with a changelog line and no ADR, and it deserved one: what it reversed was not a bug
+  in the ordinary sense but an assumption written into a doc comment as a fact — *"text strings
+  in practice do not use 0x80-0x9F"* — and then relied on for four phases. Nothing had measured
+  it. A decision recorded only as a fixed defect leaves the next reader with no way to know that
+  the reading being replaced was a defensible trade (a BOM-less UTF-8 producer, which `string(b)`
+  gets right by accident) that the corpus happens to settle at zero cost.
+- **Re-measuring for that ADR invalidated every figure the change was recorded with, and the
+  method is the finding.** The original counts came from a recursive object-graph walk that
+  marked a `Ref` seen and skipped it, so each string was attributed to whichever *path* reached
+  it first — and Go randomizes map iteration order, so identical code reported 21002, 15318,
+  12877, 14195 and 13854 strings across runs. A depth bound made it worse by truncating
+  differently per traversal. Replaced with two passes: an unbounded worklist collecting reachable
+  `Ref`s (dedupe by `Ref` terminates it, the reference graph being finite), then one visit per
+  resolved object reading only its own direct entries. Three consecutive runs then agreed
+  exactly. **The tell that a corpus figure came from an order-dependent traversal is that it
+  moves when nothing does.**
+- Corrected in `objects.DecodeTextString` and `pdfDocText`, all in the same direction because the
+  old walk could only miss objects: **137 → 144** differing strings, **103 → 142** BOM-less
+  strings holding a byte above `0x7F`, **192 → 202** carriage returns preserved by the
+  undefined-position fallback. The 2026-08-09 entry's "4 of them to invalid UTF-8" is superseded
+  by **142** and is left in place unedited — a changelog records what was believed at the time.
+  That one was not an undercount but an impossibility: a lone byte above `0x7F` is never
+  well-formed UTF-8, so under any population the invalid count sits just under the differing
+  count rather than at 3% of it, which is arithmetic and is what showed the figure was wrong
+  before any probe was written.
+- Two facts the re-measurement added rather than corrected. All **202** carriage returns are
+  annotation `/Contents` in one file and **0** are under a metadata key, so the fallback branch
+  is load-bearing for markup text and invisible to `Doc.Meta` — a reviewer hunting for its effect
+  in a `/Title` will find nothing and should not conclude it is dead. And the 155 affected byte
+  occurrences resolve to 11 distinct values, of which `0x80` (the bullet, 92 occurrences, all
+  `/ActualText` in `Well-Tagged-PDF-WTPDF-1.0.pdf`) and `0x84` (the em dash, 25) are almost the
+  whole population.
+
 ### Added — 2026-08-09
 
 - **`pdfspec okf` converts an untagged PDF.** It used to refuse one outright, because a bundle

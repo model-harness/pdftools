@@ -204,8 +204,9 @@ func TestDecodeTextStringPDFDocEncoding(t *testing.T) {
 		// overruling the specification on a case it cannot see.
 		{"Euro at 0xA0, not NBSP", String("\xa0"), "€"},
 		{"hyphen at 0xAD, not soft hyphen", String("\xad"), "-"},
-		// Whitespace has no glyph name, so a table lookup alone would delete it — 192
-		// carriage returns in the corpus.
+		// Whitespace has no glyph name, so a table lookup alone would delete it — 202
+		// carriage returns in the corpus, all of them annotation /Contents in one file
+		// (ADR 0012 measures this; none are under a metadata key).
 		{"whitespace survives", String("a\tb\nc\rd"), "a\tb\nc\rd"},
 		// A BOM still selects UTF-16BE, where 0x80 is a code unit and not a table index.
 		{"utf16 is not remapped", String{0xFE, 0xFF, 0x00, 0x80}, "\u0080"},
