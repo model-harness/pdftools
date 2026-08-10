@@ -161,6 +161,46 @@ All notable changes to this project are documented here, following
   that test and the `Enumerated` case beside it. Its span split turned out to be a shape no
   other case reached — three spans with the separator alone in the middle one.
 
+- **A declared label held in a `Span` kid is read, closing the shallow-read defect DESIGN.md
+  recorded as open and benign.** `sectionize.label()` walked `e.Kids` far enough to find the
+  `Lbl`, then read that element's own marked content and stopped — so it returned `""` for
+  **100 of the 153 `Lbl` on disk**, which hold their marker one level down in a `Span` (92 as a
+  single span, 8 split across two). `markItem` fell through to the glyph rule and recovered the
+  same `■` from the item's text, which is why no output was wrong and why the defect kept.
+
+  **The benign-ness was the corpus, not the code.** Both halves of the bad case are the common
+  shape here: 100 of 108 `Lbl` kids are a `Span`, and 16 declared labels are ordered. Only their
+  intersection is absent, so "every ordered label is owned by its `Lbl` directly" is a fact
+  about these 50 files. An ordered label in a `Span` kid has no fallback — ADR 0011 records a
+  leading number as unreachable from the glyph side, being what a heading and a table row also
+  open with — so such an item would emit `- [1] text` with the label doubled into the line and
+  nothing in the corpus to say so. `TestOrderedLabelInASpanKidIsRead` is that case, and it is
+  the one that fails without the descent: reverting `labelText` to the shallow read leaves the
+  marker empty and `[1]` in the text.
+
+  The bound is `gather`'s rather than a second rule — descend through a kid with no block role,
+  stop at one that has one, and stop at a heading — so the label's idea of where it ends cannot
+  drift from the walk's. The nested-list stop is the one the original note named: descending
+  through an `L` inside a `Lbl` puts a sub-item's marker into its parent's label, measured as
+  `"a.■ inner item"`. The heading stop is worse and was found only by mutation: `gather` hands a
+  heading kid to `visit`, which opens a section from it, so consuming its spans first leaves
+  that section titled `""` — a lost clause name rather than a mislabelled item. Deleting the
+  `IsHeading` term passed every other test in the package, including the nested-list one, since
+  a heading has no block role.
+
+  Neither stop occurs on disk: the first text below a `Lbl` is at depth 1 in all 100 cases and
+  `Span` is the only kid role that ever appears, 108 times. They are there for shapes
+  ISO 32000-2 permits, and `TestLabelStopsAtANestedList` and `TestLabelStopsAtAHeading` are what
+  keep them, since no fixture would.
+
+  The A/B is **byte-identical across all 40 documents that render text**, which is the predicted
+  result rather than a null one — the descent reads the marker the glyph rule was recovering, so
+  both routes agree. Re-measured after: the 100 are unmoved, and `label()`'s empties are **2**
+  where they were 102, those 2 being the producer's own version — a `Lbl` declaring no marked
+  content anywhere below it, which no descent can fix and
+  `TestEmptyLabelFallsBackToTheGlyph` still covers. Three mutations, all fatal: no descent,
+  unbounded descent, and the missing heading term.
+
 ### Changed — 2026-08-10
 
 - **The `/Lbl` figures, re-measured again — the 08-08 entry's `1407 / 121 of 121 / 1286 / 13`
@@ -233,6 +273,11 @@ All notable changes to this project are documented here, following
   labels — the case with no glyph fallback — are owned by their `Lbl` directly. But it means
   the glyph rule, not the declaration, supplies the marker for two thirds of the items that
   declared one, and *"a label exists"* was never *"a label was read"*.
+
+  Fixed by the descent in the entry above, which also names what this deferral got wrong: the
+  two facts holding the output up — a `Span` kid, and an ordered label — are each ordinary on
+  disk and only their intersection is missing, so "unaffected" was a property of these 50 files.
+  The `102` and the `2 / 100` split stand as measured; only "recorded open" is superseded.
 
 ### Documentation — 2026-08-10
 

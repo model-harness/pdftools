@@ -109,11 +109,12 @@ func TestDeclaredLabelReachesAnOrderedList(t *testing.T) {
 // label's first rune is that glyph in 124 of 124, with 0 disagreeing. So on every case
 // where evidence exists to check the glyph against, the glyph is what the producer meant.
 //
-// The path this covers is wider than those 1291, because label() reads only the Lbl's own
-// marked content and 100 of the 153 Lbl on disk hold their marker in a Span inside it. Those
-// 100 are visible in the 124 above: reading the Lbl's whole subtree agrees 124 times, reading
-// only its own content 24. So this fallback, not the declaration, is what supplies the marker
-// for most of the items that declare one — recorded in label()'s own comment and in DESIGN.md.
+// This path used to be wider than those 1291, because label() read only the Lbl's own marked
+// content and 100 of the 153 Lbl on disk hold their marker in a Span inside it — so the
+// fallback, not the declaration, supplied the marker for most of the items that declared one.
+// Those 100 are the difference between the two reads visible above: the Lbl's whole subtree
+// agrees 124 times, its own content 24. The descent closed that, and the fallback now covers
+// what it says it covers — the items with no declaration at all.
 func TestUndeclaredMarkerIsStrippedFromADeclaredItem(t *testing.T) {
 	d := docWith(
 		sp{1, 0, "1 Scope"},
@@ -207,10 +208,11 @@ func TestDeclaredLabelOutranksTheGlyph(t *testing.T) {
 // and stopping — would leave the drawn bullet in the text and re-emit the defect on
 // exactly the documents that tried hardest to tag correctly.
 //
-// Those 2 are not the only empties label() returns; there are 102, and the other 100 own
-// their marker in a Span one level down, which label() does not read. This test covers the
-// producer's version of empty, not that one — the shape with a Span kid has no case here
-// at all, which is what DESIGN.md's open question records.
+// These 2 are now the only empties label returns. They used to be 102, the other 100 owning
+// their marker in a Span one level down that the read did not descend into;
+// TestDeclaredLabelInASpanKidIsRead covers that shape. The distinction this test holds is
+// that the two causes are different: a producer that declared an element and drew nothing in
+// it has no label anywhere below it, and no amount of descending finds one.
 func TestEmptyLabelFallsBackToTheGlyph(t *testing.T) {
 	d := docWith(
 		sp{1, 0, "1 Scope"},
@@ -230,6 +232,166 @@ func TestEmptyLabelFallsBackToTheGlyph(t *testing.T) {
 	}
 	if blk.Marker != "•" {
 		t.Errorf("marker = %q, want %q", blk.Marker, "•")
+	}
+}
+
+// TestDeclaredLabelInASpanKidIsRead is the commonest declared shape on disk and had no case
+// here until the read descended: 100 of the 153 Lbl hold their marker in a Span one level
+// down, and 108 of 108 Lbl kids are that Span.
+//
+// It passed before the descent, which is the only reason the defect kept for as long as it
+// did. take() consumed only what the Lbl itself owned, so the Span's marker stayed unclaimed,
+// gather folded it into the item's text ahead of the body, and the glyph rule read it back off
+// the front — measured over all 100, every one recovered. Same marker, same text, by the route
+// the declaration was supposed to make unnecessary.
+//
+// So the assertion that carries the change is not the marker or the text; it is that this item
+// is *not* running on the glyph rule. A "■" recovered from the text and a "■" read from a
+// declaration are indistinguishable in the output, which is why the ordered case below is the
+// one that fails without the descent.
+func TestDeclaredLabelInASpanKidIsRead(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "■ "},
+		sp{1, 2, " machine-readable text"},
+	)
+	li := kids(el(tag.RoleLI, 1),
+		kids(el(tag.RoleLbl, 1), el(tag.RoleSpan, 1, 1)), // the marker one level down
+		el(tag.RoleLBody, 1, 2),
+	)
+	tr := tree(el(tag.RoleH1, 1, 0), kids(el(tag.RoleL, 1), li))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blk := out.Sections[0].Blocks[0]
+	if got := blk.Text(); got != "machine-readable text" {
+		t.Errorf("text = %q, want the label's span claimed by the label", got)
+	}
+	if blk.Marker != "■" {
+		t.Errorf("marker = %q, want %q", blk.Marker, "■")
+	}
+}
+
+// TestOrderedLabelInASpanKidIsRead is the intersection the corpus does not contain, and the
+// reason the descent is a fix rather than a tidy-up.
+//
+// Both halves are ordinary here: 100 of the labels on disk sit in a Span kid, and 16 are
+// ordered. No document does both, so with a shallow read every ordered label happened to be
+// one the Lbl owned directly and the fallback covered the rest. An ordered label has no
+// fallback — a leading number is what a heading and a table row also open with, which is why
+// ADR 0011 records ordered lists as unreachable from the glyph side — so this item emitted
+// "- [1] text" with the label doubled into the line, and nothing in the corpus said so.
+//
+// This is the case that fails without the descent: revert labelText to reading only the
+// element's own Content and the marker comes back empty, the "[1]" stays in the text, and the
+// sink writes its own bullet in front of it.
+func TestOrderedLabelInASpanKidIsRead(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "[1]"},
+		sp{1, 2, " ISO 32000-2, Document management"},
+	)
+	li := kids(el(tag.RoleLI, 1),
+		kids(el(tag.RoleLbl, 1), el(tag.RoleSpan, 1, 1)),
+		el(tag.RoleLBody, 1, 2),
+	)
+	tr := tree(el(tag.RoleH1, 1, 0), kids(el(tag.RoleL, 1), li))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blk := out.Sections[0].Blocks[0]
+	if blk.Marker != "[1]" {
+		t.Errorf("marker = %q, want %q read from the declaration", blk.Marker, "[1]")
+	}
+	if got := blk.Text(); got != "ISO 32000-2, Document management" {
+		t.Errorf("text = %q, want the label out of the text", got)
+	}
+	// The consequence, and what the doubling looked like: an ordered label has to go back
+	// into the line, so a sink that cannot see it as the marker writes it twice.
+	if !blk.Enumerated() {
+		t.Error("Enumerated = false, want true: a bracketed number is a label, not a bullet")
+	}
+}
+
+// TestLabelStopsAtANestedList holds the descent's bound, and no corpus document exercises it:
+// the first text below a Lbl is at depth 1 in all 100 cases and Span is the only kid role that
+// occurs, so the stop is there for a shape ISO 32000-2 permits rather than one on disk.
+//
+// A Lbl is not supposed to contain a block at all. If one does, the boundary that matters is a
+// nested list: descending through it would put a sub-item's marker into its parent's label and
+// claim a span belonging to a block that has not been built yet. The stop is blockRole, the
+// same predicate gather detaches on, so the two cannot come to disagree about where a label
+// ends — an unbounded descent would read "■ inner item" here and label the outer item with it.
+func TestLabelStopsAtANestedList(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "a."},
+		sp{1, 2, "■"},
+		sp{1, 3, " inner item"},
+		sp{1, 4, " outer body"},
+	)
+	// A malformed producer: the label holds its own text and, below it, a whole list.
+	lbl := kids(el(tag.RoleLbl, 1, 1),
+		kids(el(tag.RoleL, 1),
+			kids(el(tag.RoleLI, 1),
+				el(tag.RoleLbl, 1, 2),
+				el(tag.RoleLBody, 1, 3),
+			),
+		),
+	)
+	li := kids(el(tag.RoleLI, 1), lbl, el(tag.RoleLBody, 1, 4))
+	tr := tree(el(tag.RoleH1, 1, 0), kids(el(tag.RoleL, 1), li))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blk := out.Sections[0].Blocks[0]
+	if blk.Marker != "a." {
+		t.Errorf("marker = %q, want %q: the descent stops at the nested list", blk.Marker, "a.")
+	}
+	// The inner item is still its own block with its own label, which is the other half of
+	// the claim: the descent did not consume the spans it needs.
+	inner := out.Sections[0].Blocks[1]
+	if inner.Marker != "■" {
+		t.Errorf("inner marker = %q, want %q: its label is still its own", inner.Marker, "■")
+	}
+	if got := inner.Text(); got != "inner item" {
+		t.Errorf("inner text = %q, want the nested item intact", got)
+	}
+}
+
+// TestLabelStopsAtAHeading is the other half of the descent's bound, and it was unpinned
+// until a mutation said so: deleting the IsHeading half of the guard passed every test here,
+// including TestLabelStopsAtANestedList, because a heading has no block role.
+//
+// It is the worse of the two shapes. gather hands a heading kid to visit, which opens a
+// section from it — so a label read that consumed the heading's spans first would leave that
+// section with no title, losing the clause name rather than merely mislabelling an item. Like
+// the nested list, no corpus document puts one inside a Lbl; unlike it, the guard for it
+// costs one term and the failure it prevents is silent.
+func TestLabelStopsAtAHeading(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "a."},
+		sp{1, 2, "2 Normative references"},
+		sp{1, 3, " outer body"},
+	)
+	lbl := kids(el(tag.RoleLbl, 1, 1), el(tag.RoleH1, 1, 2))
+	li := kids(el(tag.RoleLI, 1), lbl, el(tag.RoleLBody, 1, 3))
+	tr := tree(el(tag.RoleH1, 1, 0), kids(el(tag.RoleL, 1), li))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if out.Sections[0].Blocks[0].Marker != "a." {
+		t.Errorf("marker = %q, want %q: the descent stops at the heading",
+			out.Sections[0].Blocks[0].Marker, "a.")
+	}
+	// The heading still has its own text to open a section with, which is the claim: the
+	// label read did not consume it.
+	if len(out.Sections) < 2 {
+		t.Fatalf("sections = %d, want 2: the heading inside the label still opens one", len(out.Sections))
+	}
+	if got := out.Sections[1].Title; got != "2 Normative references" {
+		t.Errorf("second section title = %q, want the heading's own text", got)
 	}
 }
 

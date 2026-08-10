@@ -371,14 +371,30 @@ func wrapsText(role doc.Role) bool {
 // under /Names while its live /S /Document has no /K, and tagged-lists.pdf writes its elements
 // direct rather than indirect so the count misses 6. CHANGELOG.md records the reconciliation.
 //
-// The Lbl's *text* is a different question from the Lbl's position, and this reads only the
-// element's own marked content, which is not where most producers put it: 100 of the 153
-// hold the marker in a Span inside the Lbl, so this returns "" for them and markItem falls
-// through to the glyph. Benign on this corpus — StripMarker recovers the same "■" from the
-// text, and every one of the 16 ordered labels, the case with no glyph fallback, is owned
-// by the Lbl directly — but it means "a label exists" is not "a label was read", and the
-// declared path is running on the glyph rule in two thirds of the cases where a
-// declaration was available. DESIGN.md's open questions record it.
+// The Lbl's *text* is a different question from the Lbl's position, and reading only the
+// element's own marked content is not where most producers put it: 100 of the 153 Lbl on disk
+// hold the marker in a Span one level down, so a shallow read returned "" for them and
+// markItem fell through to the glyph. Hence the descent, and hence its bound.
+//
+// It stopped at the element itself for two thirds of the corpus, and the reason that was
+// benign is exactly the reason it was still wrong. take() consumes only what it is given, so
+// a marker left in a Span kid stayed unclaimed, gather folded it into the item's text ahead of
+// the body, and StripDeclaredMarker read it back off the front — measured, all 100 recovered,
+// 0 stranded and 0 of them an ordered label. What that arrangement cannot survive is the
+// intersection it happens not to contain: an ordered label held in a Span kid has no glyph
+// rule to fall through to, because a leading number is what a heading and a table row also
+// open with. Both halves are the common shape here — 100 of 108 Lbl kids are a Span, and 16
+// labels are ordered — and only their overlap is absent, which makes "no document does both"
+// a fact about these 50 files rather than about producers.
+//
+// The bound is gather's, not a second rule: descend through a kid with no block role and stop
+// at one that has one. A Lbl is not supposed to contain a block at all, and the boundary that
+// matters is a nested list — an L inside a Lbl would otherwise put a sub-item's marker into
+// its parent's label. Reusing blockRole means that boundary cannot drift from the one the rest
+// of the walk enforces. Measured over every Lbl on disk: the first text sits at depth 1 in all
+// 100 cases and Span is the only kid role that occurs, 108 times, so no corpus document
+// exercises the stop — it is there for the shape ISO 32000-2 permits, not one on disk, and
+// TestLabelStopsAtANestedList is what holds it.
 //
 // The label's pages still reach the item's range, and not from here: Lbl has no block
 // role, so the gather that follows recurses into it and adds its pages the way it does for
@@ -391,16 +407,33 @@ func (b *builder) label(e *tag.Elem) string {
 			continue
 		}
 		var sb strings.Builder
-		for _, sp := range b.index.take(k.Content) {
-			sb.WriteString(sp.Text)
-		}
-		// Empty for 102 of the 153 Lbl on disk, and only 2 of those are the producer's
-		// doing — the other 100 own their marker one level down, in a Span. So the empty
-		// string is the honest answer about what this element *owns* and a misleading one
-		// about what the producer declared; the glyph rule below is what covers the gap.
+		b.labelText(k, &sb)
+		// Empty for 2 of the 153 Lbl on disk, and both are the producer's doing: the
+		// element declares no marked content anywhere below it, so there is no label to
+		// read and markItem's glyph rule is what covers them.
 		return strings.TrimSpace(sb.String())
 	}
 	return ""
+}
+
+// labelText appends the text of e and of its descendants that do not start blocks of their
+// own, claiming the spans as it goes.
+//
+// The stop is gather's, both halves of it, so the two cannot disagree about where a label
+// ends: a kid with a block role is a block and its text is its own, and a heading kid is
+// worse than a block — gather hands it to visit, which opens a section from it, so consuming
+// its spans here would open that section with no title at all. Neither shape occurs on disk
+// inside a Lbl. See label above for what the corpus does and does not exercise.
+func (b *builder) labelText(e *tag.Elem, sb *strings.Builder) {
+	for _, sp := range b.index.take(e.Content) {
+		sb.WriteString(sp.Text)
+	}
+	for _, k := range e.Kids {
+		if _, ok := blockRole(k.Role); ok || k.Role.IsHeading() {
+			continue
+		}
+		b.labelText(k, sb)
+	}
 }
 
 // gather collects e's spans together with those of its transparent descendants,
@@ -593,10 +626,11 @@ func alt(e *tag.Elem) string {
 // arithmetic that assumes the conclusion, where a walk reporting 1412 and 1415 from the same
 // pass says the +3 is the only difference.
 //
-// That 124 is a label read that *descends* into the Lbl, which is not the read label() does:
-// 24 of the 124 own their marker directly and the other 100 hold it in a Span kid. So the
-// agreement figure is about what the producer declared, and label() sees a quarter of it —
-// the gap that comment records, arrived at from the other side.
+// That 124 is a label read that descends into the Lbl, and label() now reads the same way, so
+// the two figures are about one population again. They were not: 24 of the 124 own their marker
+// directly and the other 100 hold it in a Span kid, which the shallow read did not reach, and
+// the agreement figure was therefore about what the producer declared where label() saw a
+// quarter of it. That gap is what the descent closed.
 //
 // # What the declaration adds that no glyph could
 //

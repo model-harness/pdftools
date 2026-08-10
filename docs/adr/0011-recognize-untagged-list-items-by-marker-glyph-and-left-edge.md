@@ -313,10 +313,15 @@ paths read one copy of it.
 > keeps it that way. None of those 3 declares a `Lbl`, so the 124 of 124 above is unmoved.
 >
 > The same re-measurement found something this ADR could not have known: `sectionize.label()`
-> reads only the `Lbl` element's own marked content, and **100 of the 153 `Lbl` on disk hold
-> their marker in a `Span` one level down**, so the declaration reads as empty and the glyph
-> rule — this ADR's rule — is what actually supplies the marker for two thirds of the items
-> that declare one. Benign today, because `StripMarker` recovers the same `■`, and because all
-> 16 ordered labels are owned by their `Lbl` directly. Recorded open in DESIGN.md; it makes
-> this rule load-bearing on the tagged path in a way "the declaration is taken whenever it
-> exists" understates.
+> read only the `Lbl` element's own marked content, and **100 of the 153 `Lbl` on disk hold
+> their marker in a `Span` one level down**, so the declaration read as empty and the glyph
+> rule — this ADR's rule — was what actually supplied the marker for two thirds of the items
+> that declare one. It was benign, because `StripMarker` recovered the same `■` and all 16
+> ordered labels happened to be owned by their `Lbl` directly. That last coincidence is why it
+> was a defect and not a curiosity: an ordered label held in a `Span` kid has no glyph rule to
+> fall back to, this ADR having established that a leading number is unreachable from the glyph
+> side. `label()` descends now, bounded by `blockRole`, so this rule is load-bearing on the
+> tagged path only for the items that declare no label at all — which is what "the declaration
+> is taken whenever it exists" always claimed. The decision here is untouched either way: the
+> descent changes which vocabulary reads a *declared* label, never what an undeclared paragraph
+> is allowed to open with.

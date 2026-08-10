@@ -928,10 +928,12 @@ OKF-ified spec.
   Wingdings square is *glued* to its text with no separator, which `ListMarker` rejects
   outright.
 
-  That 124 is a label read that descends into the `Lbl`; `label()` reads only the element's
-  own marked content and so sees 24 of it, the other 100 holding their marker in a `Span`
-  kid. Both numbers come from the same pass, which is how the shallow-read defect recorded
-  below is measurable from this side.
+  That 124 is a label read that descends into the `Lbl`, which is now the read `label()` does
+  too. It was not: a read of the element's own marked content alone sees 24 of the 124, the
+  other 100 holding their marker in a `Span` kid. Both numbers came from the same pass, which
+  is how the shallow-read defect closed below was measurable from this side — and why the
+  agreement figure is the one to re-run, since it is the only place a disagreement between
+  what a producer declared and what the glyph rule reads could surface.
 
   Three of those figures moved after the fact and it is worth saying why, since none of the
   three is a re-measurement of the same population: `testdata/reference/tagged-lists.pdf` was
@@ -1136,14 +1138,15 @@ OKF-ified spec.
   corpus use is the only evidence there can be — which is thin, and stated as thin in
   `doc/marker.go` rather than dressed up. Its A/B changes 2 lines in 1 document of 50 and
   nothing else.
-- **`label()` reads only the `Lbl` element's own marked content, so 100 of the 153 declared
-  labels on disk read as empty. Open, measured, benign in output today.**
+- **~~`label()` reads only the `Lbl` element's own marked content, so 100 of the 153 declared
+  labels on disk read as empty~~. Closed — the read descends, bounded by `blockRole`, the same
+  predicate `gather` detaches on.**
 
   The producer's marker usually sits one level below the `Lbl`, in a `Span` inside it — 92
-  cases as a single `Span` and 8 split across two — and `label()` walks `e.Kids` only far
-  enough to find the `Lbl`, then reads `k.Content` and stops. So it returns `""` for 100 of
-  the 102 empties it produces, and `markItem` falls through to `StripMarker`, which recovers
-  the same `■` from the item's text. The output is right; the reason it is right is the glyph
+  cases as a single `Span` and 8 split across two — and `label()` walked `e.Kids` only far
+  enough to find the `Lbl`, then read `k.Content` and stopped. So it returned `""` for 100 of
+  the 102 empties it produced, and `markItem` fell through to `StripMarker`, which recovered
+  the same `■` from the item's text. The output was right; the reason it was right was the glyph
   rule, not the declaration the producer supplied.
 
   **What makes it worth recording rather than fixing quietly is that the code's own comment
@@ -1154,13 +1157,31 @@ OKF-ified spec.
   measured but was never attributed is the same failure this section records for the two dots
   and for the populations above.
 
-  Not fixed here for the reason the hyphen is not: it changes what `label()` means rather
-  than what a figure says, and it is not free. Descending into the `Lbl`'s subtree has to
-  stop before it reaches a nested list's own items — `TestLabelIsNotTakenFromANestedItem`
-  exists because the *element* search must not recurse — so a text read that descends needs
-  its own bound, and no fixture covers the `Span`-kid shape at all today. The safety margin
-  is that all 16 ordered labels, the only case with no glyph fallback, are owned by their
-  `Lbl` directly, so the 100 are exactly the cases where the fallback works.
+  **The safety margin recorded here was the argument for closing it, not against.** It read:
+  all 16 ordered labels, the only case with no glyph fallback, are owned by their `Lbl`
+  directly, so the 100 are exactly the cases where the fallback works. Both halves are ordinary
+  on disk — 100 of 108 `Lbl` kids are a `Span`, and 16 labels are ordered — and only their
+  *intersection* is missing. So "no document does both" is a fact about these 50 files rather
+  than about producers, and an ordered label in a `Span` kid would emit `- [1] text` with the
+  label doubled into the line and nothing in the corpus to say so. That is the case
+  `TestOrderedLabelInASpanKidIsRead` builds, and it is the one that fails without the descent.
+
+  The bound is `gather`'s, both halves: descend through a kid with no block role, stop at one
+  that has one, and stop at a heading. Reusing `blockRole` is what keeps the label's idea of
+  where it ends from drifting from the walk's. A nested list is the boundary the original note
+  named — descending through it would put a sub-item's marker into its parent's label — and a
+  heading kid is worse, because `gather` hands it to `visit`, which opens a section from it, so
+  consuming its spans would leave that section with no title. Neither shape occurs inside a
+  `Lbl` on disk: the first text below one is at depth 1 in all 100 cases and `Span` is the only
+  kid role that ever appears. `TestLabelStopsAtANestedList` and `TestLabelStopsAtAHeading` hold
+  the two stops, and the second was written only because a mutation deleting the `IsHeading`
+  term passed everything else, including the nested-list test — a heading has no block role.
+
+  The A/B is byte-identical across all 40 documents that render text, which is the predicted
+  result and not a null one: the descent now *reads* the marker the glyph rule was recovering,
+  and both routes reach the same output. Measured after the change, the 100 are unmoved and
+  `label()`'s empties are 2 — the producer's version, which no descent can fix — where they
+  were 102.
 - **A block boundary inside one marked-content element loses no space, and this item is
   closed as *unreachable* — the census that was meant to size it found no case to fix and a
   different defect instead.** The premise was sound: the wrap space is inferred only
