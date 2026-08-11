@@ -1,0 +1,52 @@
+docs/adr/0008-rank-untagged-headings-by-their-own-numbering.md
+  s_5cd1b28ed520c1::t_19e051ee80c450 107-124
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_8128f46e93417b 787-799
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_3f630c99e5ac41 32-34
+  s_5cd1b28ed520c1::t_ed80e5e9b94dfb 35-36
+  s_5cd1b28ed520c1::t_f7f258b796908e 8-23,37-53
+  s_5cd1b28ed520c1::t_570f92b0e46cac 24-31
+docs/adr/0013-rank-untagged-annex-headings-by-their-lettered-number.md
+  s_5cd1b28ed520c1::t_09d0e3756bef34 81-85
+  s_5cd1b28ed520c1::t_96c9d3baea6932 1-80,86-113,129-138
+  s_5cd1b28ed520c1::t_13278dff0c26df 123-128
+  s_5cd1b28ed520c1::t_74400aaaf1fd64 114-122
+layout/layout.go
+  s_5cd1b28ed520c1::t_9147c71297402a 203-204
+  s_5cd1b28ed520c1::t_428c787f3c7a15 38-40
+  s_5cd1b28ed520c1::t_0f479547e27e6f 55-67
+  s_5cd1b28ed520c1::t_a17e2e1b750321 730-737
+  s_5cd1b28ed520c1::t_76021aeca1f557 689-697
+  s_5cd1b28ed520c1::t_b92719a5a5058f 835,843-845
+  s_5cd1b28ed520c1::t_060cf055d0cdda 836-839
+  s_5cd1b28ed520c1::t_06cba0d97606fd 722-723,742-746
+  s_5cd1b28ed520c1::t_1a606e1098e436 747-748,752-834,840-842,846-847
+  s_5cd1b28ed520c1::t_6df34021e7775f 202,749-751
+layout/layout_test.go
+  s_5cd1b28ed520c1::t_e40c0b5551282d 252
+  s_5cd1b28ed520c1::t_7edad99bd686ce 282
+  s_5cd1b28ed520c1::t_96b4106f8e4e6b 217-230
+  s_5cd1b28ed520c1::t_669dc0a24657e8 276
+  s_5cd1b28ed520c1::t_2b6e5af082a045 277-278
+  s_5cd1b28ed520c1::t_67c8e587a491e8 253-254
+  s_5cd1b28ed520c1::t_c8a758d6a233fb 244
+  s_5cd1b28ed520c1::t_4e3ff3c89cf13f 265-275,279-281,283-347,356,359-361,363-368
+  s_5cd1b28ed520c1::t_422e6308d50251 348-355,357-358,362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "03aed72913df203ac6886081c49a715708b8fefd",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
