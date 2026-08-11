@@ -7,6 +7,24 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-08-11
 
+- **A test for `cellText`'s trim, which nothing in `sink/markdown` asserted.** The backlog
+  carried "a leading space on cells after the first, 1 row in 50 PDFs, cosmetic". Measuring it
+  found the opposite of both halves: at the `doc.Block` level **11084 of 16401 table cells**
+  begin with a space, because `extract` carries an inferred space on the fragment that
+  *follows* it — deliberately, so trimming stays the sink's decision — and `splitAtRules` cuts
+  a ruled row at those same gaps, so every cell after the first opens with one. In rendered
+  Markdown the count is **0 of 16724**: `cellText` trims, and removing that trim puts the
+  space back on **11310** cells. So the defect is unreachable in output and the recorded
+  figure was measuring neither the cause nor the symptom.
+  What was real is that the guard was untested where it lives. `sink/markdown`'s whole suite
+  passes with the trim deleted; the only thing that caught it was
+  `TestReferenceExactMatch/table`, two packages away, as a whole-document byte diff naming no
+  cause. `TestCellLeadingSpaceIsTrimmed` asserts all three paths — plain, code span, and
+  `Alt`, which returns before the spans are read and so trims separately — and kills four
+  mutations, including replacing either `TrimSpace` with `TrimRight`. The `Alt` branch is
+  reachable from no document on disk: `sectionize` sets `Alt` on 218 blocks across the 50 and
+  none is a cell, and `extract` sets it on none at all.
+
 - **Untagged appendix headings are recognized, closing half of the limit ADR 0008 recorded as
   measured debt** (ADR 0013). `layout.annexLevel` reads a dotted annex number as a section
   number whose first component is a letter — "B.2.3 CMS MAC validation" is level three for the

@@ -1290,6 +1290,24 @@ OKF-ified spec.
   95 distinct codes**, compared word for word against committed Markdown. The corpus
   contributes the other 2522 codes as presence only. Closing that gap would need a per-code
   expectation no producer publishes, so the split is recorded rather than resolved.
+- **The leading space on cells after the first is closed as *unreachable*, and the recorded
+  figure was wrong in both directions.** It was logged as "1 row in 50 PDFs, cosmetic". At the
+  `doc.Block` level it is **11084 of 16401 cells**, which is the common case and not an edge
+  one: `extract` carries an inferred space on the fragment that *follows* it, deliberately, so
+  that trimming stays the sink's decision — and `splitAtRules` cuts a ruled row into cells at
+  exactly those gaps, so every cell after the first opens with the space that separated it from
+  its neighbour. In rendered Markdown it is **0 of 16724**, because `cellText` trims.
+
+  The reason it looked like one row is that `row()` writes its own padding space, so a leak
+  reads as `|  Table 29 |` — a second space GFM collapses, visible only in the bytes. What was
+  actually missing was a test at the trim: deleting it leaves all of `sink/markdown` green and
+  fails only `TestReferenceExactMatch/table` two packages away, as a whole-document byte diff
+  naming no cause. `TestCellLeadingSpaceIsTrimmed` now pins all three paths — plain, code span,
+  and `Alt`, which returns before the spans are read and therefore trims separately — and kills
+  four mutations, including weakening either `TrimSpace` to `TrimRight`. The `Alt` one is
+  reachable from no document: `sectionize` sets `Alt` on 218 blocks across the 50 and none is a
+  cell. `Alt` comes from the structure tree rather than the page — `extract` sets it on 0
+  blocks — so the tagged path is the only one that could reach that branch at all.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

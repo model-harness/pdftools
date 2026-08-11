@@ -186,6 +186,53 @@ func TestCellKeepsEmphasis(t *testing.T) {
 	}
 }
 
+// A cell's own leading space is trimmed, and it has to be trimmed *here* because nothing
+// upstream can.
+//
+// extract carries an inferred space on the fragment that follows it, deliberately, so that
+// trimming stays the sink's decision — and splitAtRules cuts a ruled row into cells at
+// those same gaps, so every cell after the first begins with the space that separated it
+// from its neighbour. On disk that is 11310 of 16724 rendered cells, so this is the common
+// case rather than an edge one.
+//
+// What makes it invisible is that row() writes its own padding space, so the leak reads as
+// "|  Table 29 |" — a second space that GFM collapses. Until this test the only thing that
+// caught removing the trim was TestReferenceExactMatch/table two packages away, as a
+// whole-document byte diff naming no cause.
+//
+// Both paths are asserted because they trim in different places: the plain one escapes and
+// then trims, while a code span is emitted verbatim by writeCode, which pads a body that
+// begins with a space rather than dropping it — so "` x`" survives escaping and the trim is
+// what removes the space outside the fence.
+func TestCellLeadingSpaceIsTrimmed(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "Object type"), cell(1, 0, 1, true, " Table 29"),
+	)
+	want := "| Object type | Table 29 |\n| --- | --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+
+	got = renderBlocks(t, monoCell(1, 0, 0, " /Metadata"))
+	want = "| `/Metadata` |\n| --- |\n"
+	if got != want {
+		t.Errorf("monospaced: got\n%q\nwant\n%q", got, want)
+	}
+
+	// Alt returns before the spans are ever read, so its trim is a separate statement.
+	// Nothing on disk reaches it: sectionize sets Alt on 218 blocks across the 50 documents
+	// and none of them is a cell, so dropping this trim is a mutation only this assertion
+	// can catch. (Alt arrives from the structure tree, not from the page — extract sets it
+	// on 0 blocks — so the tagged path is the only one that could reach it at all.)
+	c := cell(1, 0, 0, true, "drawn")
+	c.Alt = " corrected"
+	got = renderBlocks(t, c)
+	want = "| corrected |\n| --- |\n"
+	if got != want {
+		t.Errorf("alt: got\n%q\nwant\n%q", got, want)
+	}
+}
+
 // A pipe inside a cell's text would otherwise become a cell boundary. escapeInto already
 // emits "\|", which is what GFM reads as a literal pipe inside a cell — asserted here
 // because the escaping is in another file and a change there breaks tables silently.
