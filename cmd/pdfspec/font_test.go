@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/model-harness/pdftools/content"
 	"github.com/model-harness/pdftools/font"
+	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/objects"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 )
@@ -542,5 +545,274 @@ func TestCorpusDifferencesCount(t *testing.T) {
 	if perFont != 17 || distinctArrays != 14 {
 		t.Errorf("%d fonts carry /Differences over %d distinct /Encoding objects, "+
 			"want 17 over 14", perFont, distinctArrays)
+	}
+}
+
+// fontID identifies one font object across a census spanning several documents, and
+// codeKey one character code drawn with it. Both exist because /BaseFont is not an
+// identity and an object number is unique only within its own file.
+type fontID struct {
+	file string
+	ref  objects.Ref
+}
+
+type codeKey struct {
+	font fontID
+	code uint32
+}
+
+// label names a font in a failure message. The document and object number are part of it
+// for the same reason they are part of the identity: /BaseFont alone would merge two
+// fonts a reader then has to find, and eleven composite names on disk are drawn by more
+// than one object.
+func (id fontID) label(f *font.Font) string {
+	return fmt.Sprintf("%s %s obj %d", id.file, f.BaseFont, id.ref.Num)
+}
+
+// TestCorpusDrawnCodesDecodeToText is TestCorpusSimpleFontsDecodeToText's composite
+// counterpart, and it has to be built the other way round.
+//
+// A simple font can be asked about a code it may never draw, because its encoding
+// names one: the name is the claim, and resolving it is the test. A composite font
+// makes no such claim. A CID is an index into a glyph set and nothing about it implies
+// a character, so there is no set of "codes this font encodes" to enumerate -- only
+// /ToUnicode's own domain, and asking a map whether it contains its own keys asserts
+// nothing. The population that exists is the codes the document *draws*, which means
+// this test interprets content streams rather than reading dictionaries.
+//
+// Drawn is also the population that matters. A code decoding to nothing is dropped by
+// extract with no error anywhere -- show only advances the pen for it -- so every such
+// glyph is a character missing from the output that no downstream check can see. Both
+// kinds are counted, because the walk that finds the composite ones finds the simple
+// ones for free and the simple total is a second, independent read on the same claim.
+//
+// Result: 2900493 drawn glyphs, 0 undecodable. Not a tautology -- compositeText returns
+// empty whenever /ToUnicode is missing or does not cover the code, and this corpus is
+// where that would show. All 96 composite fonts reached carry a /ToUnicode stream, which
+// is what makes the corpus decodable at all and is a fact about these producers rather
+// than about the format: a symbolic composite font without one is genuinely
+// unrecoverable, and OCR is the only remaining route.
+//
+// What this does not check is whether the text is *right*. A code decoding to the wrong
+// character passes here, so a byte-order or offset defect in cmap that keeps producing
+// output would survive this test entirely. That claim is the gold fixtures' to make, and
+// they make it for 416 composite glyphs over 5 fonts and 95 distinct codes -- measured by
+// pointing this walk at testdata/reference -- against text compared word for word. The
+// corpus contributes the other 2522 codes as presence only. Extending correctness to them
+// would mean a per-code expectation no producer publishes, which is why the split is here
+// rather than resolved.
+func TestCorpusDrawnCodesDecodeToText(t *testing.T) {
+	type stat struct{ drawn, undecodable, inForm int }
+	byKind := map[font.Kind]*stat{}
+	undecodableBy := map[string]int{}
+	noToUnicode := map[string]int{}
+	unresolvedFont := 0
+
+	// Fonts and codes are counted per *object*, keyed by file and reference, because
+	// /BaseFont is not an identity. Eleven composite names on disk are drawn by more than
+	// one font dictionary — "ArialMT" and "SymbolMT" by four each, and subset prefixes do
+	// not always separate them ("BCDIEE+SymbolMT" is two objects) — so keying by name
+	// collapses 96 fonts to 79 and 2617 drawn codes to 2556. The file has to be part of
+	// the key as well: an object number is only unique within its own document, and this
+	// walk spans eleven.
+	composites := map[fontID]bool{}
+	codes := map[codeKey]bool{}
+
+	// walk interprets one content stream, descending into Form XObjects for the reason
+	// extract's doXObject does: a form carries its own /Resources and names fonts from
+	// there, and 1977 of the composite glyphs on disk are drawn inside one. Stopping at
+	// the page dictionary would report a clean census of an incomplete population.
+	// The depth bound is extract's own, so the two walks reach the same forms: a form may
+	// reference itself, and this test resolves no reference it could deduplicate against
+	// because a cycle of inline dictionaries has none. Bounding depth is what makes that
+	// safe on a hostile file rather than only on this corpus.
+	const maxDepth = 12
+	type loaded struct {
+		f  *font.Font
+		id fontID
+	}
+	var walk func(s objects.Store, file string, data []byte, res objects.Dict, depth int, inForm bool, ts content.TextState)
+	walk = func(s objects.Store, file string, data []byte, res objects.Dict, depth int, inForm bool, ts content.TextState) {
+		if depth > maxDepth {
+			return
+		}
+		fonts, _ := objects.GetDict(s, res, "Font")
+		xobjs, _ := objects.GetDict(s, res, "XObject")
+		cache := map[objects.Name]loaded{}
+
+		m := content.NewMachine(geom.Identity)
+		// The invoking stream's text state, which a form inherits (8.10.1): a Tf before
+		// the Do still applies inside it.
+		//
+		// No form in this corpus relies on that -- a mutation removing this line still
+		// passes -- so it is here for faithfulness to extract's walk rather than to
+		// satisfy a fixture, and the unresolvedFont assertion below is what makes that
+		// safe: a form that did inherit its font would resolve the name "" and be
+		// counted there rather than skipped in silence.
+		if depth > 0 {
+			m.GS.Text = ts
+		}
+		sc := content.NewScanner(data)
+		for {
+			op, ok := sc.Next()
+			if !ok {
+				return
+			}
+			m.Apply(op)
+
+			if op.Name == "Do" {
+				st, ok := objects.GetStream(s, xobjs, op.NameAt(0))
+				if !ok {
+					continue
+				}
+				if sub, _ := objects.GetName(s, st.Dict, "Subtype"); sub != "Form" {
+					continue
+				}
+				// Both halves are extract's doXObject's, and for its reason: a decode that
+				// reports no error can still leave Decoded nil — an image codec this
+				// package does not implement is the routine case — and walking nil data
+				// would contribute nothing while looking like a form with no text in it.
+				//
+				// No form on disk takes that route, so a mutation collapsing this back to
+				// one condition still passes. Kept for the same reason as the text-state
+				// inheritance below: this walk is only worth what its fidelity to
+				// extract's is worth, and a census is the wrong place to save a branch.
+				if st.Decoded == nil {
+					if err := s.Decode(st); err != nil || st.Decoded == nil {
+						continue
+					}
+				}
+				// A form with no /Resources inherits the invoking stream's.
+				inner := res
+				if d, ok := objects.GetDict(s, st.Dict, "Resources"); ok {
+					inner = d
+				}
+				walk(s, file, st.Decoded, inner, depth+1, true, m.GS.Text)
+				continue
+			}
+
+			var strs []objects.String
+			switch op.Name {
+			case "Tj", "'":
+				strs = append(strs, op.Str(0))
+			case `"`:
+				strs = append(strs, op.Str(2))
+			case "TJ":
+				for _, el := range op.Arr(0) {
+					if bs, ok := el.(objects.String); ok {
+						strs = append(strs, bs)
+					}
+				}
+			default:
+				continue
+			}
+
+			// The font from the graphics state, not from the last Tf operand seen. Tf is
+			// saved and restored by q/Q, so tracking the operand attributes a string to
+			// whichever font was set last anywhere in the stream -- which in this corpus
+			// blames a symbol font for 46 glyphs of ordinary prose it never drew.
+			name := objects.Name(m.GS.Text.Font)
+			ent, hit := cache[name]
+			if !hit {
+				if fd, ok := objects.GetDict(s, fonts, name); ok {
+					ent.f = font.Load(s, fd)
+					ent.id = fontID{file: file}
+					if ref, isRef := fonts[name].(objects.Ref); isRef {
+						ent.id.ref = ref
+					}
+				}
+				cache[name] = ent
+			}
+			f := ent.f
+			if f == nil {
+				unresolvedFont++
+				continue
+			}
+
+			st := byKind[f.Kind]
+			if st == nil {
+				st = &stat{}
+				byKind[f.Kind] = st
+			}
+			if f.Kind == font.Composite {
+				composites[ent.id] = true
+				if !f.HasToUnicode() {
+					noToUnicode[ent.id.label(f)]++
+				}
+			}
+			for _, bs := range strs {
+				for _, g := range f.Decode([]byte(bs)) {
+					st.drawn++
+					if inForm {
+						st.inForm++
+					}
+					if f.Kind == font.Composite {
+						codes[codeKey{ent.id, g.Code}] = true
+					}
+					if g.Text == "" {
+						st.undecodable++
+						undecodableBy[ent.id.label(f)]++
+					}
+				}
+			}
+		}
+	}
+
+	for _, file := range corpusFonts {
+		path := corpusFile(t, file)
+		s, err := pcstore.Open(path)
+		if err != nil {
+			t.Fatalf("%s: open: %v", file, err)
+		}
+		for p := 1; p <= s.PageCount(); p++ {
+			data, err := s.PageContent(p)
+			if err != nil || len(data) == 0 {
+				// A page whose content will not decode is a real condition in this
+				// corpus and must not fail the pass; TestCorpusStreamsInterpret is
+				// where that count is pinned.
+				continue
+			}
+			page, err := s.Page(p)
+			if err != nil {
+				continue
+			}
+			res, _ := objects.GetDict(s, page, "Resources")
+			walk(s, file, data, res, 0, false, content.TextState{})
+		}
+		s.Close()
+	}
+
+	simple, composite := byKind[font.Simple], byKind[font.Composite]
+	if simple == nil || composite == nil {
+		return
+	}
+	t.Logf("simple: %d drawn (%d in forms); composite: %d drawn (%d in forms), "+
+		"%d fonts, %d distinct codes",
+		simple.drawn, simple.inForm, composite.drawn, composite.inForm,
+		len(composites), len(codes))
+
+	if len(undecodableBy) > 0 {
+		t.Errorf("drawn codes that decode to no text, by font: %s\n"+
+			"each is a character extract drops silently, advancing the pen without placing it",
+			sortedCounts(undecodableBy))
+	}
+	if unresolvedFont > 0 {
+		t.Errorf("%d text operators named a font this walk could not resolve: the census "+
+			"above covers less than the document draws", unresolvedFont)
+	}
+	if len(noToUnicode) > 0 {
+		// Not wrong on its own -- a composite font may legally omit /ToUnicode, and its
+		// text is then unrecoverable rather than incorrect. It is pinned because the zero
+		// above depends on it: the day one appears, that assertion stops being a
+		// statement about this package and becomes one about the producer.
+		t.Errorf("composite fonts with no /ToUnicode: %s", sortedCounts(noToUnicode))
+	}
+	if simple.drawn != 2689358 || composite.drawn != 211135 {
+		t.Errorf("drawn glyphs: %d simple and %d composite, want 2689358 and 211135",
+			simple.drawn, composite.drawn)
+	}
+	if composite.inForm != 1977 || len(composites) != 96 || len(codes) != 2617 {
+		t.Errorf("%d composite glyphs drawn inside Form XObjects, %d fonts, %d distinct "+
+			"codes; want 1977, 96 and 2617", composite.inForm, len(composites), len(codes))
 	}
 }

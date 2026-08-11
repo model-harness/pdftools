@@ -1231,6 +1231,65 @@ OKF-ified spec.
   neighbour it was inferred for. That emitted "revision" as "re" + "-" + " vision" and 15
   more the same way, and ran clause numbers into the sentence before them. Trailing
   placement fixed all 29 and broke none.
+- **Composite-font glyph decoding is covered, and the coverage is a *negative* result:
+  0 of 2900493 drawn glyphs decode to nothing.** The gap this closes was not a missing
+  branch — `Decode` is at 100% of statements and the `font` package at 87.8% — it was that
+  `TestCorpusSimpleFontsDecodeToText` had no composite counterpart, and
+  `extract`'s `show` drops an undecodable glyph in silence, advancing the pen without
+  placing it. A character can vanish from the output with no error anywhere.
+
+  **The two tests have to be built the opposite way round, and that asymmetry is the whole
+  reason one was missing.** A simple font's encoding *names* codes, so the names are an
+  enumerable claim and resolving each one is the test. A composite font makes no such
+  claim: a CID indexes a glyph set and implies no character, so the only population is
+  `/ToUnicode`'s own domain — and asking a map whether it contains its own keys asserts
+  nothing. What exists instead is the set of codes the document *draws*, which means the
+  test interprets content streams rather than reading dictionaries.
+  `TestCorpusDrawnCodesDecodeToText` walks page streams and descends into Form XObjects
+  the way `extract.doXObject` does, resolving each string's font from the graphics state.
+
+  Both of those are load-bearing and both were found by getting them wrong first. A probe
+  tracking the last `Tf` operand rather than `m.GS.Text.Font` reported **46 undecodable
+  glyphs** in `BCDIEE+SymbolMT`; dumping the bytes spelled "Adobe Acrobat Reader", ordinary
+  prose that extracts correctly — `q` pushes the whole graphics state including `Text`, so
+  a linear scan attributes a string to whichever font was set last anywhere in the stream.
+  And a page-only walk misses **1977 composite glyphs drawn inside forms**, which is a clean
+  census of an incomplete population.
+
+  **A third mistake was caught by review, and it is the one that changed a published
+  figure.** Counting fonts and codes by `/BaseFont` collapses them: a name is not an
+  identity, and 11 composite names on disk are drawn by more than one font dictionary —
+  `ArialMT` and `SymbolMT` by four each, and a subset prefix does not always separate them,
+  since `BCDIEE+SymbolMT` is two distinct objects. The real figures are **96 fonts and 2617
+  drawn codes**, not the 79 and 2556 first measured. The key has to include the file too: an
+  object number is unique only within its own document, and keying on the reference alone
+  under-counts by a further six codes across the eleven.
+
+  Seven mutations were run against the finished test and five are killed, including all
+  three of those mistakes. The two survivors are recorded rather than patched, because both
+  are fidelity to `extract`'s own walk that this corpus cannot exercise: no form here
+  inherits its font from the invoking stream, and no form's content stream decodes to nil
+  without reporting an error. The inheritance one is safe because of the assertion on
+  unresolvable font names — an inheriting form under the mutation resolves the name `""`,
+  which matches nothing in a real `/Font` dictionary, so the glyph is reported rather than
+  skipped in silence.
+
+  What the zero rests on is a fact about these producers, not about the format: **all 96
+  composite fonts reached carry a `/ToUnicode` stream**, so `compositeText`'s empty return
+  is never taken. That is pinned separately, because the day a font without one appears the
+  zero stops being a statement about this code and becomes one about the file. Such a font
+  is genuinely unrecoverable — a CID carries no character meaning and OCR is the only
+  remaining route — which is also why the Symbol and ZapfDingbats built-in glyph sets stay
+  recorded debt: the corpus draws no code that needs them.
+
+  **The test proves presence, not correctness, and the boundary is worth stating because it
+  is where the next defect would hide.** A code that decodes to the *wrong* character passes
+  — a byte-order or offset bug in `cmap` that keeps producing output survives this test
+  completely. Correctness is the gold fixtures' claim, and pointing this same walk at
+  `testdata/reference` measures how far it reaches: **416 composite glyphs over 5 fonts and
+  95 distinct codes**, compared word for word against committed Markdown. The corpus
+  contributes the other 2522 codes as presence only. Closing that gap would need a per-code
+  expectation no producer publishes, so the split is recorded rather than resolved.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

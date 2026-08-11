@@ -41,6 +41,34 @@ All notable changes to this project are documented here, following
   pages), and no size ratio has a gap to hold a threshold (precision peaks at 73.2% around
   1.17× body, 6% by 1.63×). Both measurements are in the package comment so neither is
   proposed again as an idea nobody tried.
+- **A corpus test that every drawn glyph decodes to text, which the composite half of the font
+  package never had.** `TestCorpusDrawnCodesDecodeToText` is the counterpart to
+  `TestCorpusSimpleFontsDecodeToText`, and it has to be built the other way round: a simple
+  font's encoding *names* codes, so the names are the claim to resolve, while a composite font
+  makes no claim at all — a CID indexes a glyph set and implies no character — so the only
+  population is the codes the document *draws*. That means interpreting content streams rather
+  than reading dictionaries. Result is a negative one, recorded as such in DESIGN.md §10:
+  **0 of 2900493 drawn glyphs decode to nothing**, 2689358 simple and 211135 composite. It is
+  not a tautology — `compositeText` returns empty whenever `/ToUnicode` is missing or does not
+  cover the code — and the assertion that all 96 composite fonts reached carry a `/ToUnicode`
+  stream is pinned separately, because the zero depends on it. The test proves presence and not
+  correctness: a code decoding to the *wrong* character passes it, so a byte-order defect in
+  `cmap` that keeps producing output would survive. Correctness is the gold fixtures' claim, and
+  pointing this walk at `testdata/reference` measures its reach — 416 composite glyphs over 5
+  fonts and 95 distinct codes, checked word for word — leaving the corpus's other 2522 codes as
+  presence only.
+- Three mistakes in building that census are now the mutations that guard it. Tracking the last
+  `Tf` operand instead of `m.GS.Text.Font` reported 46 undecodable glyphs whose bytes spell
+  "Adobe Acrobat Reader" — `q` pushes the whole graphics state including the text state, so a
+  linear scan attributes a string to whichever font was set last anywhere in the stream. A
+  page-only walk misses the **1977 composite glyphs drawn inside Form XObjects**. And counting
+  by `/BaseFont` collapses distinct fonts, which review caught and which moved two figures:
+  11 composite names on disk are drawn by more than one font dictionary (`ArialMT` and
+  `SymbolMT` by four each; `BCDIEE+SymbolMT` is two objects, so a subset prefix is no
+  guarantee), making the real totals **96 fonts and 2617 drawn codes** rather than 79 and 2556.
+  Five of seven mutations killed; the two survivors are recorded rather than patched, since
+  no form in this corpus inherits its font from the invoking stream and none decodes to nil
+  without reporting an error.
 
 ### Fixed — 2026-08-11
 
