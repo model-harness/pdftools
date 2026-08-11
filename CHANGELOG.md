@@ -5,7 +5,64 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-11
+
+- **The document information dictionary was never read, for every file the tool has ever
+  opened.** pdfcpu does not keep the raw trailer — it folds the entries into its xref table —
+  so `objects/pdfcpu` reconstructs the dictionary its callers use. It reconstructed `Root`,
+  `Encrypt` and `Size` and dropped `Info`, which made the whole `Info` branch of
+  `extract.metadata()` unreachable: `Title`, `Author`, `Subject`, `Keywords`, `Creator`,
+  `Producer`, `CreationDate` and `ModDate` were empty everywhere.
+  Nothing failed, because an absent title is indistinguishable from a document that has none.
+  `md -frontmatter` emitted a block with nine fields missing and looked correct; the OKF bundle
+  titled its root index from the filename slug rather than the document, and its `sources[]`
+  entry carried a bare `resource` with no `title` or `last_modified`. The measurement that
+  found it: **0 of 11 corpus documents and 0 of 37 reference fixtures** carried any `Info`
+  field, which is not a plausible property of real PDFs. After the fix **25 of 37** fixtures
+  do, and all 11 corpus documents recover a title — `ISO 32000-2:2020 (PDF 2.0) including
+  Errata Collection 3` among them. `TestDocumentInfoIsRead` asserts it on committed fixtures,
+  so it holds on a clean clone, and fails on `Creator`/`Producer` without the fix.
+
 ### Added — 2026-08-11
+
+- **The emitted OKF frontmatter is now parsed by a real YAML loader.** `sink/okf`'s
+  frontmatter is written by hand and says why — a library reorders keys, and a stable order is
+  what makes two runs diff cleanly — but every assertion over it was `strings.Contains`, which
+  cannot tell a nested mapping from a flat one. `TestOKFFrontmatterLoads` loads all **1409
+  frontmatter blocks** and **19781 scalars** across the corpus with `gopkg.in/yaml.v2` (already
+  in the module graph via pdfcpu, so no new dependency), asserting that every block parses,
+  that `sources` and `generated` are the nested shapes OKF §5.1 and §7 define, and that every
+  scalar loads back as a `string` rather than a coerced `int`/`float64`/`bool`.
+  It kills four mutations the previous suite missed: two-space `indented()`, a `sources` entry
+  without its `- `, an unindented `generated.by` — which parses as `generated: null` beside a
+  top-level `by`, moving provenance out of the field OKF defines it in — and removing
+  `yamlReserved`, which coerces **2195** scalars including 29 booleans and two clause titles
+  that are bare numbers. One survivor is recorded rather than fixed: `plainYAML`'s
+  leading/trailing-space rejection, which no corpus value exercises.
+- **`TestMDFrontmatterOffByDefault` now counts the keys it walks.** It checked that every line
+  the frontmatter emitted was a well-formed `key: value` — but `scalar()` omits a key whose
+  value is empty, so the loop passed over a block missing most of its fields. That is why the
+  `Info` defect survived a test written to cover exactly this output: 6 keys were emitted where
+  12 belong, and every one of the 6 was well-formed. The floor turns "every line present is
+  well-formed" into "the lines are present", and fails at 6 without the store fix. No
+  `.gold.md` fixture covers `-frontmatter` at all, which is the other half of why nothing
+  caught it.
+- **Two tests for what became attacker-reachable when metadata started being read.** `Title`,
+  `Author`, `Subject`, `Keywords`, `Creator` and `Producer` are strings from an untrusted file
+  and they now reach output where they were previously always empty.
+  `TestFrontmatterCannotBeEscaped` pins that no emitted scalar can contain a line break at all
+  — `YAMLString` writes a newline as the two characters `\n`, so a title of
+  `x\n---\ntype: other` cannot close the frontmatter fence early — and that the value still
+  loads back byte-identical, since escaping that corrupts the value is a different defect from
+  escaping that breaks the document. Restoring the newline case to a raw byte fails both
+  halves. `TestDocIDIsASafeSegment` pins the other reachable surface: the title now names the
+  bundle's root directory, and `kebab`'s `[a-z0-9]`-and-dashes allowlist makes traversal
+  structurally impossible rather than filtered — `../../etc/passwd` becomes `etc-passwd`.
+- **`bundleOf` now sets `Meta.Path`, as every CLI verb does.** Without it `builder.source()`
+  returns nothing, so the bundle under test had **no `sources:` block at all** where a real run
+  has 1398 — meaning every OKF test measured a shape the CLI never emits, and
+  `okf/frontmatter.go`'s `indented()` was unreachable from the tests. Fixing the harness is
+  what exposed the `Info` defect above.
 
 - **A test for `cellText`'s trim, which nothing in `sink/markdown` asserted.** The backlog
   carried "a leading space on cells after the first, 1 row in 50 PDFs, cosmetic". Measuring it

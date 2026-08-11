@@ -18,7 +18,16 @@ import (
 // writing.
 func bundleOf(t *testing.T, name string) ([]okf.File, okf.Stats) {
 	t.Helper()
-	_, o, _ := outlineOf(t, name)
+	d, o, _ := outlineOf(t, name)
+	// Meta.Path is what every verb sets before building — md.go, ocr.go and okf.go all do
+	// it — and it is the only thing that makes builder.source() return a resource, so
+	// without it the bundle has no sources: block at all. outlineOf does not set it,
+	// because nothing but this sink reads it, which meant every OKF test here measured a
+	// bundle shape the CLI never emits: 0 sources entries against 1398 in a real run.
+	// Setting it here rather than in outlineOf keeps the change to the tests that care.
+	d.Meta.Path = corpusFile(t, name)
+	o.Meta = d.Meta
+
 	opt := okf.DefaultOptions
 	opt.Generator = "pdfspec/test"
 	opt.GeneratedAt = "2026-08-03T00:00:00Z"

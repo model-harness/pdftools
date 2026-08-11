@@ -521,18 +521,31 @@ func TestMDFrontmatterOffByDefault(t *testing.T) {
 	if !ok {
 		t.Fatal("frontmatter not closed")
 	}
+	// Counted, not just walked. scalar() omits a key whose value is empty, so a loop over
+	// the lines it did emit passes on a block that is missing most of them — which is
+	// exactly what happened: the pdfcpu store dropped the trailer's Info entry, every
+	// document's Title, Author, Creator, Producer and dates were empty, and this test was
+	// green over the four fields that come from somewhere else. The floor is what turns
+	// "every line present is well-formed" into "the lines are present".
+	keys := 0
 	for _, line := range strings.Split(strings.TrimSuffix(block, "\n"), "\n") {
 		key, val, ok := strings.Cut(line, ": ")
 		if !ok {
 			t.Errorf("not a key-value line: %q", line)
 			continue
 		}
+		keys++
 		if strings.ContainsAny(key, " \t") {
 			t.Errorf("key contains whitespace, so the value ran into it: %q", line)
 		}
 		if val == "" {
 			t.Errorf("empty value emitted: %q", line)
 		}
+	}
+	// This document has all of them: title, author, lang, source, pdf_version, creator,
+	// producer, created, modified, pages, tagged, encrypted.
+	if keys < 12 {
+		t.Errorf("frontmatter has %d keys, want at least 12: metadata is not reaching it\n%s", keys, block)
 	}
 }
 

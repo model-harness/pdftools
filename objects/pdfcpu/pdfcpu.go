@@ -126,6 +126,16 @@ func (s *store) Trailer() (objects.Dict, error) {
 	if xt.Encrypt != nil {
 		d["Encrypt"] = objects.Ref{Num: xt.Encrypt.ObjectNumber.Value(), Gen: xt.Encrypt.GenerationNumber.Value()}
 	}
+	// Info is the document information dictionary, and omitting it here made
+	// extract.metadata()'s whole Info branch unreachable: Title, Author, Subject,
+	// Keywords, Creator, Producer, CreationDate and ModDate were empty for every file
+	// this package has ever opened, in a way nothing failed on because an absent title
+	// is indistinguishable from a document that has none. Measured before the fix: 0 of
+	// 11 corpus documents and 0 of 40 reference fixtures carried any Info field, which
+	// is not a plausible property of real PDFs.
+	if xt.Info != nil {
+		d["Info"] = objects.Ref{Num: xt.Info.ObjectNumber.Value(), Gen: xt.Info.GenerationNumber.Value()}
+	}
 	if xt.Size != nil {
 		d["Size"] = objects.Int(*xt.Size)
 	}

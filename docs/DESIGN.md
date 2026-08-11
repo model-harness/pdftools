@@ -470,6 +470,44 @@ ISO 32000-2 the textual pass resolves 1,328 references. On WTPDF it resolves non
 correct: that file's reading order draws the clause number after a closing parenthesis
 (`see ).8.2.6`), so there is no number adjacent to the cue to match.
 
+**The frontmatter is written by hand and validated by a real loader.** Hand-written because a
+YAML library reorders keys and a stable order is what makes two runs over the same document
+diff cleanly; validated by a loader because that choice puts the file's correctness in its own
+string literals, and every assertion over it used to be `strings.Contains`, which cannot tell
+a nested mapping from a flat one. `TestOKFFrontmatterLoads` loads all 1409 frontmatter blocks
+and 19781 scalars across the corpus and asserts the nesting OKF §5.1 and §7 define, plus that
+every scalar loads back as a string. It kills four mutations the previous suite missed — a
+two-space `indented()`, a `sources` entry without its `- `, an unindented `generated.by`
+(which parses as `generated: null` beside a top-level `by`, moving provenance out of its
+field), and removing `yamlReserved` (which coerces 2195 scalars, including 29 booleans and two
+clause titles that are bare numbers). `plainYAML`'s leading/trailing-space rejection is a
+recorded survivor: no corpus value exercises it.
+
+Reading metadata made an untrusted string reach output that never carried one before, so two
+properties are now asserted rather than inferred. No emitted scalar can contain a line break —
+`YAMLString` writes a newline as the two characters `\n`, so a title of `x\n---\ntype: other`
+cannot close the frontmatter fence early — and it still loads back byte-identical, because
+escaping that corrupts a value is a different defect from escaping that breaks a document. The
+title also names the bundle's root directory now, where before it was always the filename;
+`kebab`'s `[a-z0-9]`-and-dashes allowlist makes traversal structurally impossible rather than
+filtered, so `../../etc/passwd` becomes `etc-passwd`.
+
+Finding those required fixing the test harness first, and the harness was hiding a real
+defect. `bundleOf` did not set `Meta.Path`, which every CLI verb sets, so `builder.source()`
+returned nothing and the bundle under test had no `sources:` block at all — 0 entries where a
+real run has 1398. With it set, `sources` was still only a bare `resource`, because the
+`pdfcpu` store reconstructed the trailer without its `Info` entry and every document's
+metadata was empty: 0 of 11 corpus documents and 0 of 37 fixtures carried a single `Info`
+field. Two layers of test scaffolding were each masking the next, and the thing at the bottom
+was a defect in the object layer that no output made visible.
+
+The test that should have caught it is instructive about why a walk is not a count.
+`TestMDFrontmatterOffByDefault` asserted that every line the frontmatter emitted was a
+well-formed `key: value` pair, and it was — all 6 of them, where 12 belong, because `scalar()`
+omits a key whose value is empty and the loop only ever saw what was written. Nothing in the
+gold-fixture harness covers `-frontmatter` either, so the byte comparison that catches
+everything else in this repo never looked at this output at all.
+
 ---
 
 ## 8. Roadmap

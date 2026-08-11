@@ -165,6 +165,32 @@ func TestDocID(t *testing.T) {
 	}
 }
 
+// TestDocIDIsASafeSegment covers the case that became reachable when the document information
+// dictionary started being read: the title now comes from an untrusted file rather than from a
+// filename the user typed, and it names the bundle's root directory.
+//
+// kebab() is an allowlist of [a-z0-9] and dashes, so a separator cannot survive it and
+// traversal is structurally impossible rather than filtered. Asserted rather than read off the
+// loop, because "the allowlist happens to exclude the dangerous characters" is the kind of
+// property a later edit breaks without noticing.
+func TestDocIDIsASafeSegment(t *testing.T) {
+	for _, title := range []string{
+		"../../etc/passwd",
+		`..\..\Windows\System32`,
+		"a/b/c",
+		"..",
+		"...",
+		"/",
+		"C:",
+		"\x00\x01",
+	} {
+		got := docID(doc.Metadata{Title: title})
+		if got == "" || got == "." || got == ".." || strings.ContainsAny(got, `/\:`) {
+			t.Errorf("docID(title %q) = %q, which is not a single safe path segment", title, got)
+		}
+	}
+}
+
 func TestFmtPages(t *testing.T) {
 	for _, c := range []struct {
 		first, last int
