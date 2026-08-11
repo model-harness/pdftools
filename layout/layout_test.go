@@ -214,6 +214,20 @@ func TestHeadingsLevelCapped(t *testing.T) {
 	}
 }
 
+// TestHeadingsLevelCappedAnnex is TestHeadingsLevelCapped's other half: the cap belongs to
+// the caller, so it must apply whichever function supplied the level.
+//
+// annexLevel counts components with no bound of its own — "A.1.2.3.4.5.6.7.8" is depth 9 —
+// and the two rules reach the cap through the same line only because Headings takes one
+// level from either. A fallback written as a second, separate promotion would not.
+func TestHeadingsLevelCappedAnnex(t *testing.T) {
+	d := pageDoc(block("A.1.2.3.4.5.6.7 Deep annex", 14.35, true), body(9.96, false))
+	Headings(d, DefaultOptions)
+	if got := d.Pages[0].Blocks[0].Level; got != 6 {
+		t.Errorf("level = %d, want 6", got)
+	}
+}
+
 func TestNumberedLevel(t *testing.T) {
 	cases := []struct {
 		in    string
@@ -227,6 +241,7 @@ func TestNumberedLevel(t *testing.T) {
 		{"12.34 Two digits each", 2, true, "components are not single digits"},
 		{"1 Non-breaking space", 1, true, "a producer's nbsp separator is still a separator"},
 		{"3.14 is pi", 2, true, "indistinguishable from a heading by text alone; the typographic gate is what excludes it"},
+		{"3\t Terms and Definitions", 1, true, "a tab separator, which is not a stylistic nicety: 18 clause headings on disk use one, all in ISO TS 32001 through 32005, so unicode.IsSpace's breadth is load-bearing here"},
 		{"3.14159", 0, false, "a bare number with no title is a folio or a cell"},
 		{"Preface", 0, false, "no number"},
 		{"", 0, false, "empty"},
@@ -234,8 +249,9 @@ func TestNumberedLevel(t *testing.T) {
 		{"1st Edition", 0, false, "not a section number"},
 		{".2 Leading dot", 0, false, "no component before the dot"},
 		{"4..2 Doubled dot", 0, false, "empty component"},
-		{"A.1 Annex", 0, false, "lettered schemes need a sequence-aware pass"},
-		{"IV. Roman", 0, false, "roman schemes likewise"},
+		{" 2 Leading space", 0, false, "no component before the separator: ok must imply a level of at least one, and Headings trims so only a direct call can reach this"},
+		{"A.1 Annex", 0, false, "a lettered scheme is annexLevel's, and this function counts components a letter is not"},
+		{"IV. Roman", 0, false, "roman schemes are matched by neither"},
 		{"1 ", 1, true, "trailing space with nothing after it is still a separator; length and emptiness are the caller's checks"},
 	}
 	for _, c := range cases {
@@ -243,6 +259,110 @@ func TestNumberedLevel(t *testing.T) {
 		if ok != c.ok || lvl != c.level {
 			t.Errorf("numberedLevel(%q) = %d, %v; want %d, %v (%s)", c.in, lvl, ok, c.level, c.ok, c.why)
 		}
+	}
+}
+
+func TestAnnexLevel(t *testing.T) {
+	cases := []struct {
+		in    string
+		level int
+		ok    bool
+		why   string
+	}{
+		{"A.1 Licensing", 2, true, "the letter is the level-one clause the numbering hangs off"},
+		{"A.1.1 GNU AGPL", 3, true, "component count, as for a decimal number"},
+		{"B.2.3  CMS MAC validation", 3, true, "the corpus's commonest shape, two spaces and all"},
+		{"F.3.11  Main cross-reference and trailer (Part 11)", 3, true, "components are not single digits"},
+		{"A.1. Licensing", 2, true, "a trailing dot on the number is a style, not a third level — the same call numberedLevel makes for \"4.2.1.\", and the dots alone already counted every component"},
+		{"B.4  Attributes", 2, true, "Well-Tagged-PDF's own separator: U+2002 is three bytes in UTF-8, so testing s[i] would compare 0xE2 and reject every one of them"},
+		{"A.1 Licensing", 2, true, "and a non-breaking space is two bytes, with the same consequence"},
+
+		{"A Vocabulary Pruning", 0, false, "the bare letter, which is also how a sentence starts — the one form the corpus shows as prose"},
+		{"A use of ISO 32000", 0, false, "PDF-Declarations.pdf's cover line, and the only bare-letter candidate on disk"},
+		{"A. First item", 0, false, "an upper-case letter and a dot is how a sentence begins, which is why doc.OrderedLabel refuses it too"},
+		{"A4 paper size", 0, false, "the digits must follow the dot, not the letter, so a letter-digit designation never parses"},
+		{"a.1 lower case", 0, false, "an annex letter is upper case; the lower-case form is a list label"},
+		{"A.1", 0, false, "a number with no title is a folio or a cell"},
+		{"A.1:Annex", 0, false, "the separator must be whitespace"},
+		{"A..1 Doubled", 0, false, "empty component"},
+		{"A.. ", 0, false, "no digits at all"},
+		{"1.1 Decimal", 0, false, "numberedLevel's, not this one's"},
+		{"", 0, false, "empty"},
+		{"É.1 Accented", 0, false, "A-Z only; the scheme is ASCII"},
+	}
+	for _, c := range cases {
+		lvl, ok := annexLevel(c.in)
+		if ok != c.ok || lvl != c.level {
+			t.Errorf("annexLevel(%q) = %d, %v; want %d, %v (%s)", c.in, lvl, ok, c.level, c.ok, c.why)
+		}
+	}
+}
+
+// TestHeadingsRanksAnnexNumbering is the end-to-end pin: an appendix subclause reaches
+// Headings, passes the typographic gate, and takes its level from its own numbering.
+//
+// This is mupdf_explored.pdf's Appendix A, which is where the untagged effect is — 5 of
+// the 10 promotions the change makes. Level 2 rather than 1 for "A.1" is what the tagged
+// corpus's declared H1..H6 ranks agree with, 107 times against 5.
+func TestHeadingsRanksAnnexNumbering(t *testing.T) {
+	d := pageDoc(
+		block("A.1 Licensing", 14.35, false),
+		body(9.96, false),
+		block("A.1.1 GNU AGPL", 11.96, false),
+		body(9.96, false),
+	)
+	st := Headings(d, DefaultOptions)
+	if st.Headings != 2 {
+		t.Fatalf("headings = %d, want 2 (stats %+v)", st.Headings, st)
+	}
+	if b := d.Pages[0].Blocks[0]; b.Role != doc.RoleHeading || b.Level != 2 {
+		t.Errorf("A.1 = %v level %d, want heading level 2", b.Role, b.Level)
+	}
+	if b := d.Pages[0].Blocks[2]; b.Role != doc.RoleHeading || b.Level != 3 {
+		t.Errorf("A.1.1 = %v level %d, want heading level 3", b.Role, b.Level)
+	}
+}
+
+// TestHeadingsRejectsBareAnnexLetter keeps the half of numberedLevel's deferral that is
+// still open, and it is the pin that makes the dot load-bearing.
+//
+// "A Vocabulary Pruning" is a real appendix title in the arXiv paper and stays a
+// paragraph, because nothing in the block separates it from "A use of ISO 32000" — the one
+// bare-letter candidate the tagged corpus has, which the producer does not declare a
+// heading. Promoting the first means promoting the second.
+func TestHeadingsRejectsBareAnnexLetter(t *testing.T) {
+	d := pageDoc(
+		block("A Vocabulary Pruning", 11.96, false),
+		body(9.96, false),
+		block("A use of ISO 32000", 11.96, false),
+	)
+	st := Headings(d, DefaultOptions)
+	if st.Headings != 0 {
+		t.Errorf("headings = %d, want 0: the bare letter is not evidence", st.Headings)
+	}
+	if st.Candidates != 2 {
+		t.Errorf("candidates = %d, want 2: both passed the typographic gate and neither the numbering", st.Candidates)
+	}
+}
+
+// TestHeadingsLeavesLowerCaseOrderedRunAlone is the collision check between this pass and
+// the one after it: an "a)" run is a list, and Headings runs first.
+//
+// annexLevel requires an upper-case letter, so the run never reaches its scan — but the
+// requirement is one character in a rune test, and the failure it prevents is invisible
+// from here. A promoted item is a heading in the middle of a list, and it would take the
+// whole run away from OrderedLists, which only ever sees paragraphs.
+func TestHeadingsLeavesLowerCaseOrderedRunAlone(t *testing.T) {
+	d := pageDoc(
+		block("a) Accumulate a sequence", 11.96, false),
+		block("b) Apply the transform", 11.96, false),
+		body(9.96, false),
+	)
+	if st := Headings(d, DefaultOptions); st.Headings != 0 {
+		t.Errorf("headings = %d, want 0: a lower-case ordered label is not an annex number", st.Headings)
+	}
+	if st := OrderedLists(d, DefaultOptions); st.Items != 2 {
+		t.Errorf("ordered items = %d, want 2: the run must still reach OrderedLists", st.Items)
 	}
 }
 

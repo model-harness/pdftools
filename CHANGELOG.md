@@ -5,6 +5,52 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-08-11
+
+- **Untagged appendix headings are recognized, closing half of the limit ADR 0008 recorded as
+  measured debt** (ADR 0013). `layout.annexLevel` reads a dotted annex number as a section
+  number whose first component is a letter — "B.2.3 CMS MAC validation" is level three for the
+  same reason "4.2.3" is — and `Headings` falls back to it where the dotted-decimal rule
+  declines. Validated against the tagged corpus's own declarations rather than against
+  judgement, by joining the typographic gate to the structure tree on `{page, MCID}`: the shape
+  is declared a heading **112 times out of 112**, the level agrees with the declared `H1`..`H6`
+  rank **107 against 5**, and it promotes **0** blocks no producer calls a heading — better
+  behaved on both axes than the decimal rule already shipping, which scores 931 against 88 with
+  10 false positives. Effect on disk is 10 headings in 2 documents and nothing else across all
+  49 readable PDFs: `mupdf_explored.pdf` 296→301 (`A.1 Licensing` through `A.3 Coding Style`)
+  and `LightOnOCR-2601.14251v1.pdf` 21→26 (`C.1`–`C.4`, `D.1`), every one a genuine appendix
+  title previously emitted as a bold or plain paragraph. The 11 tagged ISO documents are
+  byte-identical, since inference never runs where a producer declared a role.
+- A separator the corpus needs and no test named: `unicode.IsSpace` accepts a **tab** between
+  a clause number and its title, and 18 clause headings on disk depend on it — all in ISO TS
+  32001 through 32005, "3\t Terms and Definitions". Review flagged the breadth as a possible
+  extractor-split symptom; measuring it inverted the concern, since narrowing the check to
+  U+0020 or U+00A0 loses all 18. There is a fixture for it now and a mutation proving it
+  bites. Newlines are the genuinely unobserved shape (0 spans of 50 documents) and the comment
+  says so rather than implying they were measured.
+- Thirteen mutations, all killed. Three of them found missing fixtures rather than confirming
+  existing ones: nothing pinned the trailing-dot style ("A.1. Licensing" is level two, not
+  three, matching the decimal rule's documented behavior), and nothing pinned that the
+  Markdown level cap applies on the annex path — a mutation exempting it emitted level 8 for
+  "A.1.2.3.4.5.6.7". Those two and the tab separator above have cases now, which is the point
+  of mutating a guard a green suite says nothing about.
+- The *bare* annex letter stays deferred with its counter-example named, and ADR 0008's
+  proposed instrument for lifting the unnumbered limit is recorded as falsified rather than
+  untried: rank and repetition are independent (9 of 151 candidate styles occur once and
+  include genuine titles; the most-repeated include "Robin Watts" at 9 occurrences over 7
+  pages), and no size ratio has a gap to hold a threshold (precision peaks at 73.2% around
+  1.17× body, 6% by 1.63×). Both measurements are in the package comment so neither is
+  proposed again as an idea nobody tried.
+
+### Fixed — 2026-08-11
+
+- `numberedLevel` dropped an unreachable guard that mutation testing found: its `i >= len(s)`
+  test for a bare number with no title survived deletion, because `utf8.DecodeRuneInString` of
+  an empty tail returns `RuneError` and the whitespace-separator check below already rejected
+  it. The folio and table-cell case was being caught one line later all along, in both that
+  function and the new `annexLevel` that copied its shape. The same pass found `depth == 0`
+  unpinned — a leading-space string returned level 0 with `ok` true — and it has a case now.
+
 ### Added — 2026-08-10
 
 - **Untagged ordered lists are recognized, closing the consequence ADR 0011 recorded as

@@ -784,7 +784,19 @@ OKF-ified spec.
     own section numbering, gated on typographic distinction from the body cluster; `headings`
     matches exactly and is enforced. ADR 0008 records why numbering rather than size-ladder
     position decides the level, and the two limits that remain: an *unnumbered* heading stays a
-    paragraph, because nothing separates "Preface" from a body-size bold table row. The second
+    paragraph, because nothing separates "Preface" from a body-size bold table row — though a
+    *lettered* number turned out not to be one of them. ADR 0013 reads a dotted annex number
+    ("A.1", "B.2.3") as a section number whose first component is a letter, on the tagged
+    corpus's own declarations: 112 of 112 such blocks are declared headings, the level agrees
+    with the declared `H1`..`H6` rank 107 times against 5, and it promotes 0 blocks no producer
+    calls a heading — better behaved than the decimal rule already shipping, which scores 931
+    against 88 with 10. It recovers 10 appendix headings in 2 documents (`mupdf_explored.pdf`
+    296→301, `LightOnOCR-2601.14251v1.pdf` 21→26) and changes nothing else across all 49
+    readable PDFs. What stays open is the *bare* letter ("A Vocabulary Pruning"), because "A"
+    is also a word and the one bare-letter candidate on disk is a cover line no producer
+    declares a heading; ADR 0013 also records that ADR 0008's proposed fix for the unnumbered
+    case — a document-level pass over the sequence — is measurably the wrong instrument, since
+    rank and repetition are independent and no size ratio has a gap. The second
     limit ADR 0008 recorded — that an OKF bundle needs a tree rather than a levelled sequence —
     is **closed**: `sectionize.Untagged` drives the same `builder.open`/`builder.place` the
     tagged path drives, reading `(level, title, content)` out of `doc.RoleHeading` blocks

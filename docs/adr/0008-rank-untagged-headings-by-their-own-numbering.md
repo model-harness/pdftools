@@ -104,6 +104,24 @@ forty pages is evidence where one occurrence is not. That is a different algorit
 tuned threshold, and tuning a threshold to admit "Preface" on one document is how a
 heuristic becomes fitted to a fixture.
 
+> **Partly closed, and this paragraph's reasoning is partly falsified — 2026-08-11, ADR
+> 0013.** The sequence pass is not what was needed and would not have worked. Measured
+> against the tagged corpus's own declarations, rank and repetition are independent: 9 of
+> the 151 unnumbered above-body candidate styles occur exactly once and include genuine
+> titles, while the most-repeated include `mupdf_explored.pdf`'s "Robin Watts" at 9
+> occurrences over 7 pages. No size ratio has a gap either — precision peaks at 73.2%
+> around 1.17× body and reaches 6% by 1.63×.
+>
+> What the measurement found instead is that a third of the missing population is not
+> unnumbered at all: it is numbered with a *letter*. Dotted lettered numbering ("A.1",
+> "B.2.3") is declared a heading 112 times out of 112 with no false positives, so ADR 0013
+> reads it in a new `annexLevel` and recovers 10 appendix headings in 2 documents. The
+> *bare* letter stays deferred exactly as this paragraph says, and for exactly this
+> paragraph's reason — "A" is also a word — with its counter-example now named:
+> `PDF-Declarations.pdf`'s "A use of ISO 32000", which no producer declares a heading. The
+> decision above is unchanged; a lettered number is a number, which is what this ADR
+> already says assigns the level.
+
 **An OKF bundle still needs a structure tree.** `layout` produces levels, not a tree.
 Turning a levelled sequence into one means running sectionize's level stack over
 `layout`'s output instead of over a structure tree — which ADR 0002 anticipated and is

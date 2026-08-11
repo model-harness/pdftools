@@ -35,7 +35,9 @@
 // A numbered heading carries its own rank. "4.2.1 Nested subclause" is level three
 // because the document says so, not because 9.96pt happens to sit third in a size
 // ladder. That inverts the usual arrangement: typography is the *gate* that admits a
-// block as a candidate, and the section number is what assigns the level.
+// block as a candidate, and the section number is what assigns the level. An annex
+// number does the same job with a letter for its first component — "B.2.3" is level
+// three — which annexLevel reads and numberedLevel cannot.
 //
 // Ranking by position in the size ladder was measured and rejected. pymupdf's
 // mupdf_explored.pdf has five distinct above-body sizes — 24.79 chapter titles, 20.66
@@ -50,6 +52,19 @@
 // table row, and a rule that promotes one and not the other would be tuned to a
 // document rather than derived from one. Recording the limit is better than guessing
 // past it — DESIGN.md §10 carries it as measured debt.
+//
+// Two candidate signals for that limit have since been measured and rejected, which is
+// worth stating so neither is proposed again as though it were untried. *Recurrence* —
+// promote a style that heads a block on many pages, not on one — was ADR 0008's own
+// suggestion, and the corpus falsifies it in both directions: of the 151 unnumbered
+// above-body candidates on the untagged path, 9 occur once and include real titles
+// ("MARKET SUMMARY & PLAN", chinese-tables.pdf's "第七章 企业资信状况"), while the
+// repeated ones include mupdf_explored.pdf's "Robin Watts" and "September 5, 2022" at 9
+// occurrences over 7 pages. Rank and repetition are independent of each other here. A
+// *size ratio* threshold fails the same way: joined to what producers declare, the 287
+// unnumbered above-body candidates on the tagged corpus peak at 73.2% precision around
+// 1.17 and fall to 6% by 1.63, because a title page's 3.4x masthead is not a heading and
+// a 1.08x subclause is. There is no gap in that distribution to put a threshold in.
 package layout
 
 import (
@@ -184,6 +199,9 @@ func Headings(d *doc.Document, opt Options) Stats {
 				continue
 			}
 			level, ok := numberedLevel(text)
+			if !ok {
+				level, ok = annexLevel(text)
+			}
 			if !ok {
 				st.Candidates++
 				continue
@@ -668,11 +686,15 @@ func uniformStyle(b *doc.Block) (doc.Style, bool) {
 // read as level two, and a table of measurements would read as an outline. A trailing
 // dot on the number is allowed ("4.2.1. Title"), which is the other common style.
 //
-// Deliberately not matched: lettered ("A.1"), roman ("IV."), and parenthesised
-// ("(a)") schemes. Annex letters especially would be worth having, but "A" is also a
-// word, and admitting a single letter followed by a space means admitting every line
-// that starts with one. That needs a document-level pass that sees the sequence — an
-// A.1 after an A is evidence; an A alone is not — which is more than this closes.
+// Deliberately not matched: roman ("IV.") and parenthesised ("(a)") schemes, and a
+// *bare* annex letter ("A Vocabulary Pruning"). "A" is also a word, and admitting a
+// single letter followed by a space means admitting every line that starts with one.
+// Lifting that needs a document-level pass that sees the sequence — an A.1 after an A is
+// evidence where a lone A is not — which is more than this closes.
+//
+// The *dotted* lettered form is matched, by annexLevel rather than here, and the split is
+// the point: "A.1" cannot be a sentence, so it needed none of the sequence evidence the
+// bare letter does. See annexLevel for the measurement.
 func numberedLevel(s string) (int, bool) {
 	depth, digits, i := 0, 0, 0
 scan:
@@ -697,19 +719,132 @@ scan:
 	if digits > 0 {
 		depth++
 	}
-	if depth == 0 || i >= len(s) {
-		// depth 0 is no leading digits at all; i at the end is a bare number with no
-		// title after it, which is a folio or a table cell.
+	if depth == 0 {
+		// No leading digits at all.
 		return 0, false
 	}
 	// Decoded rather than read as a byte: producers separate a clause number from its
 	// title with a non-breaking space routinely, and U+00A0 is two bytes in UTF-8, so
 	// rune(s[i]) would test 0xC2 and reject every one of them. unicode.IsSpace covers
 	// U+00A0 itself.
+	//
+	// The breadth of unicode.IsSpace is deliberate and is load-bearing on a *tab*: 18
+	// clause headings on disk separate the number from the title with one, all in the ISO
+	// TS documents ("3\t Terms and Definitions" in 32001 through 32005), and a rule that
+	// insisted on U+0020 or U+00A0 would lose every one of them. A newline would be
+	// accepted too and is the one shape here with no occurrence on disk — 0 spans of 50
+	// documents contain one, extract's line assembly being what makes that true — so it is
+	// admitted by the same call rather than by its own evidence.
 	r, _ := utf8.DecodeRuneInString(s[i:])
 	if !unicode.IsSpace(r) {
 		// Something other than whitespace follows the number: "4.2.1:" or "1st" or
 		// "3.14159". A heading's number is followed by its title.
+		//
+		// A number with *nothing* after it — a folio or a table cell — lands here too,
+		// and needs no separate length test: DecodeRuneInString of the empty tail returns
+		// RuneError, which is not a space. An explicit i >= len(s) above was unreachable,
+		// which mutation testing is what found.
+		return 0, false
+	}
+	return depth, true
+}
+
+// annexLevel returns the heading level a leading annex number declares: "A.1 Licensing"
+// is level two, "B.2.3 CMS MAC validation" is level three.
+//
+// This is numberedLevel's rule with a letter where the first component's digits would be,
+// and it exists because the letter form is not a variant a producer chooses freely — it is
+// how both ISO and LaTeX number an annex, so it is where a document's *appendices* live and
+// nowhere else. numberedLevel cannot be widened to cover it: it counts components, and a
+// letter is not a component it can count.
+//
+// # The bare letter stays out, which is the whole reason this is safe
+//
+// numberedLevel's comment rejected lettered schemes outright, on the grounds that "A" is
+// also a word and admitting a single letter followed by a space means admitting every line
+// that starts with one. That objection is exactly right about the *bare* form and says
+// nothing about the dotted one, which is why this closes half of what that comment
+// deferred and leaves the other half open. Measured against what producers declare, the
+// two halves are not close:
+//
+//   - Dotted ("A.1", "B.2.3", "J.3.7", "F.3.11"): of 112 such blocks that pass the
+//     typographic gate on the tagged corpus, the structure tree calls 112 a heading and 0
+//     not. There are no false positives to trade away.
+//   - Bare ("A Vocabulary Pruning"): 0 of 1 declared, and the one is
+//     PDF-Declarations.pdf's cover line "A use of ISO 32000". A sentence.
+//
+// So the dot is load-bearing twice over. It is what separates the annex scheme from an
+// English sentence, and it is what keeps "A4 paper size" out — the digits must follow a
+// dot, not the letter, so a letter-digit designation never parses. The corpus does not
+// separate the two forms (requiring the dot admits the same 112), so the requirement rests
+// on that construction rather than on a measurement, which is the honest way round: a
+// guard that no file exercises is still right when it excludes a shape by shape.
+//
+// # Levels agree with the producer more often than the decimal rule does
+//
+// The component count is the level, so "A.1" is two rather than one — the annex letter is
+// the level-one clause the numbering hangs off, whether or not the document sets a block
+// for it. Cross-checked against the declared H1..H6 rank on the tagged corpus, that agrees
+// 107 times and disagrees 5, all 5 in Well-Tagged-PDF-WTPDF-1.0.pdf, which tags its
+// appendices one level deeper than it numbers them. The shipped decimal rule scores 931
+// agree / 88 disagree over the same join, and admits 10 blocks the producer does not call
+// a heading at all, so this is the better-behaved of the two rules and not a relaxation of
+// the standard the package already holds.
+//
+// # What it does on the path it serves
+//
+// Untagged files are what this pass runs on, and there the effect is 10 promotions: 5 in
+// mupdf_explored.pdf's Appendix A (A.1 through A.3 and two A.1.x) and 5 in the arXiv
+// paper's appendices (C.1 through C.4, D.1). The 7 bare candidates beside them — "A
+// Vocabulary Pruning", "I The MuPDF C API 5" and the other part entries — stay paragraphs,
+// which is the limit DESIGN.md §10 still carries.
+func annexLevel(s string) (int, bool) {
+	r, n := utf8.DecodeRuneInString(s)
+	if r < 'A' || r > 'Z' {
+		return 0, false
+	}
+	i := n
+	if i >= len(s) || s[i] != '.' {
+		// A bare letter, or "A4". Both are rejected above by construction rather than
+		// by measurement; see the comment.
+		return 0, false
+	}
+	i++
+	// The letter is the first component and the dot just consumed closed it, so the scan
+	// below counts the components after it.
+	depth, digits := 1, 0
+	for ; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= '0' && c <= '9':
+			digits++
+		case c == '.':
+			if digits == 0 {
+				// "A..1" or "A.." — not a number.
+				return 0, false
+			}
+			depth++
+			digits = 0
+		default:
+			goto done
+		}
+	}
+done:
+	if digits > 0 {
+		depth++
+	}
+	if depth < 2 {
+		// depth 1 is "A." with no digits after it, which carries no more evidence than the
+		// bare letter does: doc.OrderedLabel's comment makes the same call for the same
+		// reason, admitting "a." and refusing "A." because an upper-case letter and a dot
+		// is how a sentence begins. Nothing promotes that shape, here or in OrderedLists.
+		return 0, false
+	}
+	// Decoded rather than indexed, for numberedLevel's reason: a non-breaking space or a
+	// U+2002 between the number and the title is routine, and both are multi-byte. It is
+	// also what rejects "A.1" with nothing after it — a folio or a cell — since the empty
+	// tail decodes to RuneError; see numberedLevel for why there is no length test here.
+	rr, _ := utf8.DecodeRuneInString(s[i:])
+	if !unicode.IsSpace(rr) {
 		return 0, false
 	}
 	return depth, true
