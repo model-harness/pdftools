@@ -178,6 +178,24 @@ type Elem struct {
 	// Kids are child elements in logical reading order.
 	Kids []*Elem
 
+	// KidAt is the position in /K of each kid in Kids, so that a caller can
+	// interleave an element's own Content with its Kids in the order the file
+	// declares rather than reading all of one and then all of the other.
+	//
+	// Two slices and one index rather than a single ordered slice of "either a
+	// reference or an element", because every caller but one wants exactly Content
+	// or exactly Kids, and a sum type would make all of them switch. MCRef.Order is
+	// the same position for a reference; both count positions in the same /K array,
+	// so comparing one against the other is what orders them.
+	//
+	// This matters for the 767 elements on disk that hold both. Reading Content
+	// first and Kids after moves the kids' text to the end of the parent's: 32022
+	// runes across 13 documents, and where the kid is a one-glyph Span the effect is
+	// a character torn out of the middle of a word and left at the end of the
+	// paragraph — "constituent elements.--" in ISO/TS 32005's Table 1, where the two
+	// soft hyphens of "exposi-tion" and "forma-ts" ended up.
+	KidAt []int
+
 	// Parent is the enclosing element, nil at the root.
 	Parent *Elem
 
@@ -195,6 +213,10 @@ type Elem struct {
 type MCRef struct {
 	MCID int
 	Page int
+
+	// Order is this reference's position in its element's /K array, which is what
+	// lets a caller interleave it with that element's kids — see Elem.KidAt.
+	Order int
 
 	// pageRef is an MCR's own /Pg, unresolved. Nil when the reference inherits its
 	// element's page, which is the common case.
@@ -246,11 +268,9 @@ func Read(s objects.Store) (*Tree, error) {
 
 	root := &Elem{Role: RoleStructTreeRoot, RawType: RoleStructTreeRoot}
 	seen := map[objects.Ref]bool{}
-	kids, err := t.readKids(s, rootDict, root, seen, 0)
-	if err != nil {
+	if err := t.readKids(s, rootDict, root, seen, 0); err != nil {
 		return nil, err
 	}
-	root.Kids = kids
 	t.Root = root
 	return t, nil
 }
@@ -300,21 +320,31 @@ const maxTreeDepth = 512
 // element dictionary, an integer MCID, a marked-content reference dictionary, an
 // object reference dictionary, or an array mixing all of those. Each shape is
 // handled explicitly because guessing produces silently wrong reading order.
-func (t *Tree) readKids(s objects.Store, d objects.Dict, parent *Elem, seen map[objects.Ref]bool, depth int) ([]*Elem, error) {
+//
+// It writes parent.Kids and parent.KidAt itself rather than returning the kids, so
+// that the two cannot be assigned by different statements and fall out of step: they
+// are one sequence indexed twice, and a caller holding only one of them cannot restore
+// the /K order the other encodes.
+func (t *Tree) readKids(s objects.Store, d objects.Dict, parent *Elem, seen map[objects.Ref]bool, depth int) error {
 	if depth > maxTreeDepth {
-		return nil, nil
+		return nil
 	}
 	kObj, ok := d["K"]
 	if !ok {
-		return nil, nil
+		return nil
 	}
 	resolved, err := s.Resolve(kObj)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 
-	var out []*Elem
-	for _, item := range objects.ArrayOrSingle(resolved) {
+	// at is the position in /K, recorded on whichever of the two slices the item lands
+	// in so that a caller can put them back in this order. It counts every item the
+	// array holds, including the ones that contribute nothing — an OBJR, a dictionary
+	// with no /S, a reference already seen — because it is only ever compared against
+	// another position from the same array, and skipping a gap would cost a second
+	// counter to no purpose.
+	for at, item := range objects.ArrayOrSingle(resolved) {
 		// Track visited references, not visited dictionaries: a cycle can only
 		// be formed through an indirect reference, and a document legitimately
 		// reaches the same direct dictionary from nowhere else.
@@ -331,18 +361,26 @@ func (t *Tree) readKids(s objects.Store, d objects.Dict, parent *Elem, seen map[
 		switch v := res.(type) {
 		case objects.Int:
 			// A bare integer is an MCID on the parent's own page.
-			parent.Content = append(parent.Content, MCRef{MCID: int(v)})
+			parent.Content = append(parent.Content, MCRef{MCID: int(v), Order: at})
 		case objects.Dict:
+			n := len(parent.Content)
 			kid, err := t.readKidDict(s, v, parent, seen, depth)
 			if err != nil {
-				return nil, err
+				return err
+			}
+			// An MCR or MCID dictionary appends to parent.Content and returns no kid,
+			// so its position is stamped here rather than in readKidDict, which does
+			// not know it.
+			for i := n; i < len(parent.Content); i++ {
+				parent.Content[i].Order = at
 			}
 			if kid != nil {
-				out = append(out, kid)
+				parent.Kids = append(parent.Kids, kid)
+				parent.KidAt = append(parent.KidAt, at)
 			}
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // readKidDict interprets one dictionary found in /K. It returns nil when the
@@ -405,11 +443,9 @@ func (t *Tree) readKidDict(s objects.Store, d objects.Dict, parent *Elem, seen m
 		}
 	}
 
-	kids, err := t.readKids(s, d, e, seen, depth+1)
-	if err != nil {
+	if err := t.readKids(s, d, e, seen, depth+1); err != nil {
 		return nil, err
 	}
-	e.Kids = kids
 	return e, nil
 }
 

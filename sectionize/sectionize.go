@@ -156,22 +156,24 @@ func (b *builder) visit(e *tag.Elem) {
 		return
 	}
 	// A transparent element with marked content of its own is a producer putting text
-	// directly under a container. It becomes a paragraph, emitted before the kids
-	// rather than interleaved with them: tag.Elem keeps Content and Kids in separate
-	// slices, so their relative order in the /K array is not recoverable here. It
-	// matters only for a document that mixes both under one element, which is rare
-	// and is a tagging defect where it happens.
-	if len(e.Content) > 0 {
-		var pg span
-		pg.add(e.Page)
-		for _, r := range e.Content {
-			pg.add(r.Page)
-		}
-		b.emit(e, doc.RoleParagraph, b.index.take(e.Content), pg)
-	}
-	for _, k := range e.Kids {
-		b.visit(k)
-	}
+	// directly under a container. It becomes a paragraph, and it is emitted in its /K
+	// position among the kids rather than before all of them: a container holding text,
+	// then a Sect, then more text is three things in that order, and emitting both runs
+	// of text first would put the second one before the section it follows.
+	//
+	// Each run of content becomes its own paragraph, which is what separating them by a
+	// kid already means — the alternative is one block whose halves were drawn on either
+	// side of a section boundary.
+	inOrder(e,
+		func(refs []tag.MCRef) {
+			var pg span
+			pg.add(e.Page)
+			for _, r := range refs {
+				pg.add(r.Page)
+			}
+			b.emit(e, doc.RoleParagraph, b.index.take(refs), pg)
+		},
+		b.visit)
 }
 
 // heading opens a section and closes every section it outranks.
@@ -425,25 +427,94 @@ func (b *builder) label(e *tag.Elem) string {
 // its spans here would open that section with no title at all. Neither shape occurs on disk
 // inside a Lbl. See label above for what the corpus does and does not exercise.
 func (b *builder) labelText(e *tag.Elem, sb *strings.Builder) {
-	for _, sp := range b.index.take(e.Content) {
-		sb.WriteString(sp.Text)
-	}
-	for _, k := range e.Kids {
-		if _, ok := blockRole(k.Role); ok || k.Role.IsHeading() {
+	inOrder(e,
+		func(refs []tag.MCRef) {
+			for _, sp := range b.index.take(refs) {
+				sb.WriteString(sp.Text)
+			}
+		},
+		func(k *tag.Elem) {
+			if _, ok := blockRole(k.Role); ok || k.Role.IsHeading() {
+				return
+			}
+			b.labelText(k, sb)
+		})
+}
+
+// inOrder calls content and kid in the order e's /K array declares them, interleaving the
+// element's own marked content with its children.
+//
+// tag.Elem keeps the two in separate slices, so walking Content and then Kids reads all of
+// one before any of the other. That is the right answer for the 89813 elements on disk that
+// hold only one of them and wrong for the 767 that hold both: it moves every rune a child
+// drew to the end of the parent's own text, 32022 of them across 13 documents. The visible
+// damage is worst where the child is small — a Span wrapping a single soft hyphen is torn
+// out of the middle of a word and left at the end of the paragraph, which is what put
+// "constituent elements.--" in ISO/TS 32005's Table 1 with the hyphens of "exposi-tion" and
+// "forma-ts" trailing behind it.
+//
+// The order is recovered from tag.MCRef.Order and tag.Elem.KidAt, both positions in the same
+// /K array. Merged rather than sorted into one slice, because both are already in ascending
+// order by construction.
+//
+// A tie between the two is unreachable, so the comparison below being < rather than <= is an
+// equivalent mutation and no fixture can kill it. Each /K item takes exactly one branch of
+// tag.readKids, and each branch grows exactly one of the two slices: an MCR dictionary
+// appends one reference and yields no kid, a structure element yields a kid and appends
+// nothing. Measured over the corpus to confirm the reading rather than assert it: of 90721
+// elements, 0 have a kid and a reference at the same /K position, and 0 have Order or KidAt
+// out of ascending order.
+//
+// len(KidAt) == len(Kids) is a fact about tag.Read, which appends to both in one statement,
+// and not an invariant anything enforces: tag.Elem is exported with both fields settable, so
+// an Elem built by hand can hold any combination. Handled rather than asserted, because the
+// cost is two comparisons and the alternative is a panic in a library reading untrusted files.
+// A kid with no position of its own sorts after all content, which is the pre-existing
+// behaviour and keeps a hand-built fixture meaning what it meant; a position naming a kid
+// that does not exist is ignored. TestInOrderSurvivesEveryKidAtSkew covers each skew.
+func inOrder(e *tag.Elem, content func([]tag.MCRef), kid func(*tag.Elem)) {
+	ci, ki := 0, 0
+	for ci < len(e.Content) || ki < len(e.Kids) {
+		// A run is every reference up to the next kid, not one per /K position. Two MCIDs
+		// with no kid between them are one stretch of text, and handing them over
+		// separately makes visit emit a paragraph per reference where the file draws one:
+		// 286 extra paragraphs across 205 transparent elements in 9 documents, the worst
+		// being Well-Tagged-PDF-WTPDF-1.0.pdf's 118. A Div holding two MCIDs and then a
+		// Sect is the smallest shape that shows it.
+		if ci < len(e.Content) && !kidBefore(e, ki, e.Content[ci].Order) {
+			j := ci
+			for j < len(e.Content) && !kidBefore(e, ki, e.Content[j].Order) {
+				j++
+			}
+			content(e.Content[ci:j])
+			ci = j
 			continue
 		}
-		b.labelText(k, sb)
+		kid(e.Kids[ki])
+		ki++
 	}
+}
+
+// kidBefore reports whether the kid at index ki precedes /K position order. A kid with no
+// recorded position is treated as last, so a hand-built Elem keeps content-then-kids.
+//
+// Bounded by both slices, not just KidAt. KidAt is an index into Kids, so a position past the
+// end of Kids describes a kid that does not exist — and answering "before" for one sends
+// inOrder into the branch that reads Kids[ki], which panics. tag.Read cannot build that state,
+// since readKids appends to both slices in one statement, but an Elem assembled by hand can,
+// and a reader of an exported type is not entitled to assume otherwise.
+func kidBefore(e *tag.Elem, ki, order int) bool {
+	return ki < len(e.Kids) && ki < len(e.KidAt) && e.KidAt[ki] < order
 }
 
 // gather collects e's spans together with those of its transparent descendants,
 // and separates out the descendants that start blocks of their own.
 //
-// The nested elements are visited after the gathered text rather than in place, for
-// the same reason the transparent case flushes before its kids: /K order between an
-// element's own marked content and its children is not preserved by tag.Elem. An
-// element that has both is a tagging defect, and the ones that matter here — a TD
-// wrapping a P, a Figure wrapping a Caption — have children only.
+// The gathered text is collected in /K order via inOrder, so an inline child's runes land
+// where the file draws them and not after the parent's own — see inOrder for why that
+// matters. The elements that start blocks of their own are still deferred rather than
+// visited in place: they are handed back to the caller, which emits the block being built
+// before descending into them, so a Figure inside a paragraph does not split it in two.
 //
 // wraps says the block being built holds its text in a wrapping paragraph — a list
 // item or a table cell, per wrapsText — which makes a paragraph inside it transparent.
@@ -478,22 +549,25 @@ func (b *builder) labelText(e *tag.Elem, sb *strings.Builder) {
 // from that element's own role. So a nested LI, or a TOCI inside a TOC inside a TOCI,
 // gathers with the flag set from its own role and not its parent's.
 func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span, wraps bool) {
-	*spans = append(*spans, b.index.take(e.Content)...)
 	pg.add(e.Page)
-	for _, r := range e.Content {
-		pg.add(r.Page)
-	}
-	for _, k := range e.Kids {
-		if k.Role.IsHeading() {
-			*nested = append(*nested, k)
-			continue
-		}
-		if r, ok := blockRole(k.Role); ok && !(wraps && r == doc.RoleParagraph) {
-			*nested = append(*nested, k)
-			continue
-		}
-		b.gather(k, spans, nested, pg, wraps)
-	}
+	inOrder(e,
+		func(refs []tag.MCRef) {
+			*spans = append(*spans, b.index.take(refs)...)
+			for _, r := range refs {
+				pg.add(r.Page)
+			}
+		},
+		func(k *tag.Elem) {
+			if k.Role.IsHeading() {
+				*nested = append(*nested, k)
+				return
+			}
+			if r, ok := blockRole(k.Role); ok && !(wraps && r == doc.RoleParagraph) {
+				*nested = append(*nested, k)
+				return
+			}
+			b.gather(k, spans, nested, pg, wraps)
+		})
 }
 
 // span is an inclusive page range being accumulated. Zero is "no page", so it is

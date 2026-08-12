@@ -112,6 +112,127 @@ func TestReadKidShapes(t *testing.T) {
 	}
 }
 
+// TestKOrderRecordedAcrossContentAndKids: Content and Kids are separate slices, so the
+// only thing that can say a kid came *between* two runs of marked content is the position
+// recorded on each. 767 elements on disk hold both, and without this a kid's text is read
+// after everything its parent drew.
+func TestKOrderRecordedAcrossContentAndKids(t *testing.T) {
+	// text, <Span>, text, <Span>, text — the shape ISO/TS 32005's table cells have, where
+	// each Span wraps one soft hyphen in the middle of a word.
+	span1 := objects.Dict{"S": objects.Name("Span"), "ActualText": objects.String("\u00ad"), "K": objects.Int(1)}
+	span2 := objects.Dict{"S": objects.Name("Span"), "ActualText": objects.String("\u00ad"), "K": objects.Int(3)}
+	para := objects.Dict{
+		"S": objects.Name("P"),
+		"K": objects.Array{
+			objects.Int(0),
+			objects.Ref{Num: 20},
+			objects.Int(2),
+			objects.Ref{Num: 21},
+			objects.Int(4),
+		},
+	}
+	root := objects.Dict{"Type": objects.Name("StructTreeRoot"), "K": objects.Ref{Num: 10}}
+	s := &store{
+		cat: objects.Dict{"StructTreeRoot": objects.Ref{Num: 1}},
+		objs: map[objects.Ref]objects.Object{
+			{Num: 1}:  root,
+			{Num: 10}: para,
+			{Num: 20}: span1,
+			{Num: 21}: span2,
+		},
+	}
+
+	tr, err := Read(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := tr.Root.Kids[0]
+	if len(p.Content) != 3 || len(p.Kids) != 2 {
+		t.Fatalf("want 3 refs and 2 kids, got %d and %d", len(p.Content), len(p.Kids))
+	}
+	// The positions are what interleaving reads, so they are asserted as the /K indices
+	// they are and not merely as "increasing".
+	for i, want := range []int{0, 2, 4} {
+		if got := p.Content[i].Order; got != want {
+			t.Errorf("Content[%d].Order = %d, want %d", i, got, want)
+		}
+	}
+	if len(p.KidAt) != 2 || p.KidAt[0] != 1 || p.KidAt[1] != 3 {
+		t.Errorf("KidAt = %v, want [1 3]", p.KidAt)
+	}
+	// A kid keeps its own position alongside the content it sits between: kid 0 falls
+	// after Content[0] and before Content[1], which is the whole claim.
+	if !(p.Content[0].Order < p.KidAt[0] && p.KidAt[0] < p.Content[1].Order) {
+		t.Errorf("kid 0 does not fall between the first two content runs: %v / %v", p.Content, p.KidAt)
+	}
+}
+
+// TestKidAtPairsWithKids: the two slices are one sequence indexed twice, so a kid without
+// a recorded position would silently sort last. Read appends to both together; this is the
+// invariant that says so, over every shape the other tests build.
+func TestKidAtPairsWithKids(t *testing.T) {
+	// An OBJR and an already-seen reference contribute no kid, which is exactly where a
+	// naive index-by-position would drift.
+	objr := objects.Dict{"Type": objects.Name("OBJR")}
+	kid := objects.Dict{"S": objects.Name("Span"), "K": objects.Int(7)}
+	para := objects.Dict{
+		"S": objects.Name("P"),
+		"K": objects.Array{
+			objr,
+			objects.Int(0),
+			objects.Ref{Num: 20},
+			objr,
+			objects.Ref{Num: 20}, // the same reference twice: the second is skipped
+			objects.Int(1),
+			objects.Dict{"Type": objects.Name("MCR"), "MCID": objects.Int(9)},
+		},
+	}
+	root := objects.Dict{"Type": objects.Name("StructTreeRoot"), "K": objects.Ref{Num: 10}}
+	s := &store{
+		cat: objects.Dict{"StructTreeRoot": objects.Ref{Num: 1}},
+		objs: map[objects.Ref]objects.Object{
+			{Num: 1}:  root,
+			{Num: 10}: para,
+			{Num: 20}: kid,
+		},
+	}
+	tr, err := Read(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var check func(e *Elem)
+	check = func(e *Elem) {
+		if len(e.KidAt) != len(e.Kids) {
+			t.Errorf("%s: KidAt has %d entries for %d kids", e.Role, len(e.KidAt), len(e.Kids))
+		}
+		for _, k := range e.Kids {
+			check(k)
+		}
+	}
+	check(tr.Root)
+
+	p := tr.Root.Kids[0]
+	if len(p.Kids) != 1 {
+		t.Fatalf("want 1 kid, the repeated reference being skipped, got %d", len(p.Kids))
+	}
+	// Position 2 and not 1: the OBJR at index 0 occupies a /K slot even though it yields
+	// nothing, and the count has to include it or the kid sorts before Content[0].
+	if p.KidAt[0] != 2 {
+		t.Errorf("KidAt = %v, want [2]: skipped items still occupy their /K position", p.KidAt)
+	}
+	// An MCR *dictionary* reaches Content through readKidDict rather than through the
+	// bare-integer branch, and its /K position is stamped by the caller because
+	// readKidDict does not know it. Without that stamp the reference claims position 0
+	// and sorts before every kid — which no other shape here can catch, since a kid built
+	// as an indirect reference never puts an MCR in its parent's own /K.
+	if p.Content[2].MCID != 9 || p.Content[2].Order != 6 {
+		t.Errorf("MCR dict = MCID %d at /K %d, want 9 at 6", p.Content[2].MCID, p.Content[2].Order)
+	}
+	if p.Content[0].Order != 1 || p.Content[1].Order != 5 {
+		t.Errorf("content order = %d,%d, want 1,5", p.Content[0].Order, p.Content[1].Order)
+	}
+}
+
 func TestMCRPageOverridesElementPage(t *testing.T) {
 	// The reason MCRef carries a page. A paragraph continuing past a page break is
 	// one element whose /Pg names the page it started on and whose MCR names the page

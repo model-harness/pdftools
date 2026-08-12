@@ -123,6 +123,64 @@ happens for one that has never been observed. Behaviour is otherwise unchanged: 
 excluded the root by name before, and now `isGrouping` excludes it one layer earlier, while
 the name check that keeps a real `Document` from counting as a heading level stays.
 
+"Reading order is declared" is a claim about `/K`, and it is only true of a reader that keeps
+`/K`'s order. `tag.Elem` splits the array into `Content` (marked-content references) and `Kids`
+(child elements) and recorded nothing about how the two interleaved, so the walk read all of one
+and then all of the other. Correct for the **89813 elements on disk that hold only one** of them,
+wrong for the **767 that hold both**, which moved every rune a child drew to the end of its
+parent's own text: **32022 runes across 13 documents, and the whole test suite passing with all
+of it displaced.**
+
+The visible damage scales *inversely* with the child's size, which is why it survived so long. A
+child holding a paragraph relocates a paragraph, and a reader notices. A `Span` holding one soft
+hyphen puts that hyphen at the end of the enclosing paragraph, and what reaches the output is
+`constituent elements.--` — ISO/TS 32005's Table 1, with the hyphens of `exposi-tion` and
+`constitu-ent` trailing the sentence they were drawn inside. That is unattributable to its cause
+by inspection; it was found by tracing one soft hyphen through the pipeline while looking for
+something else.
+
+The fix is in the model rather than the walker: `tag.MCRef.Order` and `tag.Elem.KidAt` record
+each item's index in the same `/K` array, and `sectionize.inOrder` merges the two slices on those
+indices. Two slices and one index rather than one ordered slice of a sum type, because every
+consumer but one wants exactly `Content` or exactly `Kids` and a sum type would make all of them
+switch. `readKids` assigns `Kids` and `KidAt` itself, since they are one sequence indexed twice
+and a caller holding only one cannot reconstruct what the other encodes.
+
+**Four output defects were this one defect.** Glued words (`ISO/TS32005`, `First
+edition2023-07`) where the gap between a parent's text and a child's was never measured; a
+spurious space inside `http:// creativecommons.org`; a TOC entry emphasized twice
+(`**Preface ...**  **2**`); and a link swallowing the punctuation that followed it
+(`).www.iso.org/directives` rather than `www.iso.org/directives).`, the very shape this document
+described as correct behaviour under §7's link resolution). Two of them had been logged as
+separate items. None needed a rule of its own.
+
+Two facts about `/K` that the reader now depends on, both measured rather than assumed over
+90721 elements: **no kid and no reference share a position** (each `/K` item takes exactly one
+branch, and each branch grows exactly one of the two slices), and **no positions are recorded out
+of ascending order**. The first makes the merge's tie-break unobservable — `<` versus `<=` in
+`kidBefore` is an equivalent mutation no fixture can kill, so it is recorded as one instead of
+being tested for. What *is* observable is what counts as a run: everything up to the next kid,
+not one call per position. Per-position grouping makes a transparent element emit a paragraph per
+reference — **286 extra paragraphs across 205 elements in 9 documents**, 118 in
+`Well-Tagged-PDF-WTPDF-1.0.pdf` alone.
+
+Reconciled in both directions on ISO/TS 32005 rather than spot-checked, since a reordering fix
+cannot be verified by diffing sequences: 4472 spaces appear where gluing had hidden a gap, and
+**not one non-space rune is lost**. The only other change is two backslashes, and they were the
+gluing's own artifact — a glued `[a][a][a]` looks like a link reference and is escaped, and
+`[a] [a] [a]` does not.
+
+The merge shipped a panic that review caught, and the shape of the mistake is worth keeping: the
+loop bounded its kid branch by `len(Kids)` while `kidBefore` bounded the *same decision* by
+`len(KidAt)`. Two guards for one question, disagreeing — a `KidAt` longer than `Kids` names a kid
+that does not exist, `kidBefore` said it came first, and the loop indexed past the end. `tag.Read`
+cannot produce it, which is exactly why no corpus run and no existing test could: `tag.Elem` is
+exported with both fields settable, so the state is reachable only from outside the reader. The
+guard now asks both bounds, and the invariant is documented as a fact about `tag.Read` rather
+than something enforced, because a library reading untrusted files should not panic over two
+comparisons. `TestInOrderSurvivesEveryKidAtSkew` covers all ten skews and asserts termination
+plus exactly-once delivery, not just absence of a panic.
+
 So the primary path for the target corpus is: **parse the structure tree, not the page
 geometry.** Geometry-based layout analysis is the *fallback* for untagged input (like the
 LightOnOCR paper above), and VLM/OCR is the fallback for that. This inverts the usual
@@ -1470,6 +1528,15 @@ OKF-ified spec.
   neither glyph survives into output, but the soft hyphen is a visible defect —
   `ISO-TS-32004-2024_sponsored.pdf` emits `id-ct- pdfMacIntegrityInfo` where the page says
   `id-ct-pdfMacIntegrityInfo`.
+
+  **Chasing one of those 16 is what found the `/K`-order defect** described in §3, and the
+  triage above is why: the item was logged as "read `/ActualText` from a `Span`", and measuring
+  it showed 4803 values holding 3 strings that want 3 different treatments, only 16 of which are
+  a substitution at all. A declared line break is one a Markdown sink reflows away, so ignoring
+  4695 of them is correct rather than deferred. The remaining question is narrow — whether to
+  emit `U+00AD` for the 16, or the `-` the page draws — and it is now reachable, which it was
+  not when this bullet was written: those `Span`s' runes land in their `/K` position instead of
+  at the end of the enclosing paragraph.
 - **A `Figure` that draws text now drops its `/Alt` entirely, and that is a deliberate
   trade rather than a solved problem.** On `PDF20_AN001-BPC.pdf` the fix recovers 129
   characters of real caption text and loses the 217-rune description that used to stand in
@@ -1517,6 +1584,17 @@ OKF-ified spec.
     population, here it had 483 and still nothing measured it.
   - Distinct from the soft-hyphen `/ActualText` case above, which is 16 structure elements
     rather than a wrap decision, and still open.
+- **A line is written with whatever trailing space its last span carried, and 539 of them end
+  in two or more.** Two or more trailing spaces is a hard line break in Markdown, so those 539
+  lines across 12 documents render a `<br>` no document asked for; 11970 more end in exactly
+  one, which renders identically but makes the output diff-hostile and trips
+  `MD009 no-trailing-spaces` on any linted consumer. A span's text ends in a space whenever the
+  producer drew one there, and nothing trims it at the point a line is closed. Found while
+  reconciling the `/K`-order fix, which moves the figure — spans that used to be glued now sit
+  at a line end — and not folded into it, because trimming at line close is a change to every
+  sink's output and wants its own before/after count. Distinct from the wrap-space rules above:
+  those decide whether to *infer* a space at a break, this one is about a space the file
+  actually contains landing where Markdown gives it a meaning.
 - **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
   `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
   `doc.Role`, so the element and its description are dropped together. This is the same debt

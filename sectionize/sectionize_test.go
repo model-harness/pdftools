@@ -65,6 +65,29 @@ func tree(cs ...*tag.Elem) *tag.Tree {
 	return &tag.Tree{Root: kids(&tag.Elem{}, cs...)}
 }
 
+// interleaved builds an element whose /K array mixes its own marked content with kids, in
+// the order given: an int is an MCID the element owns, an *tag.Elem is a child. Both get
+// the /K position tag.Read records, which is what inOrder reads.
+//
+// Separate from el and kids because those two build the two pure shapes and neither can
+// express a kid *between* two runs of content — the state 767 elements on disk are in.
+func interleaved(role tag.Role, page int, items ...any) *tag.Elem {
+	e := &tag.Elem{Role: role, RawType: role, Page: page}
+	for at, it := range items {
+		switch v := it.(type) {
+		case int:
+			e.Content = append(e.Content, tag.MCRef{MCID: v, Page: page, Order: at})
+		case *tag.Elem:
+			v.Parent = e
+			e.Kids = append(e.Kids, v)
+			e.KidAt = append(e.KidAt, at)
+		default:
+			panic("interleaved: want int or *tag.Elem")
+		}
+	}
+	return e
+}
+
 func TestLevelStackNestsByHeadingRank(t *testing.T) {
 	// The core of the package: hierarchy comes from the *sequence* of heading levels,
 	// not from containment. Every element below is a sibling in one flat list, which is
@@ -174,11 +197,12 @@ func TestInlineElementsDoNotSplitAParagraph(t *testing.T) {
 		sp{1, 4, "link"},
 		sp{1, 5, " inside."},
 	)
+	// Every run is a child here, so this shape reads the same whether or not the walk
+	// honours /K order. TestInlineKidReadsInItsKPosition is the one that needs the order,
+	// because there the P's own content sits on both sides of a child.
 	p := kids(el(tag.RoleP, 1, 1),
 		el(tag.RoleSpan, 1, 2),
 	)
-	// The P's own runs are gathered before its children's, so build the tail as
-	// further inline children rather than as more of the P's own content.
 	kids(p, el(tag.RoleSpan, 1, 3), el(tag.RoleLink, 1, 4), el(tag.RoleSpan, 1, 5))
 	tr := tree(el(tag.RoleH1, 1, 0), p)
 
@@ -194,6 +218,165 @@ func TestInlineElementsDoNotSplitAParagraph(t *testing.T) {
 	// Style boundaries survive as spans even though the block is one unit.
 	if n := len(sec.Blocks[0].Spans); n != 5 {
 		t.Errorf("spans = %d, want 5", n)
+	}
+}
+
+// TestInlineKidReadsInItsKPosition: a paragraph's own marked content on both sides of an
+// inline child. Reading all the content and then the child moves the child's glyph to the
+// end, which is the shape 767 elements on disk have — and where the child is a Span holding
+// one soft hyphen, the result is "constituent elements.--" in ISO/TS 32005's Table 1, with
+// the hyphens of "exposi-tion" and "constitu-ent" trailing the cell.
+func TestInlineKidReadsInItsKPosition(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "exposi"},
+		sp{1, 1, "-"},
+		sp{1, 2, "tion and constitu"},
+		sp{1, 3, "-"},
+		sp{1, 4, "ent elements."},
+	)
+	p := interleaved(tag.RoleP, 1,
+		0,
+		el(tag.RoleSpan, 1, 1),
+		2,
+		el(tag.RoleSpan, 1, 3),
+		4,
+	)
+	tr := tree(p)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+	}
+	const want = "exposi-tion and constitu-ent elements."
+	if got := out.Preamble[0].Text(); got != want {
+		t.Errorf("text = %q, want %q: an inline kid reads in its /K position", got, want)
+	}
+}
+
+// TestTransparentContentEmitsInKOrder: the same rule one level up. A container holding
+// text, then a section, then more text is three things in that order, and emitting both
+// runs of its own text first puts the second before the heading it follows.
+func TestTransparentContentEmitsInKOrder(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "Before the heading."},
+		sp{1, 1, "1 Scope"},
+		sp{1, 2, "After the heading."},
+	)
+	div := interleaved(tag.RoleDiv, 1,
+		0,
+		el(tag.RoleH1, 1, 1),
+		2,
+	)
+	tr := tree(div)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	// The first run precedes the heading, so it is preamble; the second follows it and
+	// belongs to the section. Ordering by slice instead puts both in the preamble.
+	if len(out.Preamble) != 1 || out.Preamble[0].Text() != "Before the heading." {
+		t.Fatalf("preamble = %v, want one block of the text before the heading", texts(out.Preamble))
+	}
+	if len(out.Sections) != 1 {
+		t.Fatalf("sections = %d, want 1", len(out.Sections))
+	}
+	if got := out.Sections[0].Text(); got != "After the heading." {
+		t.Errorf("section text = %q, want the run that follows the heading", got)
+	}
+}
+
+// TestInOrderSurvivesEveryKidAtSkew: KidAt is an index into Kids, and inOrder reads one to
+// decide whether to read the other. Every way the two can disagree is covered here, because
+// tag.Read cannot produce any of them — it appends to both in one statement — so the only
+// thing standing between a hand-built Elem and a panic is this test.
+//
+// The KidAt-longer-than-Kids row is the one that panicked: the loop bounds the kid branch by
+// len(Kids) while kidBefore bounded it by len(KidAt), so a position naming a kid that does not
+// exist sent inOrder to Kids[ki]. Every row asserts termination and that every item is handed
+// over exactly once, which is the property a merge can lose in either direction.
+func TestInOrderSurvivesEveryKidAtSkew(t *testing.T) {
+	kid := func(page int) *tag.Elem { return &tag.Elem{Role: tag.RoleSpan, Page: page} }
+	for _, tc := range []struct {
+		name    string
+		content []tag.MCRef
+		kids    []*tag.Elem
+		kidAt   []int
+	}{
+		{"KidAt longer than Kids", []tag.MCRef{{Order: 0}, {Order: 3}}, nil, []int{1, 2}},
+		{"KidAt shorter than Kids", []tag.MCRef{{Order: 0}}, []*tag.Elem{kid(1), kid(1)}, []int{1}},
+		{"Kids with no KidAt at all", []tag.MCRef{{Order: 0}}, []*tag.Elem{kid(1)}, nil},
+		{"KidAt with no Kids at all", []tag.MCRef{{Order: 1}}, nil, []int{0}},
+		{"negative positions", []tag.MCRef{{Order: -2}}, []*tag.Elem{kid(1)}, []int{-5}},
+		{"duplicate positions", []tag.MCRef{{Order: 2}, {Order: 2}}, []*tag.Elem{kid(1)}, []int{2}},
+		{"positions out of ascending order", []tag.MCRef{{Order: 5}, {Order: 1}}, []*tag.Elem{kid(1), kid(1)}, []int{4, 0}},
+		{"content only", []tag.MCRef{{Order: 0}, {Order: 1}}, nil, nil},
+		{"kids only", nil, []*tag.Elem{kid(1)}, []int{0}},
+		{"nothing at all", nil, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &tag.Elem{Role: tag.RoleDiv, Content: tc.content, Kids: tc.kids, KidAt: tc.kidAt}
+			refs, kids := 0, 0
+			// A merge that fails to advance runs forever; bound the work at more than the
+			// items available so a stall fails the test rather than hanging it.
+			limit := 2*(len(tc.content)+len(tc.kids)) + 4
+			seen := map[*tag.Elem]bool{}
+			inOrder(e,
+				func(r []tag.MCRef) {
+					refs += len(r)
+					if refs+kids > limit {
+						t.Fatalf("inOrder is not making progress")
+					}
+				},
+				func(k *tag.Elem) {
+					if seen[k] {
+						t.Fatalf("kid handed over twice")
+					}
+					seen[k] = true
+					kids++
+					if refs+kids > limit {
+						t.Fatalf("inOrder is not making progress")
+					}
+				})
+			if refs != len(tc.content) || kids != len(tc.kids) {
+				t.Errorf("handed over %d refs and %d kids, want %d and %d",
+					refs, kids, len(tc.content), len(tc.kids))
+			}
+		})
+	}
+}
+
+// TestTransparentRunIsEveryReferenceUpToTheNextKid: what makes a run a run is the kid
+// between them, not the /K position. Two references with nothing between them are one
+// stretch of text and one paragraph; splitting per position emits a paragraph per MCID.
+//
+// The test above cannot see this, because each of its runs is a single reference.
+func TestTransparentRunIsEveryReferenceUpToTheNextKid(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "A container holding text, "},
+		sp{1, 1, "drawn as two sequences."},
+		sp{1, 2, "1 Scope"},
+		sp{1, 3, "Then two more "},
+		sp{1, 4, "after the heading."},
+	)
+	div := interleaved(tag.RoleDiv, 1,
+		0, 1,
+		el(tag.RoleH1, 1, 2),
+		3, 4,
+	)
+
+	out, _ := Tagged(d, tree(div), DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble = %v, want the two references before the heading as one block", texts(out.Preamble))
+	}
+	if got := out.Preamble[0].Text(); got != "A container holding text, drawn as two sequences." {
+		t.Errorf("preamble text = %q", got)
+	}
+	if n := len(out.Sections[0].Blocks); n != 1 {
+		t.Fatalf("section blocks = %d, want the two references after the heading as one block", n)
+	}
+	if got := out.Sections[0].Text(); got != "Then two more after the heading." {
+		t.Errorf("section text = %q", got)
 	}
 }
 

@@ -7,6 +7,41 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-12
 
+- **An element's children were read after all of its own text instead of in `/K` order: 32022
+  runes displaced across 13 documents.** `tag.Elem` splits `/K` into `Content` (marked-content
+  references) and `Kids` (child elements) and kept no record of how the array interleaved them,
+  so the walk read all of one and then all of the other. That is the right answer for the 89813
+  elements on disk holding only one of the two, and wrong for the **767 holding both**: every
+  rune a child drew moved to the end of its parent's text.
+  - **The damage is worst where the child is smallest.** A `Span` wrapping a single soft hyphen
+    is torn out of the middle of a word and left at the end of the paragraph, which is what put
+    `constituent elements.--` in ISO/TS 32005's Table 1 — the hyphens of `exposi-tion` and
+    `constitu-ent` trailing behind the sentence they belonged inside.
+  - **Fixed in the model, not the walker.** `tag.MCRef.Order` and `tag.Elem.KidAt` record each
+    item's position in the same `/K` array, and `sectionize.inOrder` merges the two slices on
+    those positions. `readKids` writes `Kids` and `KidAt` itself so the two cannot be assigned
+    by separate statements and fall out of step — they are one sequence indexed twice.
+  - **Four separate output defects were the same defect.** Glued words (`ISO/TS32005`,
+    `First edition2023-07`) where the gap between a parent's text and a child's was never
+    measured; a spurious space inside `http:// creativecommons.org`; doubled TOC emphasis
+    (`**Preface ...**  **2**` for one entry); and links swallowing the punctuation after them
+    (`).www.iso.org/directives` for `www.iso.org/directives).`). None needed a rule of its own.
+  - **A run is every reference up to the next kid, not one per `/K` position.** Splitting per
+    position emits a paragraph per marked-content reference: 286 extra paragraphs across 205
+    transparent elements in 9 documents, 118 of them in `Well-Tagged-PDF-WTPDF-1.0.pdf`.
+  - Reconciled in both directions on ISO/TS 32005: 4472 spaces appear where gluing had hidden a
+    gap, and **not one non-space rune is lost** — the only other change is 2 backslashes that
+    the gluing itself had required, escaping a `[a][a]` that looked like a link reference and no
+    longer does once the brackets are separated.
+  - **Review found a panic in the merge.** The loop bounded its kid branch by `len(Kids)` while
+    `kidBefore` bounded the same decision by `len(KidAt)`, so a `KidAt` longer than `Kids` — a
+    position naming a kid that does not exist — answered "this kid comes first" and then indexed
+    past the end. `tag.Read` cannot build that state, but `tag.Elem` is exported with both
+    fields settable, so a caller can. `kidBefore` now requires both bounds, and
+    `TestInOrderSurvivesEveryKidAtSkew` covers all ten ways the three slices can disagree
+    (either length skew, absent slices, negative, duplicate and descending positions),
+    asserting termination and that every item is handed over exactly once.
+
 - **A line wrap put a space after a hyphen that was holding a word together: 483 words split
   across the corpus.** `marked- content`, `cross- reference`, `human- readable`, `ISO 32000-
   2:2020`. `appendLine` infers a space at every line break inside a paragraph, which is right
