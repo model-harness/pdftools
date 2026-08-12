@@ -5,6 +5,40 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-08-12
+
+- **A gold fixture for `md -frontmatter`, which had none.** `testdata/reference/metadata.pdf`
+  is the tenth reference fixture and the only one that sets `Title`, `Author`, `Subject` or
+  `Keywords` — LaTeX does not write `\title` into `/Info` on its own, that is `hyperref`'s job,
+  so their absence was a property of the nine `.tex` sources rather than of the engine. It
+  carries a second gold file, `metadata.frontmatter.gold.md`, holding the whole expected output
+  fences and prose included, with `{{source}}` substituted for the path the caller typed since
+  that is the one field belonging to the invocation rather than the document. Everything else is
+  asserted verbatim, dates included: the PDF is pinned by SHA-256, so its `/CreationDate` is as
+  fixed as its title. This closes the second of the two reasons the `Info` defect below
+  survived — the first, a walk that never counted, was fixed the day before.
+- **What the fixture asserts is the reader, and that was measured rather than assumed.**
+  Mutating the writer — transposing the field order, quoting every value, dropping the blank
+  line after the closing fence, emitting empty keys instead of omitting them — is caught **four
+  times out of four** by `sink/markdown`'s own unit tests, so against the writer a gold file
+  adds nothing. Mutating `extract.metadata()` is the opposite: reading `Subject` from
+  `/Keywords` and `Keywords` from `/Subject`, `Creator` from `/Producer` and `Producer` from
+  `/Creator`, or `Modified` from `/CreationDate` — **each survives every test in the repository** (`go test ./...`, 23 of the 24 packages having tests)
+  and dies only on this fixture. Every one emits a full block of plausible, well-formed,
+  non-empty values, which is exactly what a presence check, a key count and a loader-validity
+  check all pass. Only an independently authored statement of *which* value belongs in *which*
+  field separates them. Reverting the `Info` fix also fails here, with all four identity fields
+  gone.
+- **The fixture's two dates differ on purpose.** `\pdfinfo{/ModDate (D:20240131120000Z)}` sets
+  a date no clock here produces, which pdfTeX honours while still writing its own
+  `/CreationDate`. Built with the two equal, the `Modified`-from-`/CreationDate` mutation
+  emitted a matching value and survived this test as well — the assertion was true by
+  coincidence. The title also carries a `": "` and the keywords a `","`: the first must be
+  quoted (`": "` ends a YAML key anywhere in a line) and the second must not (a comma is only
+  special inside a flow collection), so the pair separates the quoting rule from a rule that
+  quotes defensively. The values arrive UTF-16BE with a BOM, as `hyperref` writes them, making
+  this the only committed fixture that pins that decode path.
+
 ### Fixed — 2026-08-11
 
 - **The document information dictionary was never read, for every file the tool has ever
@@ -45,8 +79,8 @@ All notable changes to this project are documented here, following
   `Info` defect survived a test written to cover exactly this output: 6 keys were emitted where
   12 belong, and every one of the 6 was well-formed. The floor turns "every line present is
   well-formed" into "the lines are present", and fails at 6 without the store fix. No
-  `.gold.md` fixture covers `-frontmatter` at all, which is the other half of why nothing
-  caught it.
+  `.gold.md` fixture covered `-frontmatter` at all, which is the other half of why nothing
+  caught it — closed the next day by `metadata.pdf`, above.
 - **Two tests for what became attacker-reachable when metadata started being read.** `Title`,
   `Author`, `Subject`, `Keywords`, `Creator` and `Producer` are strings from an untrusted file
   and they now reach output where they were previously always empty.

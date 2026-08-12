@@ -1,0 +1,56 @@
+% metadata — the document information dictionary, read into YAML frontmatter.
+%
+% One concern: does "md -frontmatter" report what the file says about itself? Every
+% other fixture here asserts the prose and is built with the frontmatter off, so
+% nothing on disk looked at that output at all — which is half of why the object
+% layer dropped /Info for the project's whole life and no test failed. The other
+% half was a test that walked the emitted lines without counting them.
+%
+% This is the only fixture that sets any of Title, Author, Subject or Keywords.
+% None of the other nine do, so the four fields most likely to be wrong were also
+% the four that no expectation covered. LaTeX does not write \title into /Info on
+% its own — that is hyperref's job, via \hypersetup — so the absence was a property
+% of the sources rather than of the engine.
+%
+% The title carries a colon and the keywords a comma on purpose. "ISO 32000-2:
+% Document management" is the real case sink/markdown's quoting rule names, and a
+% ": " anywhere in a value ends a YAML key, so the gold file asserts the quoted form
+% rather than the plain one. The comma is the counter-example beside it: it needs no
+% quoting outside a flow collection, so a rule that quoted defensively on any
+% punctuation would fail here and be visible.
+%
+% lang comes from the catalogue's /Lang and not from /Info, which is why it is set
+% separately. It is the one frontmatter field with a different source, so a fixture
+% that only exercised /Info would leave the two indistinguishable.
+%
+% hidelinks because hyperref's default is a coloured border around every link, and
+% this document has no links to draw one on — the option keeps the page identical to
+% what it would be without the package so the body assertion stays about the prose.
+%
+% \pdfinfo overrides /ModDate to a value that is not the build time, which pdfTeX
+% honours while still writing its own /CreationDate. That makes the two dates
+% different, and the difference is the assertion: with both equal, a reader that
+% filled Modified from /CreationDate emitted a plausible value that matched, and the
+% mutation survived the whole suite. A fixed date rather than a second timestamp
+% because the point is that we return what the file says, and a value nobody's clock
+% produced cannot be arrived at by accident.
+%
+% Build with pdflatex; nothing here needs the tagging backend.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+\pdfinfo{/ModDate (D:20240131120000Z)}
+\hypersetup{
+  pdftitle={Metadata: a reference fixture},
+  pdfauthor={A. Author},
+  pdfsubject={The fields an information dictionary carries},
+  pdfkeywords={pdf, metadata, frontmatter},
+  pdflang={en},
+}
+\pagestyle{empty}
+\begin{document}
+
+This document exists for what its information dictionary says, not for what its page
+draws.
+
+\end{document}

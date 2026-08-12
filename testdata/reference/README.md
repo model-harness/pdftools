@@ -1,6 +1,6 @@
 # Reference fixtures — the yardstick
 
-Eight small PDFs, each exercising one thing, each beside the Markdown it *should*
+Ten small PDFs, each exercising one thing, each beside the Markdown it *should*
 produce. Everything here is ours: generated from the `.tex` sources in this
 directory, licensed MIT with the rest of the repo, and therefore committable —
 unlike the sponsored ISO documents in `docs/`, which are the corpus we measure
@@ -38,9 +38,9 @@ with the dialect would fail on formatting and tell us nothing about fidelity.
 
 ## Why untagged, and why `lmodern`
 
-All but two are deliberately untagged, because most PDFs are and the layout
-path is what reads them. `clauses.tex` and `tagged-lists.tex` are tagged, because a
-structure tree is the thing each exists to test.
+All but three are deliberately untagged, because most PDFs are and the layout
+path is what reads them. `clauses.tex`, `tagged-lists.tex` and `tagged-table.tex` are
+tagged, because a structure tree is the thing each exists to test.
 
 `lists.tex` and `tagged-lists.tex` look like duplicates and are not. They cover the
 same document feature through two different code paths that share no logic: the
@@ -63,6 +63,49 @@ were learned the hard way:
   Mapping `a<N>` to `rune(N)` would look right across ASCII and emit confident
   nonsense outside it — `a16` as U+0016, `a189` as `½`.
 
+## The one fixture with two gold files
+
+`metadata.pdf` has a `metadata.gold.md` like the others and a
+`metadata.frontmatter.gold.md` beside it, because `md -frontmatter` is a second output
+and nothing here had ever looked at it. That gap is half of why `objects/pdfcpu` could
+drop the trailer's `/Info` entry and leave every document's title, author, subject,
+keywords, creator, producer and dates empty for the project's whole life with the suite
+green: no gold file ran with the flag on, and none of the other nine sources sets any of
+those four fields, so the values most likely to be wrong were also the ones no
+expectation described. LaTeX does not write `\title` into `/Info` on its own — that is
+`hyperref`'s job, through `\hypersetup` — so their absence was a property of the sources
+rather than of the engine.
+
+The frontmatter gold holds the whole file, fences and prose included, with one
+substitution: `{{source}}` stands for the path given on the command line, which is the
+caller's and not the document's. Everything else is asserted verbatim, dates included —
+the PDF is pinned by SHA-256, so its `/CreationDate` is as fixed as its title.
+
+Two details in `metadata.tex` are load-bearing and would look arbitrary:
+
+- **`\pdfinfo{/ModDate ...}` sets a date that is not the build time.** pdfTeX honours it
+  while still writing its own `/CreationDate`, so the two differ. Built with them equal,
+  a reader that filled `modified` from `/CreationDate` emitted a value that matched, and
+  that mutation survived — the assertion was true by coincidence.
+- **The title carries a `": "` and the keywords a `","`.** The first forces YAML
+  quoting (`": "` ends a key anywhere in a line) and the second must *not* be quoted,
+  since a comma is only special inside a flow collection. Together they are the pair
+  that distinguishes the quoting rule from a rule that quotes defensively.
+
+The values arrive UTF-16BE with a byte-order mark, which is how `hyperref` writes them,
+so this is also the only committed fixture pinning that decode path.
+
+What the fixture is *for* was measured rather than assumed. Mutating the writer —
+transposing the field order, quoting every value, dropping the blank line after the
+fence, emitting empty keys instead of omitting them — is caught four times out of four
+by `sink/markdown`'s own unit tests, so against the writer this gold file adds nothing.
+Mutating the reader is the opposite: reading `Subject` from `/Keywords`, `Creator` from
+`/Producer`, or `Modified` from `/CreationDate` each survives every test in the
+repository and dies only here. Each emits a full block of plausible, well-formed, non-empty
+values — which is precisely what a presence check, a key count, and a loader-validity
+check all pass. Only an independently authored statement of which value belongs in
+which field separates them.
+
 ## Layout
 
 | File | Concern | Tagged |
@@ -76,6 +119,7 @@ were learned the hard way:
 | `clauses.tex` | Numbered clause hierarchy via the structure tree | yes |
 | `tagged-lists.tex` | Declared list markers, bulleted and numbered | yes |
 | `tagged-table.tex` | A declared table grid with a header row | yes |
+| `metadata.tex` | The information dictionary, as YAML frontmatter | no |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
 The `.tex` is committed beside the `.pdf` so the fixture can be rebuilt and so the
@@ -85,7 +129,7 @@ assertion nobody can check.
 ## Rebuilding
 
 ```sh
-pdflatex -interaction=nonstopmode <name>.tex        # the six untagged fixtures
+pdflatex -interaction=nonstopmode <name>.tex        # the seven untagged fixtures
 lualatex -interaction=nonstopmode clauses.tex       # the tagged ones — see below
 lualatex -interaction=nonstopmode tagged-lists.tex
 lualatex -interaction=nonstopmode tagged-table.tex

@@ -505,8 +505,32 @@ The test that should have caught it is instructive about why a walk is not a cou
 `TestMDFrontmatterOffByDefault` asserted that every line the frontmatter emitted was a
 well-formed `key: value` pair, and it was — all 6 of them, where 12 belong, because `scalar()`
 omits a key whose value is empty and the loop only ever saw what was written. Nothing in the
-gold-fixture harness covers `-frontmatter` either, so the byte comparison that catches
-everything else in this repo never looked at this output at all.
+gold-fixture harness covered `-frontmatter` either, so the byte comparison that catches
+everything else in this repo had never looked at this output at all.
+
+That second half is now closed. `testdata/reference/metadata.pdf` is the tenth reference
+fixture and the only one that sets `Title`, `Author`, `Subject` or `Keywords` — LaTeX does not
+write `\title` into `/Info` without `hyperref`, so the absence was a property of the sources
+rather than of the engine. It carries a second gold file holding the whole expected output,
+with only the caller's own path substituted; the dates are asserted verbatim, because the PDF
+is pinned by SHA-256 and its `/CreationDate` is as fixed as its title.
+
+What that gold file adds is coverage of the *reader*, and the distinction was measured rather
+than argued. Mutating the writer — field order, quoting every value, dropping the blank line
+after the fence, emitting empty keys — is caught four times out of four by `sink/markdown`'s
+own unit tests, so against the writer the fixture asserts nothing new. Mutating
+`extract.metadata()` inverts it: reading `Subject` from `/Keywords`, `Creator` from
+`/Producer`, or `Modified` from `/CreationDate` each survives every test in the repository and
+dies only here. Each emits a complete, well-formed block of non-empty, plausible values, which
+is precisely what a presence check, a key count and a loader-validity check all pass. That is
+the general shape of what a gold file is for and the three cheaper checks are not: they
+establish that a value *is there* and *parses*, and only an independently authored expectation
+establishes that it is the *right* value in the *right* field.
+
+The fixture's two dates differ for the same reason. Built with `/ModDate` equal to
+`/CreationDate`, the third mutation above emitted a matching value and survived this test too
+— the assertion held by coincidence rather than by construction, which is the failure mode
+this whole section is about.
 
 ---
 

@@ -55,6 +55,7 @@ var referenceFixtures = []struct {
 	{"clauses", "numbered clause hierarchy from the structure tree"},
 	{"tagged-lists", "list markers the structure tree declares, bulleted and numbered"},
 	{"tagged-table", "a table grid the structure tree declares, with a header row"},
+	{"metadata", "a page whose point is its information dictionary: the prose must stay one paragraph"},
 }
 
 // TestReferenceFidelity is the assertion that must hold: the words the document
@@ -200,6 +201,15 @@ func TestReferenceExactMatch(t *testing.T) {
 		// green while this path emitted a transposed grid or lost a column.
 		"table": true,
 
+		// One paragraph of prose, exact on its first build — and here that is the assertion
+		// rather than a low bar. This fixture exists for its information dictionary, and the
+		// risk it carries is that loading hyperref to write one changes what the page says:
+		// the package's default is a coloured border around every link, and a fixture that
+		// silently gained a rule or a shifted baseline would be pinning the wrong document.
+		// Enforced so that stays true, with TestReferenceFrontmatter asserting the metadata
+		// itself.
+		"metadata": true,
+
 		// Not here, and measured rather than assumed: "text-styles" is not a styling gap
 		// at all. Every emphasis
 		// marker it emits is already byte-correct; its four one-line paragraphs arrive as
@@ -225,6 +235,75 @@ func TestReferenceExactMatch(t *testing.T) {
 			}
 			t.Logf("%s does not match exactly yet (%s):\n%s", f.name, f.why, diff(got, gold))
 		})
+	}
+}
+
+// TestReferenceFrontmatter is the byte comparison for "md -frontmatter", which until
+// this fixture existed had none.
+//
+// That gap is half of why objects/pdfcpu could drop the trailer's /Info entry and leave
+// every document's Title, Author, Subject, Keywords, Creator, Producer and dates empty
+// for the project's whole life with the suite green. Nothing in this harness — the only
+// place that compares output to an independently authored expectation — ran with the
+// flag on, and none of the other nine fixtures sets any of those four fields, so the
+// values most likely to be wrong were also the ones no gold file described. The other
+// half was TestMDFrontmatterOffByDefault, which checked that every emitted line was a
+// well-formed "key: value" and passed on six keys where twelve belong, because the
+// writer omits an empty value and the loop therefore only ever saw what was written. A
+// walk is not a count, and neither is a substring.
+//
+// Byte-exact and not a word comparison, because here the formatting *is* the content: a
+// key emitted at the wrong indent, a value quoted when it should be plain, or a field
+// arriving in a different position are all defects a word-sequence check would pass. It
+// is the whole file rather than the block alone so the flag is also shown not to disturb
+// the prose, and it holds the closing fence and the blank line after it — the boundary a
+// consumer splits on.
+//
+// What it adds over what was already here is the *reader*, not the writer, and that was
+// measured rather than assumed. Mutating sink/markdown — transposing the field order,
+// quoting every value, dropping the blank line, emitting empty keys — is caught four
+// times out of four by that package's own unit tests, so on the writer this asserts
+// nothing new. Mutating extract.metadata() is the opposite: reading Subject from
+// /Keywords and Keywords from /Subject, or Creator from /Producer and Producer from
+// /Creator, or Modified from /CreationDate, each survives every test in the repository (`go test ./...`, 23 packages with tests)
+// with -skip on this test and dies here. Every one of those emits a full, plausible,
+// well-formed block of non-empty values, which is exactly what a presence check, a key
+// count, and a loader-validity check all pass. Only an independently authored statement
+// of which value belongs in which field can tell them apart.
+//
+// That is also why the fixture's two dates differ. Built with /ModDate equal to
+// /CreationDate, the third mutation above emitted a matching value and survived this
+// test too — the assertion was true by coincidence. metadata.tex sets /ModDate to a
+// fixed date no clock here produces, so the coincidence is not available.
+//
+// One substitution, and only one: "source" is the path the caller typed, so it is not a
+// property of the document. Everything else, dates included, comes from the file — the
+// PDF is committed and pinned by SHA-256 in testdata/manifest.json, so its
+// /CreationDate is as fixed as its title. Asserting them is the point rather than an
+// over-reach: a date is exactly the field a reader is tempted to reformat, and the
+// contract is that we emit the string the producer wrote.
+//
+// The path is passed with forward slashes, which Windows accepts, and that is what makes
+// the substituted line an assertion rather than a restatement. A backslash forces
+// plainYAML to quote — "source: \"..\\\\..\\\\testdata\\\\...\"", correct YAML that reads
+// as though it might not be — so on this platform the value's rendering would depend on
+// the quoting rule the line is meant to be checking, and substituting yamlString's own
+// output would make that half of the comparison circular. With forward slashes the value
+// is plain, so the gold file states it verbatim and a change that quoted every value, or
+// escaped a separator, fails here. The quoted form has its own coverage: the title's
+// ": " is asserted quoted two lines up, and TestYAMLQuoting covers the escapes directly.
+func TestReferenceFrontmatter(t *testing.T) {
+	if _, err := os.Stat(filepath.Join("..", "..", "testdata", "reference", "metadata.pdf")); err != nil {
+		t.Skipf("metadata.pdf not built: %v", err)
+	}
+	pdf := "../../testdata/reference/metadata.pdf"
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "reference", "metadata.frontmatter.gold.md")) // #nosec G304 -- fixed test path
+	if err != nil {
+		t.Fatalf("gold file: %v", err)
+	}
+	want := strings.ReplaceAll(string(b), "{{source}}", pdf)
+	if got := mdOut(t, "-frontmatter", pdf); got != want {
+		t.Errorf("md -frontmatter does not match its gold file:\n%s", diff(got, want))
 	}
 }
 
