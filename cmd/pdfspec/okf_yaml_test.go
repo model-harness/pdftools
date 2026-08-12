@@ -43,8 +43,20 @@ func frontmatterOf(content string) (string, bool) {
 // pdf_unattributed and an int pdf_page rather than as a parse error, and is the case a
 // Contains assertion is least able to see. Two mutations were already caught elsewhere:
 // dropping a tags item's "- " fails TestBundleTags, and emitting a raw control byte fails
-// TestYAMLQuoting. One survives and is recorded rather than fixed: plainYAML's
-// leading/trailing-space rejection, which no value in the corpus exercises.
+// TestYAMLQuoting.
+//
+// plainYAML's leading/trailing-space rejection survives this walk and is covered
+// elsewhere, which is a distinction worth keeping straight: the rule's removal fails
+// TestYAMLQuoting, and this walk cannot reach it because 0 of 125 non-empty metadata
+// values across all 50 PDFs on disk carry edge whitespace. A corpus walk is evidence
+// about the corpus, so "survives here" means "no document exercises it" and not
+// "untested" — the two need different responses, and reading the first as the second
+// spends effort writing a test that already exists.
+//
+// Following that rule out is what found the Unicode line-break defect this walk also
+// cannot see: 0 of 23816 frontmatter lines it emits contain U+0085, U+2028 or U+2029,
+// so the walk would have stayed green through a plainYAML that emitted them raw and
+// truncated the block. See sink/markdown's TestYAMLQuoting for what they do.
 //
 // Finding the sources-nesting mutations required fixing the harness first. bundleOf did not
 // set Meta.Path, so builder.source() returned nothing and the bundle had no sources: block —
@@ -199,6 +211,16 @@ func TestOKFFrontmatterLoads(t *testing.T) {
 // asserting is not that the value is quoted but that the emitted bytes contain no line break
 // at all, which is what makes the fence unreachable regardless of what the value says.
 //
+// "No line break" has to mean the loader's alphabet, not Go's, and that is where this test
+// was thin. The ContainsAny check below looks for \n and \r; yaml.v2 also honours NEL, LS and
+// PS — U+0085, U+2028, U+2029 — which are multi-byte, so no byte-wise rule saw them and
+// plainYAML emitted them raw. That does not reach the fence: a second key cannot be injected,
+// because a colon needs a following space and the document stops parsing before one arrives.
+// What it does is truncate, silently. The value loads as everything before the break and every
+// key below it disappears, so a consumer reads a mapping with no pages, tagged or encrypted
+// and no error saying so. The round-trip half of this test catches it; the ContainsAny half
+// structurally cannot, which is the argument for having both.
+//
 // The other thing a title now decides is a directory name, since docID falls back to the
 // filename only when Title is empty. That is asserted in the package that owns the slugging,
 // as TestDocIDIsASafeSegment in sink/okf.
@@ -209,6 +231,14 @@ func TestFrontmatterCannotBeEscaped(t *testing.T) {
 		"trailing\n",
 		"\n---\n",
 		"plain: no",
+		// A line break yaml.v2 honours but strings.ContainsAny(s, "\n\r") does not
+		// see. Unescaped, "x" + LS + "---" truncates the block: the loader reads a
+		// scalar where the mapping continues and every key below title is dropped, so
+		// the pages, tagged and encrypted a consumer reads simply are not there. The
+		// round-trip assertion below is what catches it; the ContainsAny one cannot.
+		"x\u2028---\u2028y",
+		"x\u0085type: injected",
+		"x\u2029y",
 	} {
 		got := markdown.YAMLString(hostile)
 		if strings.ContainsAny(got, "\n\r") {

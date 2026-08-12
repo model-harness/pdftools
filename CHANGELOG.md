@@ -5,6 +5,44 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-12
+
+- **A Unicode line break in PDF metadata truncated the frontmatter block, dropping every
+  key below it.** YAML 1.2 §5.4 counts NEL (U+0085), LS (U+2028) and PS (U+2029) as line
+  breaks alongside LF and CR, and `gopkg.in/yaml.v2` implements it. `plainYAML` returned
+  true for a value containing one, because every rule in it scans **bytes** and these are
+  multi-byte in UTF-8 — the `c < 0x20` check reads a lead byte of 0xc2 or 0xe2 and passes it
+  through. Emitted raw, one of them ends the line: the loader reads the rest of the value as
+  a new line of the block, fails there, and everything below is gone. A `/Title` of
+  `x<LS>---<LS>y` loaded back as `x`, with `pages`, `tagged` and `encrypted` silently absent.
+  Quoting alone was not enough either — a raw NEL inside a quoted scalar loads back as a
+  plain space — so `yamlString` now emits YAML's own `\N`, `\L` and `\P`, `\xNN` being
+  defined only for 8-bit values. Both sinks were affected, since `sink/okf` writes through
+  `markdown.YAMLString`.
+- **Reachable from an untrusted file, and latent.** These strings come from `/Title`,
+  `/Author`, `/Subject`, `/Keywords`, `/Creator` and `/Producer`; LS is what a producer
+  writes for a line break inside a UTF-16BE text string. It is not an escalation — no second
+  key can be injected, because a colon needs a following space and the document stops
+  parsing before one is reached — but a consumer got a truncated mapping instead of an
+  error. **0 of 23816 frontmatter lines** the corpus emits carry one of the three, the same
+  shape as the 0-of-125 figure above and the reason no corpus test could have caught it.
+- **The blast radius is YAML and only YAML, checked rather than assumed.** Every
+  value-carrying write in `sink/okf/frontmatter.go` goes through `markdown.YAMLString`, so
+  that sink is covered by the same change. The other door these strings leave by is the
+  Markdown body: `oneLine` passes all three through, because its `isSpaceByte` guard tests
+  only `\n\r\t` and space and so returns early before `strings.Fields` — which would have
+  split on them — and a raw break reaches a link label and inline text. Rendered it is
+  harmless: `pandoc -f gfm` returns one intact `<a>` per case, the break collapsing to a
+  space. Left alone as a latent inconsistency rather than treated as a second defect;
+  Markdown has no construct these characters terminate, which is what makes YAML the
+  special case.
+- **`TestFrontmatterCannotBeEscaped` asserted the right property with the wrong alphabet.**
+  Its `strings.ContainsAny(s, "\n\r")` check cannot see a line break the loader honours; the
+  round-trip half is what catches these, and all three are now in its hostile list. Each
+  half of the fix is pinned independently: removing either the plain-scalar rejection or the
+  escape fails `TestYAMLQuoting`, `TestQuotingRoundTrips` and
+  `TestFrontmatterCannotBeEscaped`.
+
 ### Added — 2026-08-12
 
 - **A gold fixture for `md -frontmatter`, which had none.** `testdata/reference/metadata.pdf`
@@ -29,6 +67,25 @@ All notable changes to this project are documented here, following
   check all pass. Only an independently authored statement of *which* value belongs in *which*
   field separates them. Reverting the `Info` fix also fails here, with all four identity fields
   gone.
+- **A round-trip property for the YAML quoting rule, and three whitespace positions the
+  table was missing.** Chasing the recorded survivor above found the record wrong twice over.
+  The rule is not uncovered — `TestYAMLQuoting`'s `" a"` case kills its outright removal — and
+  the corpus walk cannot reach it because **0 of 125 non-empty metadata values across all 50
+  PDFs on disk carry edge whitespace**, so it was never a corpus survivor in the first place.
+  What *was* uncovered is narrower and invisible from a single example: a rule checking
+  **leading space alone, or trailing alone, survives every test in the repository**, because
+  one point pins one position of a four-position property. All four are now in the table.
+  The two tab cases belong to the control-byte rule rather than the space rule (a tab is
+  0x09), and taking that one step further found a real defect rather than an equivalent
+  mutant — see **Fixed**, below.
+- **`TestQuotingRoundTrips` is the generalization.** Whatever `yamlString` emits, a loader
+  must hand back the string it was given, as a `string` — asserted over all 30 cases in the
+  table plus non-ASCII ones from the corpus. That is what the whitespace class needs, because
+  a loader *strips* edge whitespace rather than rejecting it (`title: a ` loads as `a`, no
+  error), so the failure is a corrupted value inside a perfectly valid document and no check
+  on parseability can see it. Same for the coercions: `1.7` as a `float64` is valid YAML and
+  is no longer the version string of the document. It kills three of the four mutations above
+  independently of the table.
 - **The fixture's two dates differ on purpose.** `\pdfinfo{/ModDate (D:20240131120000Z)}` sets
   a date no clock here produces, which pdfTeX honours while still writing its own
   `/CreationDate`. Built with the two equal, the `Modified`-from-`/CreationDate` mutation
@@ -72,7 +129,9 @@ All notable changes to this project are documented here, following
   top-level `by`, moving provenance out of the field OKF defines it in — and removing
   `yamlReserved`, which coerces **2195** scalars including 29 booleans and two clause titles
   that are bare numbers. One survivor is recorded rather than fixed: `plainYAML`'s
-  leading/trailing-space rejection, which no corpus value exercises.
+  leading/trailing-space rejection, which no corpus value exercises. (Followed up the next
+  day — see 2026-08-12 below. The rule was already covered; what the record got wrong was
+  reading "survives a corpus walk" as "untested".)
 - **`TestMDFrontmatterOffByDefault` now counts the keys it walks.** It checked that every line
   the frontmatter emitted was a well-formed `key: value` — but `scalar()` omits a key whose
   value is empty, so the loop passed over a block missing most of its fields. That is why the

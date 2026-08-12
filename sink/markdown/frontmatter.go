@@ -100,6 +100,11 @@ func yamlString(s string) string {
 	sb.Grow(len(s) + 2)
 	sb.WriteByte('"')
 	for i := 0; i < len(s); i++ {
+		if esc, n := yamlLineBreak(s[i:]); n > 0 {
+			sb.WriteString(esc)
+			i += n - 1
+			continue
+		}
 		c := s[i]
 		switch c {
 		case '"', '\\':
@@ -128,6 +133,32 @@ func yamlString(s string) string {
 	return sb.String()
 }
 
+// yamlLineBreak reports the escape for a Unicode line break at the start of s, and how
+// many bytes it spans, or 0 if there is none.
+//
+// YAML 1.2 §5.4 counts NEL, LS and PS as line breaks alongside LF and CR, and
+// gopkg.in/yaml.v2 implements it: a raw one in a plain scalar ends the line, so the rest
+// of the block becomes a continuation of a value it was never part of. They are multi-byte
+// in UTF-8, which is why the byte scans elsewhere in this file cannot see them — a check
+// for c < 0x20 reads the lead byte 0xc2 or 0xe2 and passes it through. The escapes are
+// YAML's own single-character ones rather than \xNN, which is defined only for 8-bit
+// values.
+//
+// A PDF /Title can contain any of the three. LS in particular is what a producer writes
+// for a line break inside a UTF-16BE text string, so this is reachable input rather than
+// a theoretical case.
+func yamlLineBreak(s string) (string, int) {
+	switch {
+	case strings.HasPrefix(s, "\u0085"):
+		return "\\N", len("\u0085")
+	case strings.HasPrefix(s, "\u2028"):
+		return "\\L", len("\u2028")
+	case strings.HasPrefix(s, "\u2029"):
+		return "\\P", len("\u2029")
+	}
+	return "", 0
+}
+
 // plainYAML reports whether s can be written unquoted as a YAML flow scalar.
 //
 // Conservative on purpose: every case it rejects is still emitted correctly, just
@@ -154,6 +185,13 @@ func plainYAML(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c < 0x20 || c == 0x7f {
+			return false
+		}
+		// And the line breaks a byte scan cannot see. Unquoted, one of these ends the
+		// line: everything after it in the value becomes a new line of the block, and
+		// the block stops parsing at that point — every key below it is lost. See
+		// yamlLineBreak.
+		if _, n := yamlLineBreak(s[i:]); n > 0 {
 			return false
 		}
 		// A backslash is literal in a plain scalar and an escape introducer in a

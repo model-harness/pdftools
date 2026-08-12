@@ -480,14 +480,70 @@ every scalar loads back as a string. It kills four mutations the previous suite 
 two-space `indented()`, a `sources` entry without its `- `, an unindented `generated.by`
 (which parses as `generated: null` beside a top-level `by`, moving provenance out of its
 field), and removing `yamlReserved` (which coerces 2195 scalars, including 29 booleans and two
-clause titles that are bare numbers). `plainYAML`'s leading/trailing-space rejection is a
-recorded survivor: no corpus value exercises it.
+clause titles that are bare numbers).
+
+`plainYAML`'s leading/trailing-space rejection was recorded as a survivor of that walk, and
+following it up found the record was the wrong shape twice over. The rule is not uncovered —
+`TestYAMLQuoting`'s `" a"` case kills its outright removal, and the corpus walk cannot see it
+because **0 of 125 non-empty metadata values across all 50 PDFs on disk carry edge
+whitespace**, so it was never a corpus survivor to begin with. What *was* uncovered is
+narrower and was invisible from a single point: a rule checking leading space alone, or
+trailing alone, survives every test in the repository, because one example of a four-position
+property pins one position. Both are now in the table, along with the tabs.
+
+The tab cases belong to a different rule — a tab is 0x09, so the control-byte rejection two
+rules later catches it — and following *that* out is what found a defect in shipped code.
+The record claimed narrowing `TrimSpace` to `Trim(s, " ")` was an equivalent mutant, on the
+reasoning that everything the narrowed rule stops rejecting is rejected later anyway. True
+for a tab, false in general: `TrimSpace` trims every rune `unicode.IsSpace` accepts, and the
+ones above 0x7f are multi-byte, so **no byte-wise rule in `plainYAML` could see them** — the
+`c < 0x20` scan reads a lead byte of 0xc2 or 0xe2 and passes it through.
+
+Three of those runes are line breaks. YAML 1.2 §5.4 counts NEL (U+0085), LS (U+2028) and PS
+(U+2029) alongside LF and CR, and `gopkg.in/yaml.v2` implements it. `plainYAML` returned true
+for a value containing one, so it was written unquoted, and unquoted it **ends the line**: the
+loader reads the rest of the value as a new line of the block, fails there, and every key
+below it is gone. A `/Title` of `x<LS>---<LS>y` loaded back as `x` with `pages`, `tagged` and
+`encrypted` silently absent. Quoting alone was not enough either — a raw NEL inside a quoted
+scalar loads back as a plain space — so `yamlString` now emits YAML's own `\N`, `\L` and `\P`,
+`\xNN` being defined only for 8-bit values. Both halves are pinned independently: removing
+either the plain-scalar rejection or the escape fails `TestYAMLQuoting`,
+`TestQuotingRoundTrips` and `TestFrontmatterCannotBeEscaped`.
+
+It is reachable from an untrusted file and it was latent: **0 of 23816 frontmatter lines**
+the corpus emits carry one of the three, which is the same shape as the 0-of-125 figure above
+and the reason no corpus test could have found it. It is not an escalation — no second key can
+be injected, because a colon needs a following space and the document fails to parse before
+one is reached — but a consumer reading the frontmatter of an attacker-supplied PDF got a
+truncated mapping rather than an error. `TestFrontmatterCannotBeEscaped` had asserted the
+right property and measured it with the wrong alphabet: `strings.ContainsAny(s, "\n\r")`
+cannot see a line break the loader honours. Its round-trip half is what catches these.
+
+The blast radius is YAML and only YAML, which was worth checking rather than assuming, since
+the same strings leave through two other doors. Every value-carrying write in
+`sink/okf/frontmatter.go` goes through `markdown.YAMLString`, so that sink is fixed by the
+same change. The other door is the Markdown body: `oneLine` passes all three through — its
+`isSpaceByte` guard tests `\n\r\t` and space, so it returns early before `strings.Fields`,
+which would have split on them — and a raw break therefore reaches a link label and inline
+text. Rendered, it is harmless: `pandoc -f gfm` returns one intact `<a>` for each of the
+three, the break collapsing to a space. So `oneLine`'s narrow alphabet is a latent
+inconsistency rather than a second defect, and it is left alone. Markdown has no construct
+these characters terminate, which is exactly what makes YAML the special case.
+
+The generalization is `TestQuotingRoundTrips`, which asserts the property the table's points
+are examples of: whatever `yamlString` emits, a loader hands back the string it was given, as a
+string. That is the assertion the whitespace class actually needs, because a loader *strips*
+edge whitespace rather than rejecting it — `title: a ` loads as `a` with no error — so the
+failure is a corrupted value inside a perfectly valid document, which no check on parseability
+can see. The same holds for the coercions: `1.7` arriving as a `float64` is valid YAML and is
+no longer the version string of the document.
 
 Reading metadata made an untrusted string reach output that never carried one before, so two
 properties are now asserted rather than inferred. No emitted scalar can contain a line break —
 `YAMLString` writes a newline as the two characters `\n`, so a title of `x\n---\ntype: other`
-cannot close the frontmatter fence early — and it still loads back byte-identical, because
-escaping that corrupts a value is a different defect from escaping that breaks a document. The
+cannot close the frontmatter fence early, and the three Unicode line breaks above are escaped
+for the same reason — and it still loads back byte-identical, because escaping that corrupts a
+value is a different defect from escaping that breaks a document. The
 title also names the bundle's root directory now, where before it was always the filename;
 `kebab`'s `[a-z0-9]`-and-dashes allowlist makes traversal structurally impossible rather than
 filtered, so `../../etc/passwd` becomes `etc-passwd`.
