@@ -158,21 +158,24 @@ func (w *writer) delimiter(width int) {
 // The cell flag is passed through for the one path escapeInto does not reach, a code
 // span, which writeCode emits verbatim — see the pipe rule there.
 //
-// Alt takes precedence over the spans, matching content: /ActualText and /Alt are the
-// producer's statement of what the content says when the glyphs do not spell it, so
-// preferring the glyphs emits the thing the producer went out of its way to correct.
-// sectionize sets it on a table cell like any other block, and this is the one walker
-// that did not honour it — a TD with /ActualText emitted its glyphs here while the same
-// text in a paragraph emitted the correction. Nothing on disk holds one: 218 blocks in the
-// corpus have Alt and none of them is a cell, so the test is the only thing that can catch
-// this. atStart is false, unlike in content, because a cell is inline context — a leading
-// "-" or "#" inside one is not a list marker or a heading, and escaping it would put a
-// backslash in front of every cell that opens with a dash.
+// Substituted text takes precedence over the spans, on substitute's rule and for the
+// reason content states: /ActualText is a correction the producer made deliberately, and
+// /Alt stands in only where the cell draws nothing. sectionize sets both on a table cell
+// like any other block, and this is the one walker that did not honour either — a TD with
+// /ActualText emitted its glyphs here while the same text in a paragraph emitted the
+// correction. Nothing on disk holds one: 218 blocks in the corpus carry Alt or Replacement
+// and none of them is a cell — and no block anywhere carries a Replacement at all, since
+// every /ActualText on disk is on a Span rather than on a block-level element. So the test
+// is the only thing that can catch this, for both fields and not just for the rare one.
+//
+// atStart is false, unlike in content, because a cell is inline context — a leading "-" or "#"
+// inside one is not a list marker or a heading, and escaping it would put a backslash in
+// front of every cell that opens with a dash.
 func cellText(b doc.Block, opt Options) string {
 	_ = opt
-	if b.Alt != "" {
+	if text := substitute(b); text != "" {
 		var sb strings.Builder
-		escapeInto(&sb, oneLine(b.Alt), false)
+		escapeInto(&sb, oneLine(text), false)
 		return strings.TrimSpace(sb.String())
 	}
 	return strings.TrimSpace(oneLine(inline(b.Spans, false, true)))

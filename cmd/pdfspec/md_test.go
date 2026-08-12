@@ -282,11 +282,25 @@ func TestMDFlatEmitsNoHeadings(t *testing.T) {
 // from structure elements, and /Alt is text a producer supplied for content the glyphs
 // do not spell — a figure's description. Nothing draws it on the page, so the layout
 // path cannot see it at all. Measured, letters and digits: 33 on PDF20_AN002-AF, 44 on
-// WTPDF, 9,524 on ISO 32000-2, each equal to the outline's own /Alt total to the
-// character. That equality is the assertion — an outline gaining letters from anywhere
-// but /Alt would be inventing text.
+// WTPDF, 9,524 on ISO 32000-2, and 33 on PDF20_AN001-BPC, each equal to the outline's
+// substituted total to the character. That equality is the assertion — an outline gaining
+// letters from anywhere but a substitution would be inventing text.
+//
+// Substituted, not /Alt: those are different quantities and the difference is the defect
+// this file caught. The sink substitutes /ActualText always and /Alt only over a block
+// that draws nothing, so an /Alt on a block with real text contributes to neither side.
+// AN001 is here because it is the corpus's only such block — its illustration's /Alt is
+// 212 letters against the 33 that get substituted, and the 179-letter gap is what the
+// merged model used to write over three real captions. Asserting against the /Alt total
+// instead would demand that loss back.
+//
+// The /ActualText arm of that rule contributes 0 here and cannot contribute more: every
+// one of the 4803 /ActualText values on disk is on an inline Span, which never becomes a
+// block, so no corpus file can exercise it. It is written into the sum so that the day a
+// producer puts one on a Figure the assertion already covers it.
 func TestMDOutlineConservesText(t *testing.T) {
 	for _, file := range []string{
+		"PDF20_AN001-BPC.pdf",
 		"PDF20_AN002-AF.pdf",
 		"Well-Tagged-PDF-WTPDF-1.0.pdf",
 		"ISO_32000-2_sponsored_EC3.pdf",
@@ -320,15 +334,21 @@ func TestMDOutlineConservesText(t *testing.T) {
 				}
 			}
 			_, o, _ := outlineOf(t, file)
-			alt := 0
+			subst, altTotal := 0, 0
 			forEachBlock(o, func(b doc.Block) {
-				alt += alnumLen(b.Alt)
+				altTotal += alnumLen(b.Alt)
+				switch {
+				case b.Replacement != "":
+					subst += alnumLen(b.Replacement)
+				case b.Alt != "" && strings.TrimSpace(b.Text()) == "":
+					subst += alnumLen(b.Alt)
+				}
 			})
-			if gained != alt {
-				t.Errorf("outline gained %d letters and digits but carries %d of /Alt: the difference is invented",
-					gained, alt)
+			if gained != subst {
+				t.Errorf("outline gained %d letters and digits but substitutes %d: the difference is invented",
+					gained, subst)
 			}
-			t.Logf("no letter lost, %d gained, all of it /Alt", gained)
+			t.Logf("no letter lost, %d gained, all of it substituted; /Alt totals %d", gained, altTotal)
 		})
 	}
 }

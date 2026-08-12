@@ -514,14 +514,93 @@ func TestCaptionSuppressesInnerEmphasis(t *testing.T) {
 	}
 }
 
-// /Alt and /ActualText are the producer's statement of what content says when the
-// glyphs do not spell it. Preferring the glyphs would emit the thing the producer
-// went out of its way to correct.
-func TestAltPreferredOverSpans(t *testing.T) {
+// A caption's surrounding whitespace comes off before the "*", because CommonMark §6.2
+// forbids an opening delimiter followed by whitespace: "*  x *" is a bullet whose item ends
+// in a stray asterisk, confirmed with pandoc -f gfm. Two lines on disk emitted it —
+// Well-Tagged-PDF-WTPDF-1.0.pdf's "cube root of x", and PDF20_AN001-BPC.pdf's three figure
+// captions, which sit behind 100 spaces of two-column padding and became reachable when
+// /Alt stopped substituting over them.
+//
+// The padding is asserted on both sides so the fix cannot be a TrimLeft: a trailing space
+// before the closing "*" breaks the emphasis at the other end, by the same rule.
+func TestCaptionTrimsWhitespaceBeforeEmphasis(t *testing.T) {
+	b := doc.Block{Role: doc.RoleCaption, Spans: []doc.Span{span("   RGB source: Continuous tone to black  ")}}
+	if got := render(t, b); got != "*RGB source: Continuous tone to black*\n" {
+		t.Errorf("got %q, want the padding outside the delimiters", got)
+	}
+}
+
+// A caption whose text is all whitespace emits nothing. "**" is a literal pair of
+// asterisks, and an empty emphasized line is a line of markup describing no content.
+func TestBlankCaptionEmitsNothing(t *testing.T) {
+	b := doc.Block{Role: doc.RoleCaption, Spans: []doc.Span{span("   ")}}
+	if got := render(t, b); got != "" {
+		t.Errorf("got %q, want nothing", got)
+	}
+}
+
+// /ActualText is the producer's statement of what content says when the glyphs do not
+// spell it. Preferring the glyphs would emit the thing the producer went out of its way
+// to correct.
+func TestReplacementPreferredOverSpans(t *testing.T) {
 	b := para(span("gibberish"))
-	b.Alt = "The actual text"
+	b.Replacement = "The actual text"
 	if got := render(t, b); got != "The actual text\n" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// /Alt does not replace text, and this is the assertion that separates it from
+// /ActualText. §14.9.3 makes /Alt a description for a reader who cannot see the content,
+// not a statement of what the content says, so a block that draws text keeps its text.
+//
+// The two were one field until PDF20_AN001-BPC.pdf showed what that costs. Its
+// illustration is a Figure carrying an /Alt that paraphrases the whole picture, and inside
+// that same Figure are three captions drawn as real text — "RGB source: Continuous tone to
+// black" and two more. Substituting deleted all three, 129 characters, and the paraphrase
+// that replaced them made the loss nearly invisible to a letter count: the flat conversion
+// held just 2 letters the outline did not.
+func TestAltDoesNotReplaceSpans(t *testing.T) {
+	b := para(span("RGB source: Continuous tone to black"))
+	b.Alt = "Illustration of Black Point Compensation"
+	if got := render(t, b); got != "RGB source: Continuous tone to black\n" {
+		t.Errorf("got %q, want the page's own text", got)
+	}
+}
+
+// Where both are present /ActualText wins, because it is the only one of the two that
+// claims to say what the content is.
+func TestReplacementWinsOverAlt(t *testing.T) {
+	b := para(span("gibberish"))
+	b.Alt = "a description"
+	b.Replacement = "the actual text"
+	if got := render(t, b); got != "the actual text\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// The same precedence over blank spans, which is the only state where the order of
+// substitute's two branches is observable and so the only thing that pins it. With text
+// present the /Alt branch is excluded by its own blank-text condition, so the test above
+// passes whichever branch is tried first: review caught the swap surviving the whole
+// package. Here both branches qualify and exactly one can win.
+func TestReplacementWinsOverAltWhenSpansAreBlank(t *testing.T) {
+	b := doc.Block{Role: doc.RoleFigure, Spans: []doc.Span{span("   ")}}
+	b.Alt = "a description"
+	b.Replacement = "the actual text"
+	if got := render(t, b); got != "*the actual text*\n" {
+		t.Errorf("got %q, want /ActualText: it says what the content is, /Alt only describes it", got)
+	}
+}
+
+// A block whose spans are all whitespace has nothing to see, so /Alt is the only text
+// there is and does stand in. This is the 217-of-218 case on disk, and it is what keeps
+// the split from silencing accessible figures.
+func TestAltStandsInForBlankSpans(t *testing.T) {
+	b := doc.Block{Role: doc.RoleFigure, Spans: []doc.Span{span("   ")}}
+	b.Alt = "A diagram"
+	if got := render(t, b); got != "*A diagram*\n" {
+		t.Errorf("got %q, want the description: the spans draw nothing", got)
 	}
 }
 

@@ -528,9 +528,10 @@ func (b *builder) emit(e *tag.Elem, role doc.Role, spans []*doc.Span, pg span) {
 // pass one by accident.
 func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg span, marker string) {
 	blk := doc.Block{
-		Role: role,
-		Lang: e.Lang,
-		Alt:  alt(e),
+		Role:        role,
+		Lang:        e.Lang,
+		Alt:         e.Alt,
+		Replacement: e.ActualText,
 	}
 	if role == doc.RoleListItem {
 		blk.Level = listDepth(e)
@@ -579,17 +580,6 @@ func (b *builder) place(blk doc.Block, pg span) {
 	if pg.hi > sec.LastPage {
 		sec.LastPage = pg.hi
 	}
-}
-
-// alt returns the element's replacement or alternate text, preferring /ActualText.
-// /ActualText says what the content *is* where the glyphs do not spell it;
-// /Alt describes it for a reader who cannot see it. For a Figure only /Alt exists,
-// and it is the only text there is.
-func alt(e *tag.Elem) string {
-	if e.ActualText != "" {
-		return e.ActualText
-	}
-	return e.Alt
 }
 
 // markItem records a list item's marker, from the producer's declaration where there is
@@ -902,10 +892,11 @@ func (ix *index) unplaced(d *doc.Document) []doc.Page {
 		for bi := range p.Blocks {
 			blk := &p.Blocks[bi]
 			keep := doc.Block{
-				Role:  blk.Role,
-				Level: blk.Level,
-				Lang:  blk.Lang,
-				Alt:   blk.Alt,
+				Role:        blk.Role,
+				Level:       blk.Level,
+				Lang:        blk.Lang,
+				Alt:         blk.Alt,
+				Replacement: blk.Replacement,
 			}
 			for si := range blk.Spans {
 				sp := &blk.Spans[si]
@@ -921,8 +912,9 @@ func (ix *index) unplaced(d *doc.Document) []doc.Page {
 			if keep.IsEmpty() {
 				continue
 			}
-			// An Alt on a block whose spans were all claimed would otherwise reappear
-			// here as content with no text, since IsEmpty treats Alt as content.
+			// An Alt or Replacement on a block whose spans were all claimed would
+			// otherwise reappear here as content with no text, since IsEmpty treats
+			// both as content.
 			if len(keep.Spans) == 0 {
 				continue
 			}

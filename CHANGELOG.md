@@ -7,6 +7,82 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-12
 
+- **A figure's `/Alt` was substituted over real page text, deleting three captions.**
+  `doc.Block.Alt` carried both `/Alt` and `/ActualText`, which are opposite operations:
+  §14.9.4 makes `/ActualText` a *replacement* for content, §14.9.3 makes `/Alt` a
+  *description* of it. One field cannot say which it holds, so every sink had to pick one
+  behaviour for both and picked substitution. On `PDF20_AN001-BPC.pdf` the illustration is a
+  `Figure` whose `/Alt` paraphrases the whole picture, and inside that same `Figure` three
+  captions are drawn as real text (MCID 271) — all three were written over. **129 characters
+  on the one block in the corpus where the two disagree.** Fixed in the model rather than in
+  the sink, because the sink had nothing to decide on: `Replacement` is now a field of its
+  own, `sectionize` stops collapsing the two (the `alt()` helper that preferred
+  `/ActualText` and discarded `/Alt` is gone), and one `substitute()` rule serves both
+  markdown walkers and the OKF sink — `/ActualText` always stands in, `/Alt` only where the
+  block draws nothing. Picking "description" for both instead would have broken the case
+  `/ActualText` exists for.
+- **The corpus decided the shape of that fix, and one of its zeros is a wiring gap rather
+  than an absence.** Of the 218 blocks carrying either field, **217 are `/Alt` on a block
+  with no text** — where substitution is right and is the only text there is — and 1 is the
+  AN001 figure. **0 carry a `/ActualText`**, and that is not because the construct is rare:
+  there are **4803 of them across the 51 PDFs on disk**, and every one is on an inline `Span`
+  element, which `sectionize` never lifts into a block. So the substitution branch never
+  fired correctly on disk, only wrongly, and the `Replacement` arm is a correct model of
+  §14.9.4 that no corpus file currently reaches — its rule rests on unit tests, which is
+  recorded at the branch rather than left to be inferred from a passing suite.
+- **The existing conservation test could have caught this and was not pointed at the file.**
+  `TestMDOutlineConservesText` reports `missing=2` on AN001 under the old model — only 2
+  because the paraphrase re-uses the captions' own words, which is how a paraphrasing `/Alt`
+  hides its own damage from a letter count. AN001 is now first in its file list. The
+  assertion also had to change: it compares the outline's gain against the **substituted**
+  total, not the total `/Alt`, because on this file those differ — **212 letters of `/Alt`
+  against 33 substituted**, and asserting against the total would demand the 179-letter loss
+  back. After the fix `missing=0` on all four files and `gained` equals the substituted total
+  exactly (33 / 33 / 44 / 9524).
+- **A caption wrapped in emphasis without trimming emitted a bullet instead.** CommonMark
+  §6.2 forbids an opening emphasis delimiter followed by whitespace, so `*   text *` renders
+  as `<ul><li>text *</li></ul>` — confirmed with `pandoc -f gfm`. The caption/figure branch
+  wrapped unconditionally, and the recovered captions arrive behind ~100 spaces of
+  two-column padding. **Pre-existing, not introduced by the change above**:
+  `Well-Tagged-PDF-WTPDF-1.0.pdf` emitted `* cube root of x *` at line 856 on the unmodified
+  tree, proven by stashing the fix and re-running. The `/Alt` fix made a second instance
+  reachable and the trim takes both to 0 — **2 → 0 broken-emphasis lines corpus-wide**. A
+  caption's leading space is a producer's positioning and carries no meaning, where inside a
+  paragraph it separates words and must survive, so the trim is at the caption branch and
+  not in `oneLine`.
+- **Both new rules were mutation-tested.** Restoring the defect — `/Alt` substitutes
+  unconditionally — is killed by `TestAltDoesNotReplaceSpans`,
+  `TestCellAltDoesNotReplaceSpans` and `TestMDOutlineConservesText/PDF20_AN001-BPC.pdf`, so
+  it fails at both the unit and the corpus level. Dropping the caption trim is killed by
+  `TestCaptionTrimsWhitespaceBeforeEmphasis`. Five existing tests were pinning the merged
+  contract by setting `.Alt` where they meant `/ActualText` and were moved to the split
+  model; `TestAltPreferredOverSpans` was pinning the defect itself and became a
+  `/ActualText` test plus a new `/Alt`-does-not-replace test.
+- **Review found two of the new rules unpinned, and one of them let the original defect
+  back in.** Mutation testing before review covered the rules it occurred to me to break.
+  Two it missed: swapping the order of `substitute`'s branches so `/Alt` is tried first
+  **survived the whole `sink/markdown` package**, because precedence is only observable when
+  both fields are set *and* the spans are blank — with text present the `/Alt` branch excludes
+  itself, so the existing both-fields test passes either way. And in `sink/okf`, reinstating
+  the original defect outright — `/Alt` substituting unconditionally — **passed every test in
+  the repository**, since `describe` had no test touching either field and the corpus reaches
+  neither branch. Fixed with `TestReplacementWinsOverAltWhenSpansAreBlank` and a four-case
+  `TestDescribeSubstitutesReplacementNotAlt`; both mutations now fail, re-verified by applying
+  each one again. The lesson is the general one: a rule whose corpus population is 0 is held
+  by unit tests alone, so "the suite is green" says nothing about it.
+- **One review claim was wrong and is worth recording, because it points the other way.**
+  The reviewer reported that AN001's figure `/Alt` "is NOT dropped, it's emitted correctly",
+  generalizing from a synthetic blank-span fixture. Grepping the actual output for the
+  paraphrase returns **0**. It is dropped, deliberately — see `DESIGN.md`, which records that
+  trade rather than leaving it implied.
+- **The U+FFFD in that figure's alt text is correct and was checked rather than assumed.**
+  The file genuinely stores a trailing `0x00` on object 147's `/Alt`, `DecodeTextString`
+  decodes it faithfully, and CommonMark §2.3 requires U+0000 be replaced — a policy already
+  pinned at `sink/markdown/inline_test.go`. Also confirmed while comparing against the
+  Acrobat page renderings: the `- ****` doubled-marker defect recorded in this file, in
+  `DESIGN.md` and in ADR 0011 is **gone** from current output, and the running
+  header/footer artifacts are correctly suppressed.
+
 - **The synthetic structure-tree root claimed `Document`, inflating that role's count for
   almost every tagged file.** `/StructTreeRoot` has `/K` but no `/S`, so it is not a
   structure element; `tag.Read` synthesizes a root `Elem` to start the walk from and gave it

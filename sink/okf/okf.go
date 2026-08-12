@@ -557,8 +557,14 @@ func describe(blocks []doc.Block) string {
 		if b.Role == doc.RoleArtifact || b.IsEmpty() {
 			continue
 		}
+		// /ActualText replaces the glyphs; /Alt only stands in for a block that draws
+		// nothing, since it describes content rather than restating it. The same rule
+		// the markdown sink applies, for the same reason — a description substituted
+		// over real text deletes that text from the index entry too.
 		text := b.Text()
-		if b.Alt != "" {
+		if b.Replacement != "" {
+			text = b.Replacement
+		} else if b.Alt != "" && strings.TrimSpace(text) == "" {
 			text = b.Alt
 		}
 		if t := firstSentence(collapse(text)); t != "" {

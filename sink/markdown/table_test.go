@@ -219,13 +219,14 @@ func TestCellLeadingSpaceIsTrimmed(t *testing.T) {
 		t.Errorf("monospaced: got\n%q\nwant\n%q", got, want)
 	}
 
-	// Alt returns before the spans are ever read, so its trim is a separate statement.
-	// Nothing on disk reaches it: sectionize sets Alt on 218 blocks across the 50 documents
-	// and none of them is a cell, so dropping this trim is a mutation only this assertion
-	// can catch. (Alt arrives from the structure tree, not from the page — extract sets it
-	// on 0 blocks — so the tagged path is the only one that could reach it at all.)
+	// Substituted text returns before the spans are ever read, so its trim is a separate
+	// statement. Nothing on disk reaches it: sectionize sets Alt or Replacement on 218 blocks
+	// across the 50 documents and none of them is a cell, so dropping this trim is a mutation
+	// only this assertion can catch. (Both arrive from the structure tree, not from the page —
+	// extract sets them on 0 blocks — so the tagged path is the only one that could reach
+	// either at all.)
 	c := cell(1, 0, 0, true, "drawn")
-	c.Alt = " corrected"
+	c.Replacement = " corrected"
 	got = renderBlocks(t, c)
 	want = "| corrected |\n| --- |\n"
 	if got != want {
@@ -306,15 +307,29 @@ func TestPipeInMonospaceParagraphIsNotEscaped(t *testing.T) {
 	}
 }
 
-// Alt is the producer's statement of what a cell says where the glyphs do not spell it, and
-// it wins over the spans here exactly as it does in a paragraph. This walker was the one that
-// ignored it. Its pipe is escaped too, since Alt is a plain string and reaches the row
-// through escapeInto rather than through any code span.
-func TestCellPrefersAltOverSpans(t *testing.T) {
+// /ActualText is the producer's statement of what a cell says where the glyphs do not spell
+// it, and it wins over the spans here exactly as it does in a paragraph. This walker was the
+// one that ignored it. Its pipe is escaped too, since it is a plain string and reaches the
+// row through escapeInto rather than through any code span.
+func TestCellPrefersReplacementOverSpans(t *testing.T) {
 	c := cell(1, 0, 0, true, "glyphs")
-	c.Alt = "a|b"
+	c.Replacement = "a|b"
 	got := renderBlocks(t, c)
 	want := "| a\\|b |\n| --- |\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A cell's /Alt describes it and does not replace it, on substitute's rule. Asserted here as
+// well as in the paragraph walker because cellText holds its own copy of the precedence and
+// nothing on disk would catch the two drifting apart: no cell in the corpus carries either
+// field.
+func TestCellAltDoesNotReplaceSpans(t *testing.T) {
+	c := cell(1, 0, 0, true, "glyphs")
+	c.Alt = "a description"
+	got := renderBlocks(t, c)
+	want := "| glyphs |\n| --- |\n"
 	if got != want {
 		t.Errorf("got\n%q\nwant\n%q", got, want)
 	}
@@ -324,9 +339,9 @@ func TestCellPrefersAltOverSpans(t *testing.T) {
 // with "-" is a dash, not a list marker. content passes atStart true because a block can
 // begin a line; a cell never can, and escaping there would put a backslash in front of every
 // cell that starts with a dash — the corpus is full of them.
-func TestAltCellDoesNotEscapeLineStartCharacters(t *testing.T) {
+func TestSubstitutedCellDoesNotEscapeLineStartCharacters(t *testing.T) {
 	c := cell(1, 0, 0, true, "glyphs")
-	c.Alt = "-5 to +5"
+	c.Replacement = "-5 to +5"
 	got := renderBlocks(t, c)
 	want := "| -5 to +5 |\n| --- |\n"
 	if got != want {

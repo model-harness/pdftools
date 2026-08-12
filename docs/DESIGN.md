@@ -1437,11 +1437,60 @@ OKF-ified spec.
   actually missing was a test at the trim: deleting it leaves all of `sink/markdown` green and
   fails only `TestReferenceExactMatch/table` two packages away, as a whole-document byte diff
   naming no cause. `TestCellLeadingSpaceIsTrimmed` now pins all three paths — plain, code span,
-  and `Alt`, which returns before the spans are read and therefore trims separately — and kills
-  four mutations, including weakening either `TrimSpace` to `TrimRight`. The `Alt` one is
-  reachable from no document: `sectionize` sets `Alt` on 218 blocks across the 50 and none is a
-  cell. `Alt` comes from the structure tree rather than the page — `extract` sets it on 0
-  blocks — so the tagged path is the only one that could reach that branch at all.
+  and the substituted path, which returns before the spans are read and therefore trims
+  separately — and kills four mutations, including weakening either `TrimSpace` to
+  `TrimRight`. That third one is reachable from no document: `sectionize` sets `Alt` on 218
+  blocks across the 50 and none is a cell. `Alt` comes from the structure tree rather than the
+  page — `extract` sets it on 0 blocks — so the tagged path is the only one that could reach
+  that branch at all. (The fixture now sets `Replacement`, since the split below made `Alt`
+  alone insufficient to reach a substitution over a cell that draws text.)
+- **`/Alt` and `/ActualText` were one field, and merging two opposite spec operations
+  deleted page text.** §14.9.3 makes `/Alt` a *description* of content; §14.9.4 makes
+  `/ActualText` a *replacement* for it. `doc.Block.Alt` held both, so a sink had to choose one
+  behaviour for both and chose substitution — writing a figure's description over three
+  captions drawn as real text inside that same figure on `PDF20_AN001-BPC.pdf`, 129
+  characters. Fixed in the model: `Replacement` is a field of its own and one `substitute()`
+  rule serves both markdown walkers and the OKF sink. The measurement is what settled the
+  shape — **217 of the 218 blocks carrying either are `/Alt` with no text**, where
+  substitution is correct and is the only text there is, so narrowing `/Alt` to a description
+  everywhere would have broken the majority case while fixing the one.
+- **The `Replacement` branch is unreachable from any file on disk, and that is a wiring gap
+  worth its own line.** Not because `/ActualText` is rare: there are **4803 of them across the
+  51 PDFs**, and **all 4803 sit on inline `Span` elements**, which `sectionize` never lifts
+  into a block. So the field is a correct model of §14.9.4 that nothing currently fills, and
+  its rule is held by unit tests rather than by the corpus — which is not a footnote. Review
+  found that reinstating the original defect in `sink/okf` alone passed **every test in the
+  repository**, and that swapping `substitute`'s branch order survived all of `sink/markdown`,
+  because precedence is observable only when both fields are set *and* the spans are blank.
+  Both are pinned now. A rule with a zero corpus population gets no protection from a green
+  suite, and the mutation has to be applied to find that out. Reading those spans is separate
+  work, and it is not cosmetic: **0 of the 4803 agree with the glyphs beneath them.** The
+  three distinct values are a line break (4695×, glyphs read `" "`), `" • "` (92×, glyphs read
+  `"■ "`) and a soft hyphen (16×, glyphs read `"- "`). The bullet case is benign today because
+  neither glyph survives into output, but the soft hyphen is a visible defect —
+  `ISO-TS-32004-2024_sponsored.pdf` emits `id-ct- pdfMacIntegrityInfo` where the page says
+  `id-ct-pdfMacIntegrityInfo`.
+- **A `Figure` that draws text now drops its `/Alt` entirely, and that is a deliberate
+  trade rather than a solved problem.** On `PDF20_AN001-BPC.pdf` the fix recovers 129
+  characters of real caption text and loses the 217-rune description that used to stand in
+  its place — verified by grepping the output: the paraphrase appears 0 times, the captions
+  once. Substituting it back is exactly the defect, and appending it would invent a line the
+  page does not have, so neither sink emits it. The right home is an image reference whose
+  alt attribute carries it, which is what `/Alt` is for and which waits on figures emitting
+  images at all. Recorded here because a description silently going nowhere is worth knowing
+  about even when dropping it is the correct call.
+- **Hyphenated compounds break across a line wrap: 210 instances in rendered output.**
+  `marked- content`, `cross- reference`, `human- readable` — 172 in ISO 32000-2 alone, and
+  present in 8 files. Distinct from the soft-hyphen case above, which is 16 elements: these
+  are ordinary hyphens at a line break where the wrap-space is inserted after the hyphen
+  instead of being suppressed. Found while measuring the `/ActualText` population, not yet
+  diagnosed, and the fix is a rule about joining a line that ends in a hyphen — which needs
+  evidence about legitimately hyphen-final lines before it can be written.
+- **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
+  `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
+  `doc.Role`, so the element and its description are dropped together. This is the same debt
+  as the deferred annotation/cross-reference mapping rather than a new one, but the 194 is the
+  figure that says how much text it costs.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

@@ -102,11 +102,35 @@ type Block struct {
 	// one different from the document's.
 	Lang string
 
-	// Alt is /Alt or /ActualText: what the content means when the glyphs do not
-	// spell it. For a RoleFigure it is the only text available, and for a block of
-	// artwork-as-text it is more correct than the glyphs, so a sink prefers it —
-	// which is why it is on the block rather than dropped once the spans are read.
+	// Alt is /Alt: a description of the content for a reader who cannot see it.
+	// It does not replace the spans, and a sink that treats it as replacement text
+	// deletes page text — see Replacement, and the two are separate fields for
+	// exactly that reason.
+	//
+	// For a RoleFigure with no spans it is the only text available, which is why it
+	// is carried on the block rather than dropped once the spans are read.
 	Alt string
+
+	// Replacement is /ActualText: what the content *is* where the glyphs do not
+	// spell it — an image of a word, a ligature drawn as artwork, a decorative
+	// capital. It replaces the spans, because that is what §14.9.4 defines it as.
+	//
+	// Split from Alt because §14.9.3 and §14.9.4 are opposite operations and one
+	// field cannot say which it holds. Merged, a sink had to pick one behaviour for
+	// both, and it picked substitution: PDF20_AN001-BPC.pdf's illustration carries
+	// an /Alt paraphrasing three captions that are real text on the page inside the
+	// same Figure, and all three were dropped — 129 characters, the one occurrence
+	// in the 50-document corpus. Picking description for both instead would have
+	// broken the case /ActualText exists for, so the fix is the field, not the rule.
+	//
+	// Empty on every block the corpus produces, and not because /ActualText is rare:
+	// there are 4803 of them across the 51 PDFs on disk, and all 4803 are on inline
+	// Span elements, which sectionize does not lift into blocks. So this field is a
+	// correct model of §14.9.4 that nothing on disk currently fills, and the sinks'
+	// substitution rule rests on unit tests rather than on the corpus. Reading those
+	// spans is separate work — the values are a line break, a bullet and a soft
+	// hyphen, and each one is a text defect of its own where the glyphs differ.
+	Replacement string
 
 	// MCIDs are the marked-content identifiers this block was assembled from, on
 	// the block's page. Carried for diagnosis: when tagged text comes out in the
@@ -187,11 +211,11 @@ func (b Block) writeText(sb *strings.Builder) {
 	}
 }
 
-// IsEmpty reports whether the block would emit nothing. A block with no text and
-// no Alt is a positioned rectangle a producer left behind, and every stage from
-// sectionize onward has to skip it.
+// IsEmpty reports whether the block would emit nothing. A block with no text, no
+// Alt and no Replacement is a positioned rectangle a producer left behind, and
+// every stage from sectionize onward has to skip it.
 func (b Block) IsEmpty() bool {
-	if b.Alt != "" {
+	if b.Alt != "" || b.Replacement != "" {
 		return false
 	}
 	for i := range b.Spans {

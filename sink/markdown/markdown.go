@@ -351,8 +351,20 @@ func (w *writer) block(b doc.Block) {
 		// the images verb exists — `![alt]()` with an empty target is a broken image
 		// reference, not a description. An emphasized line is the conventional
 		// rendering of a caption and stays readable either way.
+		//
+		// Trimmed before wrapping, because CommonMark §6.2 forbids an opening delimiter
+		// followed by whitespace: "*  text *" is not emphasis, it is a bullet whose item
+		// ends in a stray asterisk, which is what pandoc -f gfm makes of it. A caption's
+		// leading space is a producer's positioning and carries no meaning here, where
+		// inside a paragraph it separates words and must survive. Two lines on disk:
+		// Well-Tagged-PDF-WTPDF-1.0.pdf's "cube root of x", and PDF20_AN001-BPC.pdf's
+		// three figure captions, which arrive behind 100 spaces of column padding.
+		text := strings.TrimSpace(contentOf(b, true))
+		if text == "" {
+			break
+		}
 		w.str("*")
-		w.content(b, true)
+		w.str(text)
 		w.str("*")
 		w.nl()
 
@@ -444,23 +456,57 @@ func arabicMarker(marker string) (string, bool) {
 
 // content writes a block's text.
 //
-// Alt takes precedence over the spans when present, because that is what it means:
-// /ActualText and /Alt are the producer's statement of what the content says when
-// the glyphs do not spell it — an image of a word, a ligature drawn as artwork, a
-// decorative capital. Preferring the glyphs there would emit the thing the producer
-// went out of its way to correct. Styling is dropped with it, since Alt is a string
-// and has none.
+// Replacement takes precedence over the spans, because that is what /ActualText is:
+// the producer's statement of what the content says where the glyphs do not spell it
+// — an image of a word, a ligature drawn as artwork, a decorative capital. Preferring
+// the glyphs there would emit the thing the producer went out of its way to correct.
+// Styling is dropped with it, since it is a string and has none.
+//
+// Alt does not, and the distinction is why the two are separate fields. /Alt describes
+// content for a reader who cannot see it, so it stands in only where there is nothing
+// to see: a Figure with no spans, which is 217 of the 218 blocks on disk that carry
+// either. The 218th is PDF20_AN001-BPC.pdf's illustration, whose /Alt paraphrases three
+// captions drawn as real text inside the same Figure — substituting deleted all three.
+//
+// The Replacement branch is reachable from no file in the corpus, and that is a fact
+// about where /ActualText sits rather than about how rare it is. All 4803 occurrences
+// across the 51 PDFs on disk are on inline Span elements, which sectionize never lifts
+// into a block, so Replacement arrives empty on all 218. It is written to the branch
+// anyway because a Figure or a Formula may carry one — that is what §14.9.4 is for —
+// and the unit tests are the only thing holding the rule.
 //
 // plain suppresses emphasis markers, for contexts already wrapped in them: nesting
 // "*" inside "*" does not nest, it terminates.
 func (w *writer) content(b doc.Block, plain bool) {
-	if b.Alt != "" {
+	w.str(contentOf(b, plain))
+}
+
+// contentOf is content as a string, for the caption walker, which has to inspect what it
+// is about to wrap in "*" before it wraps it. Separate from content so that the other
+// five callers keep writing straight through.
+func contentOf(b doc.Block, plain bool) string {
+	if text := substitute(b); text != "" {
 		var sb strings.Builder
-		escapeInto(&sb, oneLine(b.Alt), true)
-		w.str(sb.String())
-		return
+		escapeInto(&sb, oneLine(text), true)
+		return sb.String()
 	}
-	w.str(inline(b.Spans, plain, false))
+	return inline(b.Spans, plain, false)
+}
+
+// substitute returns the text that stands in for a block's spans, or "" when the spans
+// are what the page says.
+//
+// /ActualText always stands in. /Alt stands in only for a block with no text of its own,
+// where it is the only description there is — and both walkers need that rule, so it is
+// one function rather than a condition repeated in content and cellText.
+func substitute(b doc.Block) string {
+	if b.Replacement != "" {
+		return b.Replacement
+	}
+	if b.Alt != "" && strings.TrimSpace(b.Text()) == "" {
+		return b.Alt
+	}
+	return ""
 }
 
 // uniformEmphasis reports whether every visible span in a block carries the same

@@ -49,6 +49,39 @@ func testOptions() Options {
 	}
 }
 
+// describe applies the same /Alt-versus-/ActualText rule as the markdown sink, and this is
+// the only thing that holds it: the corpus reaches neither branch, since every /ActualText
+// on disk is on an inline Span rather than a block and the one /Alt over real text is a
+// figure that no clause summarizes. Written as three cases in one test because the rule is
+// one decision with three outcomes — review found that reinstating the original defect here,
+// /Alt substituting unconditionally, passed every test in the repository.
+func TestDescribeSubstitutesReplacementNotAlt(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		text        string
+		alt         string
+		replacement string
+		want        string
+	}{
+		// The defect this rule exists to prevent: a description must not delete page text.
+		{"alt does not replace text", "The page says this.", "A description.", "", "The page says this."},
+		// /ActualText is a correction, so it stands in even over text.
+		{"replacement replaces text", "gibberish.", "", "The actual text.", "The actual text."},
+		// Nothing drawn, so the description is the only text there is.
+		{"alt stands in for blank spans", "   ", "A description.", "", "A description."},
+		// Both qualify: only /ActualText claims to say what the content is.
+		{"replacement beats alt", "   ", "A description.", "The actual text.", "The actual text."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := para(tc.text)
+			b.Alt, b.Replacement = tc.alt, tc.replacement
+			if got := describe([]doc.Block{b}); got != tc.want {
+				t.Errorf("describe = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBundleShape(t *testing.T) {
 	filters := sec("7.4", "7.4 Filters", sec("7.4.1", "7.4.1 General"))
 	filters.Blocks = []doc.Block{para("This subclause describes the standard filters. They shall be applied in order.")}

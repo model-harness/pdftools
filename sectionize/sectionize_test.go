@@ -642,8 +642,11 @@ func TestCellNestedBelowItsRowHasNoPosition(t *testing.T) {
 
 func TestFigureKeepsAltAsItsOnlyText(t *testing.T) {
 	// For an accessible figure /Alt is the only text there is, so a block with no
-	// spans is still content. /ActualText wins where both are present: it says what the
-	// content is, where /Alt describes it for a reader who cannot see it.
+	// spans is still content. Both are carried, on separate fields, because §14.9.3 and
+	// §14.9.4 are opposite operations — /ActualText replaces the glyphs, /Alt describes
+	// them — and this package must not decide between them for the sinks. It used to,
+	// preferring /ActualText and losing /Alt, which is what let a sink substitute a
+	// description over real page text without being able to tell it was doing so.
 	d := docWith(sp{1, 0, "8.9 Images"}, sp{1, 1, "Figure 12 — Sampling"})
 	fig := el(tag.RoleFigure, 1)
 	fig.Alt = "A diagram of the sampling grid"
@@ -662,8 +665,14 @@ func TestFigureKeepsAltAsItsOnlyText(t *testing.T) {
 	if blocks[0].Role != doc.RoleFigure || blocks[0].Alt != "A diagram of the sampling grid" {
 		t.Errorf("figure = %+v", blocks[0])
 	}
-	if blocks[1].Alt != "the actual text" {
-		t.Errorf("/ActualText not preferred: %q", blocks[1].Alt)
+	if blocks[0].Replacement != "" {
+		t.Errorf("figure gained a replacement it never declared: %q", blocks[0].Replacement)
+	}
+	if blocks[1].Replacement != "the actual text" {
+		t.Errorf("/ActualText not carried: %q", blocks[1].Replacement)
+	}
+	if blocks[1].Alt != "described" {
+		t.Errorf("/Alt dropped where /ActualText is also present: %q", blocks[1].Alt)
 	}
 	if blocks[2].Role != doc.RoleCaption || blocks[2].Text() != "Figure 12 — Sampling" {
 		t.Errorf("caption = %+v", blocks[2])
