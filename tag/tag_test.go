@@ -388,6 +388,68 @@ func TestUTF16TitleDecoded(t *testing.T) {
 	}
 }
 
+// TestSyntheticRootDoesNotInflateARoleCount pins the one thing Stats.Roles cannot say for
+// itself: which of its nodes came from the file.
+//
+// Tree.Root is synthesized, because /StructTreeRoot has /K but no /S and the walk needs a
+// node to start from. It used to carry RoleDocument, and a Document is also what a tagged
+// document's own top element almost always is — so any count of that role was one too
+// high. Measured on disk: 17 of the 18 tagged files reported two Document elements where
+// the file has one, and the figure is not internal, since probe emits Stats.Roles as
+// tags.top_roles. docs/test.docs.md carried the wrong number for sampleInvoice.pdf on the
+// strength of it, contradicting the changelog entry that had it right.
+//
+// The fixture is the collision itself: a real Document under the root, which is what every
+// one of those files has. A name outside §14.8.4 is what makes the two distinguishable, and
+// it is a measured property of this corpus rather than an enforced one — 0 elements across
+// those 18 trees carry /S /StructTreeRoot, and nothing rejects one that did. A file that
+// named it would put the count back where it was; that is a strictly smaller surface than
+// the role every tagged file already uses, which is the whole argument for the rename.
+//
+// The count is asserted rather than the root's role alone, because the count is what a
+// consumer reads: asserting only Root.Role would pass a tree that renamed the root and left
+// a second synthetic Document somewhere else.
+//
+// The bare-H arm exists because Depth is the one behaviour the rename could plausibly have
+// changed, and it needs a fixture that can actually show it. The nesting is Document > Sect
+// > H so the answer is 2 if any ancestor is over-counted and 1 only if exactly one is —
+// with H directly under the Document, Depth's floor of 1 absorbs the difference and the
+// assertion holds no matter what isGrouping does. As written it kills two mutations:
+// admitting RoleStructTreeRoot to isGrouping, and dropping Depth's "&& p.Role !=
+// RoleDocument" exclusion, which would count the file's own Document as a level.
+func TestSyntheticRootDoesNotInflateARoleCount(t *testing.T) {
+	s := &store{
+		cat: objects.Dict{"StructTreeRoot": objects.Ref{Num: 1}},
+		objs: map[objects.Ref]objects.Object{
+			{Num: 1}: objects.Dict{"K": objects.Array{
+				objects.Dict{"S": objects.Name("Document"), "K": objects.Array{
+					objects.Dict{"S": objects.Name("Sect"), "K": objects.Array{
+						objects.Dict{"S": objects.Name("H"), "K": objects.Int(0)},
+					}},
+					objects.Dict{"S": objects.Name("P"), "K": objects.Int(1)},
+				}},
+			}},
+		},
+	}
+	tr, err := Read(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tr.Stats().Roles[RoleDocument]; got != 1 {
+		t.Errorf("Roles[Document] = %d, want 1: the file has one Document element", got)
+	}
+	if got := tr.Root.Role; got != RoleStructTreeRoot {
+		t.Errorf("Root.Role = %q, want %q", got, RoleStructTreeRoot)
+	}
+	h := tr.Root.Kids[0].Kids[0].Kids[0]
+	if h.Role != RoleH {
+		t.Fatalf("fixture wrong: expected a bare H, got %q", h.Role)
+	}
+	if got := h.Depth(); got != 1 {
+		t.Errorf("bare H depth = %d, want 1: only the enclosing Sect is a level — the synthetic root and the file's own Document are not", got)
+	}
+}
+
 func TestStatsCounts(t *testing.T) {
 	s := &store{
 		cat: objects.Dict{"StructTreeRoot": objects.Ref{Num: 1}},

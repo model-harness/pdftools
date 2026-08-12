@@ -292,10 +292,13 @@ func TestFixtureRouting(t *testing.T) {
 		{"pymupdf/type3font.pdf", 1, "layout", 0, "Type3 only"},
 		{"adobe-samples/exportPDFInput.pdf", 4, "layout", 8, "TrueType + Type0"},
 		// The producer-stub case, and the reason probe's check is not "does a
-		// StructTreeRoot exist". This file has one, and /MarkInfo /Marked true, and two
-		// Document elements holding nothing — no headings, no paragraphs, no MCIDs. A
+		// StructTreeRoot exist". This file has one, and /MarkInfo /Marked true, and one
+		// Document element holding nothing — no headings, no paragraphs, no MCIDs. A
 		// pipeline that trusted the flag would take the tagged path and find no text to
 		// join to. Adobe ships it as a sample.
+		//
+		// The count was two here and in docs/test.docs.md until the synthetic tree root
+		// stopped claiming RoleDocument; see tag's TestSyntheticRootDoesNotInflateARoleCount.
 		{"adobe-samples/sampleInvoice.pdf", 3, "layout", 5, "StructTreeRoot with no content: a stub"},
 		// An invisible OCR layer is still a text layer, and routing on it is right: the
 		// text is there to extract and extracting it is cheaper and better than

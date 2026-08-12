@@ -65,6 +65,34 @@ const (
 	RoleBlockQuote Role = "BlockQuote"
 )
 
+// RoleStructTreeRoot is the role of Tree.Root, which stands in for /StructTreeRoot
+// itself and is not a structure element of the document.
+//
+// Not a standard type, and deliberately not one: /StructTreeRoot has /K but no /S, so
+// it has no role of its own, and the root needs one to be a node like any other. It
+// held RoleDocument before, which made every count of a standard role wrong for any
+// file whose own top element is a Document — 17 of the 18 tagged files on disk reported
+// two Document elements where the file has one, including the figure probe emits as
+// tags.top_roles.
+//
+// A name outside §14.8.4 makes the collision rare rather than impossible, and the
+// difference is worth stating. A role comes from an element's /S or from a /RoleMap
+// target, and nothing here rejects either one naming StructTreeRoot: a file that did
+// would put the count back where it was. What the rename buys is that 0 elements across
+// those 18 trees carry the name, against a Document in almost every one of them — a
+// measured property of real producers, not an invariant. Enforcing it is not worth the
+// cost, because the failure it would prevent is a wrong count and the enforcement would
+// have to either drop a real element or rename it to something equally untrue.
+//
+// Behaviour is unchanged by the rename, though the mechanism differs and the two are
+// worth keeping straight. Depth counts grouping ancestors and previously excluded the
+// root by name, since isGrouping accepted RoleDocument: that name check is still there
+// and still excludes the file's own Document elements. The root is now excluded one layer
+// earlier, by isGrouping not accepting it at all. Both leave a bare H taking its level
+// from the Sects that enclose it. sectionize treats it as transparent, since it is
+// neither a heading nor a block role.
+const RoleStructTreeRoot Role = "StructTreeRoot"
+
 // HeadingLevel returns the heading depth for H1..H6, or 0 for anything else.
 //
 // A bare H is level 0 here, not 1. ISO 32000-2 §14.8.4.4 defines H as a heading
@@ -185,6 +213,10 @@ func (e *Elem) MCIDs() []int {
 
 // Tree is a document's structure tree.
 type Tree struct {
+	// Root stands in for /StructTreeRoot and is not an element of the document. Its
+	// role is RoleStructTreeRoot, its Kids are the document's own top-level elements,
+	// and it carries no title, page or content of its own. A caller counting elements
+	// or roles is counting one node the file does not contain — see RoleStructTreeRoot.
 	Root *Elem
 
 	// RoleMap is the catalog's /RoleMap, custom type to standard type.
@@ -196,6 +228,10 @@ type Tree struct {
 //
 // An absent tree is the normal case for most PDFs in the wild and is not a
 // failure: it selects the layout path instead. Callers check for nil.
+//
+// Tree.Root is synthesized to stand in for /StructTreeRoot, which has /K but no /S
+// and so is not an element. It is one node the document does not contain, and
+// RoleStructTreeRoot says why it needs a role outside §14.8.4.
 func Read(s objects.Store) (*Tree, error) {
 	cat, err := s.Catalog()
 	if err != nil {
@@ -208,7 +244,7 @@ func Read(s objects.Store) (*Tree, error) {
 
 	t := &Tree{RoleMap: readRoleMap(s, rootDict)}
 
-	root := &Elem{Role: RoleDocument, RawType: RoleDocument}
+	root := &Elem{Role: RoleStructTreeRoot, RawType: RoleStructTreeRoot}
 	seen := map[objects.Ref]bool{}
 	kids, err := t.readKids(s, rootDict, root, seen, 0)
 	if err != nil {

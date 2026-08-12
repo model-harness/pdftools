@@ -107,6 +107,22 @@ remove work rather than add it:
    simply do not appear in it. Stitching a clause across pages 412–414 is not a step in the
    pipeline; there is nothing to stitch.
 
+One node of that tree is ours rather than the file's. `/StructTreeRoot` has `/K` but no
+`/S`, so it is not a structure element and has no role; `tag.Read` synthesizes a root to
+have something for the walk to start from. It carried `RoleDocument`, which is also what a
+tagged document's own top element almost always is, so **every count of that role was one
+too high** — 17 of the 18 tagged files on disk reported two `Document` elements where the
+file has one, and the figure is not internal, since `probe` publishes `Stats.Roles` as
+`tags.top_roles`. `docs/test.docs.md` carried the wrong number for `sampleInvoice.pdf` on
+the strength of it while the changelog entry that measured the objects directly had it
+right. The root now uses `RoleStructTreeRoot`, a name outside §14.8.4. That makes the
+collision rare rather than impossible — nothing rejects an `/S` or `/RoleMap` target naming
+it, and a file that did would put the count back — but 0 elements across those 18 trees
+carry the name against a `Document` in almost every one, so it trades a collision that
+happens for one that has never been observed. Behaviour is otherwise unchanged: `Depth`
+excluded the root by name before, and now `isGrouping` excludes it one layer earlier, while
+the name check that keeps a real `Document` from counting as a heading level stays.
+
 So the primary path for the target corpus is: **parse the structure tree, not the page
 geometry.** Geometry-based layout analysis is the *fallback* for untagged input (like the
 LightOnOCR paper above), and VLM/OCR is the fallback for that. This inverts the usual

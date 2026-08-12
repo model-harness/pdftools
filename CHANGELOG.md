@@ -7,6 +7,33 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-12
 
+- **The synthetic structure-tree root claimed `Document`, inflating that role's count for
+  almost every tagged file.** `/StructTreeRoot` has `/K` but no `/S`, so it is not a
+  structure element; `tag.Read` synthesizes a root `Elem` to start the walk from and gave it
+  `RoleDocument`. A tagged document's own top element is a `Document` too, so **17 of the 18
+  tagged files on disk reported two where the file has one**. Not an internal figure: `probe`
+  publishes `Stats.Roles` as `tags.top_roles`, and `docs/test.docs.md` plus
+  `testdata/manifest.json` both recorded "two `Document` elements" for
+  `adobe-samples/sampleInvoice.pdf` — contradicting the entry below, which counted the
+  objects directly and said its single live `/S /Document` has no `/K`. The store-wide sweep
+  and a walk from `StructTreeRoot/K` both return 1, and so does Acrobat; the tree returned 2.
+  The root is now `RoleStructTreeRoot`, a name outside §14.8.4 — which makes the collision
+  rare rather than impossible, and the distinction is in the doc comment: nothing rejects an
+  `/S` or `/RoleMap` target naming it, but 0 elements across those 18 trees do, against a
+  `Document` in almost every one. Behaviour is otherwise identical; `Depth` excluded the root
+  by name before and `isGrouping` excludes it one layer earlier now, with the name check that
+  keeps a real `Document` from counting as a heading level left in place. Pinned by
+  `TestSyntheticRootDoesNotInflateARoleCount`: the count arm fails if the root reverts, and
+  the depth arm is nested `Document > Sect > H` so that it fails for either of two mutations
+  — admitting the new role to `isGrouping`, or dropping `Depth`'s `RoleDocument` exclusion.
+  An `H` directly under the `Document` would have been absorbed by `Depth`'s floor of 1 and
+  asserted nothing, which is what the first draft of the test did.
+- **`Elements` and the heading-parent figures were checked and are unaffected.**
+  `extractPdfInput.pdf` reports 259 elements before and after, since that count always
+  included the root. `DESIGN.md`'s `heading parents: map[Document:17 Part:964]` for ISO
+  32000-2 was the figure most likely to have hidden the same defect, and re-measuring returns
+  the same 17/964 over 981 headings: those 17 are the file's own `Document`, not the root,
+  which is never a heading's parent because a heading's parent is where the tree put it.
 - **A Unicode line break in PDF metadata truncated the frontmatter block, dropping every
   key below it.** YAML 1.2 §5.4 counts NEL (U+0085), LS (U+2028) and PS (U+2029) as line
   breaks alongside LF and CR, and `gopkg.in/yaml.v2` implements it. `plainYAML` returned

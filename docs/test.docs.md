@@ -243,7 +243,7 @@ which is the point — the invisible text layer is invisible.
 | `exportPDFInput.pdf` | 4 | layout | PDF 1.3, TrueType + Type0, 8 images with transparency |
 | `extractPdfInput.pdf` | 3 | tagged | **Adobe's Extract reference input.** The file their element-taxonomy docs are written against: 259 elements, 105 P, 5 H, 4 L, 38 LI, 1 Table, 151 MCIDs. |
 | `ocrInput.pdf` | 4 | ocr | Adobe's OCR sample: 4 scanned pages, no text layer |
-| `sampleInvoice.pdf` | 3 | layout | **The producer-stub witness.** `StructTreeRoot` present, `/MarkInfo /Marked true`, and two `Document` elements holding nothing — 0 headings, 0 paragraphs, 0 MCIDs. Also 5 `/SMask`s with no `/Matte`. |
+| `sampleInvoice.pdf` | 3 | layout | **The producer-stub witness.** `StructTreeRoot` present, `/MarkInfo /Marked true`, and one `Document` element holding nothing — 0 headings, 0 paragraphs, 0 MCIDs. Also 5 `/SMask`s with no `/Matte`. |
 | `watermark.pdf` | 1 | tagged | Tagged, and the text really is only spaces: every showing operator is `[( )] TJ` inside a `/Span`. 0 characters is correct. |
 | `zeroLength.pdf` | 0 | *error* | **0 bytes.** Every corpus file opens; this one must not, and must fail with a reason rather than a panic or an empty success. |
 
