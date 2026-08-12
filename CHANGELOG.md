@@ -7,6 +7,51 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-12
 
+- **A line wrap put a space after a hyphen that was holding a word together: 483 words split
+  across the corpus.** `marked- content`, `cross- reference`, `human- readable`, `ISO 32000-
+  2:2020`. `appendLine` infers a space at every line break inside a paragraph, which is right
+  for Latin prose and wrong when the break falls inside a word. Measured at the decision point
+  rather than by grepping output: **489 dash-final wraps across the 17 PDFs on disk — 483 with
+  the dash attached to a letter or digit, 5 with a space before it, and 1 with punctuation
+  before it.** All 483 were wrong and all 6 of the rest were right, so `dashHoldsTheWord` keys
+  on the rune *before* the dash and requires a letter or digit specifically. 193
+  characters removed from ISO 32000-2's Markdown, 208 breaks in `mupdf_explored.pdf`, 15 in
+  WTPDF; 17 hyphen-space pairs remain corpus-wide, 12 of them correct suspended hyphens
+  (`one- and two-dimensional`).
+  - Neither the dash nor the following character can decide it. **26 of the 483 continue into a
+    digit and 17 into a capital** — `41- 44`, `GREATER- THAN`, `UTF- 8` — words a space breaks
+    exactly as badly as a lowercase one.
+  - **The rule walks back through spans, which is 16 of the 483.** A producer often sets the
+    dash in its own style run, or the tagger gives it its own MCID, so `prev` is the bare `-`
+    and the word is one span earlier: the `surrounding`, `structure`, `constituent`, `digest`
+    and `algorithm` breaks in the TS documents. Only dash-only spans are skipped, so the walk
+    cannot run past the word it is looking for.
+  - **The alphabet is the Pd category, not `U+002D`.** `U+2013` holds `a– f` together in a
+    hexadecimal range and `U+2011` holds `doc‑ bibliography`; the one `U+2014` at a wrap is
+    detached and keeps its space through the same attachment test. `U+00AD` and `U+2212` are
+    added as Pd's near misses — neither ends a line on disk, and the cost of including them is
+    one missing space against a split word for leaving them out.
+  - **The hyphen is kept, and that is the corpus's answer rather than caution.** Looking each
+    joined word up in its own document — in text with the rule *off*, since with it on every
+    candidate finds the join the fix just made — all 483 resolve: **218 are spelled elsewhere
+    without a hyphen** (`applica- tion` / `application`), **170 with one** (`cross- reference` /
+    `cross-reference`), **14 both ways and 81 nowhere else at all.** Nothing separates
+    hyphenation from compound punctuation, and a deleted hyphen is not recoverable from the
+    output.
+  - **The entire suite passed with all 483 defects present**, because no assertion looked at the
+    character before a wrap — and it passes with them fixed, since the corpus tests assert
+    counts and conservation rather than text. Ten mutations were applied and all ten killed:
+    removing the rule fails `TestWrapSpaceSuppressedAfterAWordHyphen` and
+    `…WhereTheHyphenIsItsOwnSpan`; suppressing on any dash fails
+    `TestWrapSpaceKeptAfterADetachedDash`; dropping the span walk, narrowing the alphabet to
+    `'-'`, dropping digits from the word test, not trimming dashes during the walk, `break`
+    instead of `continue`, a bare dash opening a block, and dropping `U+00AD`/`U+2212` each fail
+    `TestDashHoldsTheWord`. The tenth is the one nine rounds of mutation missed and a review
+    found: relaxing the word test to `!unicode.IsSpace(r)` survived everything, because no test
+    put *punctuation* before the dash. The corpus has exactly one such wrap — `resources/-`
+    breaking into `Courier'` in `mupdf_explored.pdf`, a list separator that needs its space — so
+    that case and a quote-mark variant are now rows in `TestDashHoldsTheWord`, and the mutation
+    dies on both.
 - **A figure's `/Alt` was substituted over real page text, deleting three captions.**
   `doc.Block.Alt` carried both `/Alt` and `/ActualText`, which are opposite operations:
   §14.9.4 makes `/ActualText` a *replacement* for content, §14.9.3 makes `/Alt` a

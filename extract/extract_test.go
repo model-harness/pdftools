@@ -416,6 +416,142 @@ func TestWrapNeedsSpace(t *testing.T) {
 	}
 }
 
+// A line ending in a hyphen that is holding a word together gets no wrap space, because
+// the space splits the word: "marked-|content" came out as "marked- content".
+//
+// 483 of the 489 dash-final wraps across the 17 PDFs on disk are this, and every one was
+// wrong — "cross- reference", "human- readable", "ISO 32000- 2:2020", 193 of them in ISO
+// 32000-2 alone and 208 in mupdf_explored.pdf. The whole suite passed with all 483 in it,
+// because no assertion anywhere looked at the character before a wrap.
+//
+// The hyphen itself stays. Whether to drop it is a different question with no answer on
+// this corpus: of the 478 breaks whose two halves can be looked up, the document spells 213
+// out elsewhere *without* a hyphen ("applica-|tion" against "application") and 152 *with*
+// one ("cross-|reference" against "cross-reference"), and 103 appear nowhere else at all. An
+// unsplit word with a hyphen in it is a reading a consumer can repair; a deleted hyphen is
+// not recoverable from the output.
+func TestWrapSpaceSuppressedAfterAWordHyphen(t *testing.T) {
+	stream := `BT /F1 12 Tf 10 700 Td (marked-) Tj 0 -14 Td (content) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "marked-content"; got != want {
+		t.Errorf("text = %q, want %q: the hyphen holds the word across the break", got, want)
+	}
+}
+
+// The other side, and the reason the rule tests the rune *before* the dash rather than the
+// dash: a dash standing alone between two words is punctuation, and the wrap space is the
+// word boundary it needs. 5 of the 489 are this, in mupdf_explored.pdf ("text is sent -|as
+// each glyph"), ISO 32000-2 (an en dash) and ISO/TS 32003 (an em dash in a title).
+//
+// A rule keyed on the dash alone would fail this; so would one keyed on what *follows* the
+// break, since 26 of the 483 suppressed cases continue into a digit and 17 into a capital
+// ("41-|44", "GREATER-|THAN", "UTF-|8") — words a space breaks just as badly.
+func TestWrapSpaceKeptAfterADetachedDash(t *testing.T) {
+	stream := `BT /F1 12 Tf 10 700 Td (text is sent -) Tj 0 -14 Td (as each glyph) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "text is sent - as each glyph"; got != want {
+		t.Errorf("text = %q, want %q: a dash between two words is punctuation, not a hyphen", got, want)
+	}
+}
+
+// The hyphen is frequently a span of its own, and then the word it belongs to is one span
+// earlier — so the rule has to walk back or it misses its own population.
+//
+// 16 of the 483 are this shape: a producer sets the hyphen in a different run, or the tagger
+// gives it its own MCID, and prev is the bare "-". They are the "surrounding", "structure",
+// "constituent", "algorithm" and "digest" breaks in the TS documents. Written as three
+// styles in one paragraph because that is the only way to force the hyphen into a span by
+// itself; the text alone cannot say which span a character landed in, which is why
+// TestWrapSpaceTrailsThePreviousSpan exists two tests above and why this case needs its own.
+func TestWrapSpaceSuppressedWhereTheHyphenIsItsOwnSpan(t *testing.T) {
+	stream := `BT /F1 12 Tf 10 700 Td (sur) Tj /F2 12 Tf (-) Tj /F1 12 Tf 0 -14 Td (rounding) Tj ET`
+	p := extractPage(t, stream)
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := p.Blocks[0].Text(), "sur-rounding"; got != want {
+		t.Errorf("text = %q, want %q: the word is one span before the hyphen", got, want)
+	}
+}
+
+// dashHoldsTheWord over the dash alphabet and the span walk, which the streams above cannot
+// cover: a synthetic page can hold one shape per test, and the rule's inputs are a whole
+// category of dash against four states of the spans before it.
+//
+// The alphabet is not U+002D alone, and the corpus says so: U+2013 EN DASH holds "a–|f"
+// together in a hexadecimal range and U+2011 NON-BREAKING HYPHEN holds "doc‑|bibliography",
+// while the one U+2014 EM DASH at a wrap is detached and keeps its space through the same
+// test. A byte scan for '-' would see none of the three.
+func TestDashHoldsTheWord(t *testing.T) {
+	sp := func(texts ...string) []doc.Span {
+		out := make([]doc.Span, len(texts))
+		for i, s := range texts {
+			out[i] = doc.Span{Text: s}
+		}
+		return out
+	}
+	// The span texts, for a failure message that names the input rather than the structs.
+	texts := func(spans []doc.Span) []string {
+		out := make([]string, len(spans))
+		for i, s := range spans {
+			out[i] = s.Text
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name  string
+		spans []doc.Span
+		want  bool
+	}{
+		// Written as escapes: these rows differ by characters a monospaced editor renders
+		// identically, which is exactly how a dash rule ends up meaning U+002D only.
+		{"hyphen after a letter", sp("marked-"), true},
+		{"hyphen after a digit", sp("32000-"), true},
+		{"en dash after a letter", sp("a\u2013"), true},
+		{"non-breaking hyphen", sp("doc\u2011"), true},
+		{"soft hyphen", sp("con\u00ad"), true},
+		{"minus sign", sp("value\u2212"), true},
+		{"em dash after a letter", sp("Format\u2014"), true},
+		// Detached: a space before the dash makes it a word of its own.
+		{"dash after a space", sp("text is sent -"), false},
+		{"em dash after a space", sp("Document Format \u2014"), false},
+		// Not a dash at all, so the rule does not apply and the ordinary wrap space stands.
+		{"letter", sp("word"), false},
+		{"full stop", sp("sentence."), false},
+		{"underscore is not Pd", sp("name_"), false},
+		// Punctuation before the dash is neither a letter nor a space, and it is the class
+		// that separates "the dash follows a word" from the weaker "the dash follows a
+		// non-space". Without these rows the rule can be relaxed to !unicode.IsSpace and no
+		// test in the repository notices. The corpus has exactly one: "resources/-" wrapping
+		// into "Courier'" in mupdf_explored.pdf, where the dash is a list separator between
+		// two quoted names and the space belongs at the break.
+		{"dash after a slash", sp("resources/-"), false},
+		{"dash after a closing quote", sp("'resources'-"), false},
+		// The walk back, which is where 16 of the corpus's cases live.
+		{"bare dash, word one span back", sp("sur", "-"), true},
+		{"bare dash, space one span back", sp("sent ", "-"), false},
+		{"two dash spans", sp("sur", "-", "-"), true},
+		{"bare dash opens the block", sp("-"), false},
+		// Only trailing dashes are skipped over, so the walk cannot run past the word it is
+		// looking for: "a-" ends in a dash but "a" is still what decides.
+		{"dash span after a word ending in a dash", sp("a-", "-"), true},
+		// A decode failure yields U+FFFD, which is neither a dash nor a letter: the trailing
+		// span is not a dash so the rule declines and the space stands, which is how the
+		// other predicates in this file fail on the same input.
+		{"invalid utf8", sp("\xff\xfe"), false},
+	} {
+		if got := dashHoldsTheWord(tc.spans, len(tc.spans)-1); got != tc.want {
+			t.Errorf("%s: dashHoldsTheWord(%q) = %v, want %v", tc.name, texts(tc.spans), got, tc.want)
+		}
+	}
+}
+
 // TestParagraphBreakSplitsBlocks: a step much larger than the line height is a
 // paragraph break, and the two blocks must not be joined by a space as though they
 // were one paragraph.

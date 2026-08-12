@@ -3,6 +3,7 @@ package extract
 import (
 	"math"
 	"sort"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -1039,7 +1040,8 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 			// either way and no assertion on the joined string can tell them apart.
 			n := len(b.Spans) - 1
 			prev := b.Spans[n].Text
-			if !endsWithSpace(prev) && !startsWithSpace(txt) && wrapNeedsSpace(prev, txt) {
+			if !endsWithSpace(prev) && !startsWithSpace(txt) && wrapNeedsSpace(prev, txt) &&
+				!dashHoldsTheWord(b.Spans, n) {
 				b.Spans[n].Text += " "
 			}
 		}
@@ -1132,6 +1134,86 @@ func wrapNeedsSpace(prev, next string) bool {
 	last, _ := utf8.DecodeLastRuneInString(prev)
 	first, _ := utf8.DecodeRuneInString(next)
 	return !(spaceless(last) && spaceless(first))
+}
+
+// dashHoldsTheWord reports whether the line ending at spans[n] ends in a dash that is
+// holding a word together across the break, in which case the wrap contributes no space.
+//
+// A line ending in a dash is two different things. In "marked-|content" and "struc-|ture"
+// the dash is inside a word, and a space at the break splits that word: 483 of the 489
+// dash-final wraps across the 17 PDFs on disk are this, and every one of them came out
+// wrong — "cross- reference", "human- readable", "ISO 32000- 2:2020". In "text is sent -|as
+// each glyph" the dash is punctuation standing alone between two words, and the space is
+// the word boundary it needs. The corpus has 5 of those, one of them an em dash, plus the one
+// case below where punctuation rather than a space precedes the dash: 489 wraps in all.
+//
+// What separates them is the rune *before* the dash, not the dash and not what follows.
+// Attached to a letter or digit, the dash is part of a word; preceded by a space, it is a
+// word of its own. The rune after the break decides nothing: 26 of the 483 continue into a
+// digit and 17 into a capital ("41-|44", "GREATER-|THAN", "UTF-|8"), all of them words that
+// a space would break just as badly as a lowercase one.
+//
+// Letter-or-digit rather than the weaker "not a space", because punctuation before the dash
+// is a third case and it wants the space kept: the corpus's one instance is "resources/-"
+// wrapping into "Courier'", where the dash separates two quoted names in a list.
+//
+// The walk back through spans is what makes the rule reach its own population. A dash is
+// frequently a span of its own, because a producer sets it in a different run or the tagger
+// gives it its own MCID, and then prev is the bare "-" with the word it belongs to one span
+// earlier. That is 16 of the 483 — the "surrounding", "structure", "constituent" and
+// "algorithm" breaks in the TS documents, which are exactly the cases the first attempt at
+// this rule missed. Only spans of pure dashes are skipped over, so the walk cannot run past
+// the word it is looking for.
+//
+// Whether to also drop the dash is a separate question this does not answer. Looking each
+// joined word up in its own document, with this rule off so the search is not finding the
+// join it just made, splits the 483: dropping would be right for the 218 the document spells
+// out elsewhere without a dash ("applica-|tion" against "application"), wrong for the 170 it
+// spells out with one ("cross-|reference" against "cross-reference"), either way for 14
+// spelled both ways, and unanswerable for the 81 that appear nowhere else at all. So the dash
+// stays: an unsplit word with a hyphen in it is a reading a consumer can still repair, while
+// a deleted hyphen is not recoverable from the output.
+//
+// The full dash alphabet, because the corpus proves the rule is not about U+002D alone:
+// U+2013 EN DASH holds "a–|f" together in a hexadecimal range, and U+2011 NON-BREAKING
+// HYPHEN holds "doc‑|bibliography". The one em dash at a wrap is detached and keeps its
+// space through the same test, which is the alphabet widening without the exception moving.
+func dashHoldsTheWord(spans []doc.Span, n int) bool {
+	last, _ := utf8.DecodeLastRuneInString(spans[n].Text)
+	if !isDash(last) {
+		return false
+	}
+	for i := n; i >= 0; i-- {
+		s := strings.TrimRightFunc(spans[i].Text, isDash)
+		if s == "" {
+			continue // a span of nothing but dashes: the word is earlier
+		}
+		r, _ := utf8.DecodeLastRuneInString(s)
+		return unicode.IsLetter(r) || unicode.IsDigit(r)
+	}
+	// The dash opens the block, so there is no word before it to hold together.
+	return false
+}
+
+// isDash covers the dash punctuation a producer can set at a line break: the Unicode Pd
+// category, plus the two dashes outside it that a PDF can hold a word together with.
+//
+// Pd rather than a list, because the corpus already proves a list of one is wrong — three
+// dashes end a line here, and picking them by hand is how the next one gets missed. The
+// members with corpus evidence are U+002D (483 breaks), U+2013 EN DASH ("0–9 and A–F or
+// a–|f", a hexadecimal range) and U+2011 NON-BREAKING HYPHEN ("doc‑|bibliography"), and
+// U+2014 EM DASH ends a line once where it is detached and therefore keeps its space —
+// which is the alphabet widening without the exception moving.
+//
+// The two additions are Pd's near misses, both So or Sm rather than Pd. U+00AD SOFT HYPHEN
+// is what a formatter's own hyphenation is when the producer marks it as such, and 16
+// /ActualText values in the corpus are exactly that; U+2212 MINUS SIGN because a line
+// broken inside "−1" is no more a word boundary than one broken inside "-1". Neither ends a
+// line on disk, so both are the rule stated over its whole alphabet rather than a measured
+// case — the cost of being wrong is one missing space, against a split word for omitting
+// them.
+func isDash(r rune) bool {
+	return r == 0x00AD || r == 0x2212 || unicode.Is(unicode.Pd, r)
 }
 
 // spaceless reports whether r belongs to a script written without spaces between words.

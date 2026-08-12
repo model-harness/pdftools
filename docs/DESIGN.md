@@ -1479,13 +1479,44 @@ OKF-ified spec.
   alt attribute carries it, which is what `/Alt` is for and which waits on figures emitting
   images at all. Recorded here because a description silently going nowhere is worth knowing
   about even when dropping it is the correct call.
-- **Hyphenated compounds break across a line wrap: 210 instances in rendered output.**
-  `marked- content`, `cross- reference`, `human- readable` — 172 in ISO 32000-2 alone, and
-  present in 8 files. Distinct from the soft-hyphen case above, which is 16 elements: these
-  are ordinary hyphens at a line break where the wrap-space is inserted after the hyphen
-  instead of being suppressed. Found while measuring the `/ActualText` population, not yet
-  diagnosed, and the fix is a rule about joining a line that ends in a hyphen — which needs
-  evidence about legitimately hyphen-final lines before it can be written.
+- **A hyphen holding a word across a line wrap no longer gets a space after it — 483 breaks
+  repaired, and the rule is about the rune *before* the dash.** `marked- content`,
+  `cross- reference`, `human- readable`, `ISO 32000- 2:2020`. Measured at the decision point
+  in `appendLine`: **489 dash-final wraps across the 17 PDFs on disk, of which 483 are a dash
+  attached to a letter or digit, 5 have a space before the dash, and 1 has punctuation before
+  it.** The 483 were all wrong and the other 6 were all right, so the discriminator is
+  attachment to a letter or digit — not the dash,
+  and not what follows the break, since 26 of the 483 continue into a digit and 17 into a
+  capital (`41- 44`, `GREATER- THAN`, `UTF- 8`). Removing 193 characters from ISO 32000-2's
+  Markdown, 208 breaks in `mupdf_explored.pdf`, 15 in WTPDF, and 17 remain corpus-wide of
+  which 12 are correct suspended hyphens (`one- and two-dimensional`, `human- or
+  machine-readable`).
+  - **16 of the 483 need a walk back through spans**, because the dash is frequently a span
+    of its own — a different style run, or its own MCID — leaving `prev` as a bare `-` with
+    the word one span earlier. Those are the `surrounding`, `structure`, `constituent` and
+    `algorithm` breaks in the TS documents, and a rule reading only `prev` misses them.
+  - **The alphabet is not `U+002D`.** `U+2013` EN DASH holds `a– f` together in a hexadecimal
+    range and `U+2011` NON-BREAKING HYPHEN holds `doc‑ bibliography`; the one `U+2014` EM DASH
+    at a wrap is detached and keeps its space through the same test. So `isDash` is the Pd
+    category plus `U+00AD` and `U+2212`, which are Pd's near misses.
+  - **The hyphen itself stays, and the corpus says it must.** Looking each joined word up in
+    its own document — against text with the rule *off*, because with it on the fix has already
+    made the join being searched for — accounts for all 483: the document spells **218**
+    elsewhere *without* a hyphen (`applica- tion` against `application`), **170** *with* one
+    (`cross- reference` against `cross-reference`), **14** both ways, and **81** appear nowhere
+    else at all. No rule separates them, and an unsplit word with a hyphen in it is a reading a
+    consumer can repair while a deleted hyphen is not recoverable from the output.
+  - **The whole suite passed with all 483 defects in it**, because no assertion anywhere
+    looked at the character before a wrap — and it passes with them fixed, since the corpus
+    baselines assert counts rather than text. Ten mutations of the rule were applied and all
+    ten killed; the four tests are in `extract/extract_test.go`. The tenth came from review
+    after nine of my own were all killed: relaxing the word test to `!unicode.IsSpace(r)`
+    survived the entire suite, because no test placed *punctuation* before the dash. The corpus
+    has exactly one (`resources/-` wrapping into `Courier'`), which is now a row. Same lesson as the
+    `/ActualText` split above, from the other direction: there the rule had no corpus
+    population, here it had 483 and still nothing measured it.
+  - Distinct from the soft-hyphen `/ActualText` case above, which is 16 structure elements
+    rather than a wrap decision, and still open.
 - **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
   `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
   `doc.Role`, so the element and its description are dropped together. This is the same debt
