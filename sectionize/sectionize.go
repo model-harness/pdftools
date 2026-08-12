@@ -270,10 +270,20 @@ func (b *builder) title(e *tag.Elem, spans []*doc.Span) string {
 	if t := clean(sb.String()); t != "" {
 		return b.truncate(t)
 	}
-	// No glyphs. /ActualText last rather than first because it is a substitution for
-	// what the glyphs spell, and where both exist the glyphs are what a reader
-	// checking the conversion sees on the page.
-	return b.truncate(clean(e.ActualText))
+	// No glyphs at all, so /ActualText is the only text there is. It is not consulted
+	// ahead of the glyphs because it has already been applied to them: substituted
+	// replaces a declaring element's spans on the way in, so a heading with both arrives
+	// here holding the declared value as its span text. What is left for this branch is a
+	// declaration whose marked content resolved to no spans, which substituted cannot
+	// apply to because there is nothing to replace. 3 of the corpus's 4803 declarations
+	// are that shape — a reference naming an MCID the page drew no text for — though all
+	// 3 are on a P and reach the paragraph path rather than this one.
+	//
+	// Through inlineText as well, not clean alone: clean folds the declared line break,
+	// because a break is whitespace, and leaves U+00AD, because it is not. A title is
+	// inline text like a span's, so all three consumers of the raw value adapt it — here,
+	// substituted, and emitItem's Replacement.
+	return b.truncate(clean(inlineText(e.ActualText)))
 }
 
 func (b *builder) truncate(s string) string {
@@ -429,7 +439,7 @@ func (b *builder) label(e *tag.Elem) string {
 func (b *builder) labelText(e *tag.Elem, sb *strings.Builder) {
 	inOrder(e,
 		func(refs []tag.MCRef) {
-			for _, sp := range b.index.take(refs) {
+			for _, sp := range substituted(e, b.index.take(refs)) {
 				sb.WriteString(sp.Text)
 			}
 		},
@@ -495,6 +505,114 @@ func inOrder(e *tag.Elem, content func([]tag.MCRef), kid func(*tag.Elem)) {
 	}
 }
 
+// substituted applies e's /ActualText to the spans it declares, per ISO 32000-2 §14.9.4:
+// the value replaces what the glyphs spell, because it is the producer saying what the
+// content *is* where the drawing does not spell it.
+//
+// It is here, on the inline path, because that is the only place the corpus's /ActualText
+// can be reached. All 4803 values across the 51 PDFs on disk are on a Span, and a Span is
+// transparent — never a block — so every one arrives through gather or labelText and none
+// through emitItem's Replacement field. Three distinct values account for all 4803, and
+// each was wrong in output in its own way:
+//
+//   - 4695 declare "\n" over a drawn space, in TD>P>Span (4481), Sect>P>Span (192),
+//     TH>P>Span (4), Document>P>Span (9) and Sect>H1>Span (9). A newline is the producer
+//     saying "this is a line break", and substituting it is not a no-op even though the
+//     sink flattens one to a space: it says so in the model rather than by coincidence.
+//   - 92 declare " • " over a drawn U+25A0 BLACK SQUARE, all in LI>Lbl>Span in
+//     Well-Tagged-PDF-WTPDF-1.0.pdf. Both glyphs are in listMarkers, so both strip and
+//     the output is unchanged — the value is honoured rather than the square being read
+//     as the label the producer disclaimed.
+//   - 16 declare U+00AD SOFT HYPHEN over a drawn "-", in TD>P>Span across four ISO
+//     documents. This is the one that changes text: a declared soft hyphen is
+//     discretionary, so the word joins, and "di-gest" becomes "digest".
+//
+// The declaring element's own value covers its whole run of marked content, so a value
+// spanning several spans replaces them all with one span. Style and box are the first
+// span's: a substitution is a string and has neither, and dropping the box would cost the
+// block its geometry. The spans are copied rather than edited, because index hands out
+// pointers into the document and the recovery pass reads the same ones — editing here
+// would rewrite the page text a caller asked to extract.
+//
+// A value of "" is not a substitution. tag.Read leaves the field empty when the key is
+// absent, so an empty string cannot be distinguished from no declaration at all, and
+// treating it as one would delete the glyphs of every element that has none.
+func substituted(e *tag.Elem, spans []*doc.Span) []*doc.Span {
+	if e.ActualText == "" || len(spans) == 0 {
+		return spans
+	}
+	sp := *spans[0]
+	sp.Text = inlineText(e.ActualText)
+	for _, s := range spans[1:] {
+		sp.Box = sp.Box.Union(s.Box)
+	}
+	return []*doc.Span{&sp}
+}
+
+// inlineText adapts a declared string to what a doc.Span holds: a run of inline text.
+//
+// A /ActualText value is a string in a dictionary and can say things a run of drawn glyphs
+// cannot, so substituting it verbatim puts characters into the model that no extractor ever
+// produces and that every sink downstream is entitled to assume are absent. Both cases in
+// the corpus were visible in the output before this existed, and each is a rune whose only
+// meaning is about line breaking — which is the one thing a stream of inline text does not
+// have.
+//
+// A line break becomes a space. All 4695 of the corpus's "\n" declarations stand in for a
+// drawn space, so this is what the producer meant in every measured case; it is also the
+// rule doc.Block.Replacement already gets from markdown.oneLine, applied one layer earlier
+// so that every sink agrees rather than each flattening its own. Left in, it splits inline
+// text across lines: "**Technical Specification**" became "**Technical" and
+// "Specification**" — two lines, and no longer bold, since a CommonMark emphasis run cannot
+// span a line break. Inside a code block the break survived and looked like an improvement,
+// restoring the line structure of ISO/TS 32004's ASN.1 listings, and it is not one: those
+// are code *spans*, and pandoc -f gfm renders a blank line inside one as a paragraph break
+// with the backticks left literal. Line structure in a code block is worth having and is a
+// separate change — it needs the block to be fenced, which is doc.Block.Role's business and
+// not a side effect of one dictionary key.
+//
+// A soft hyphen is dropped. U+00AD is a *discretionary* break: a hyphen to be drawn only if
+// the line breaks there, and nothing otherwise. So a producer declaring one over a drawn "-"
+// is saying the hyphen belongs to its own line breaking and not to the word — which is what
+// each of the corpus's 16 says, and each document's own spelling agrees, "digest" appearing
+// joined 30 times against this one break and "structure" 63. Dropping it joins the word,
+// and keeping it emitted an invisible character in the middle of one: "di<U+00AD>gest" is
+// worse than the "di-gest" it replaced, since a reader cannot see what went wrong.
+//
+// Per rune rather than per value, so "co<U+00AD>operate" joins the same way the 16 bare
+// declarations do. Nothing on disk has that shape — all 16 values are the soft hyphen alone
+// — and a rule that reads the value's runes cannot be surprised by one that isn't.
+//
+// Every consumer of a raw /ActualText goes through here, which is three: substituted, for a
+// declaration over spans; emitItem's Replacement, for one on a block-level element; and
+// title, for one on a heading that drew no glyphs. Only the first has a corpus population, so
+// the other two are held by unit tests alone — and leaving either raw reinstates exactly this
+// defect one layer up, because the sinks' substitute() prefers Replacement over the spans and
+// clean() folds the break but not the soft hyphen, which is not whitespace.
+func inlineText(s string) string {
+	if !strings.ContainsAny(s, "\r\n\u00ad") {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i, r := range s {
+		switch r {
+		case '\u00ad':
+		case '\n':
+			// A CRLF is one break, not two spaces.
+			if i > 0 && s[i-1] == '\r' {
+				continue
+			}
+			sb.WriteByte(' ')
+		case '\r':
+			sb.WriteByte(' ')
+		default:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
 // kidBefore reports whether the kid at index ki precedes /K position order. A kid with no
 // recorded position is treated as last, so a hand-built Elem keeps content-then-kids.
 //
@@ -552,7 +670,7 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 	pg.add(e.Page)
 	inOrder(e,
 		func(refs []tag.MCRef) {
-			*spans = append(*spans, b.index.take(refs)...)
+			*spans = append(*spans, substituted(e, b.index.take(refs))...)
 			for _, r := range refs {
 				pg.add(r.Page)
 			}
@@ -605,7 +723,7 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 		Role:        role,
 		Lang:        e.Lang,
 		Alt:         e.Alt,
-		Replacement: e.ActualText,
+		Replacement: inlineText(e.ActualText),
 	}
 	if role == doc.RoleListItem {
 		blk.Level = listDepth(e)

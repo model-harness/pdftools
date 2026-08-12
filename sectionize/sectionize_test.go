@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/tag"
 )
 
@@ -282,6 +283,238 @@ func TestTransparentContentEmitsInKOrder(t *testing.T) {
 	}
 	if got := out.Sections[0].Text(); got != "After the heading." {
 		t.Errorf("section text = %q, want the run that follows the heading", got)
+	}
+}
+
+// TestDeclaredSoftHyphenJoinsTheWord is the corpus shape, one level of detail below
+// TestInlineKidReadsInItsKPosition: the Span whose /K position that test recovered declares
+// /ActualText U+00AD over the "-" it draws, so a reader that puts the hyphen back in the
+// right place is still putting back a hyphen the producer disclaimed.
+//
+// A declared soft hyphen is *discretionary* — drawn only if the line breaks there — and
+// nothing downstream of here has a line width, so it can never be exercised and the word
+// joins. This is what the corpus's 16 declarations say, in four ISO documents, and each
+// document's own spelling agrees: "digest" appears joined 30 times against the one break,
+// "structure" 63.
+//
+// Both spans are asserted, not just the text: a substitution replaces a run of marked
+// content, so the run's several spans become one, and the reference from the surviving span
+// must be the declaring element's own rather than a neighbour's.
+func TestDeclaredSoftHyphenJoinsTheWord(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "The docu"},
+		sp{1, 1, "-"},
+		sp{1, 2, "ment digest."},
+	)
+	shy := el(tag.RoleSpan, 1, 1)
+	shy.ActualText = "\u00ad"
+	p := interleaved(tag.RoleP, 1, 0, shy, 2)
+
+	out, _ := Tagged(d, tree(p), DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+	}
+	const want = "The document digest."
+	if got := out.Preamble[0].Text(); got != want {
+		t.Errorf("text = %q, want %q: a declared U+00AD is discretionary, so the word joins", got, want)
+	}
+}
+
+// TestDeclaredActualTextReplacesTheGlyphs is the general rule the soft hyphen is one case
+// of, per ISO 32000-2 §14.9.4: the declared value stands in for what was drawn.
+//
+// Asserted over a Span holding several references, which is the shape 92 of the corpus's
+// declarations have — a Lbl whose /ActualText covers two marked-content sequences. One value
+// replaces the whole run, so the spans collapse to one; replacing per reference would repeat
+// the value once per sequence.
+func TestDeclaredActualTextReplacesTheGlyphs(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "before"},
+		sp{1, 1, ""},
+		sp{1, 2, " "},
+		sp{1, 3, "after"},
+	)
+	span := el(tag.RoleSpan, 1, 1, 2)
+	span.ActualText = " • "
+	p := interleaved(tag.RoleP, 1, 0, span, 3)
+
+	out, _ := Tagged(d, tree(p), DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+	}
+	blk := out.Preamble[0]
+	const want = "before • after"
+	if got := blk.Text(); got != want {
+		t.Errorf("text = %q, want %q: /ActualText stands in for the glyphs", got, want)
+	}
+	// Three spans, not four: the declaring element's two references became one.
+	if n := len(blk.Spans); n != 3 {
+		t.Errorf("spans = %d, want 3: one value replaces the whole run it declares", n)
+	}
+}
+
+// TestDeclaredLineBreakBecomesASpace: 4695 of the corpus's 4803 declarations are "\n" over a
+// drawn space, and a doc.Span holds inline text, which has no line breaks in it.
+//
+// Left in, the break reaches the sink as span text and splits a line there. Measured before
+// this rule existed: ISO/TS 32004's "**Technical Specification**" came out as "**Technical"
+// and "Specification**" on two lines, no longer bold either, since a CommonMark emphasis run
+// cannot span a line break.
+//
+// CRLF is one break and becomes one space, which is the case no corpus file has — every one
+// of the 4695 is a bare "\n" — and the only one where a per-rune rule could double.
+func TestDeclaredLineBreakBecomesASpace(t *testing.T) {
+	for _, tc := range []struct{ name, decl, want string }{
+		{"LF", "Technical\nSpecification", "Technical Specification"},
+		{"CRLF", "Technical\r\nSpecification", "Technical Specification"},
+		{"CR", "Technical\rSpecification", "Technical Specification"},
+		{"both breaks and a soft hyphen", "Speci\u00ad\nfication", "Speci fication"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := docWith(sp{1, 0, "drawn on one line"})
+			span := el(tag.RoleSpan, 1, 0)
+			span.ActualText = tc.decl
+			out, _ := Tagged(d, tree(kids(el(tag.RoleP, 1), span)), DefaultOptions)
+
+			if len(out.Preamble) != 1 {
+				t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+			}
+			if got := out.Preamble[0].Text(); got != tc.want {
+				t.Errorf("text = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDeclarationOnABlockIsAdaptedToo: substituted is not the only consumer of a raw
+// /ActualText. emitItem copies the value into doc.Block.Replacement, which every sink's
+// substitute() prefers over the block's spans — so a declaration left unadapted there emits
+// the invisible soft hyphen this rule exists to remove, one layer further on.
+//
+// No corpus file reaches it: all 4803 declarations are on a Span, which never becomes a
+// block. That is why it is a test rather than a measurement, and why review found it rather
+// than the corpus diff — a raw Replacement is a defect that nothing on disk can show.
+func TestDeclarationOnABlockIsAdaptedToo(t *testing.T) {
+	d := docWith(sp{1, 0, "drawn text"})
+	// A Figure is the block-level shape §14.9.4 is written for: a word drawn as artwork,
+	// with the producer stating what it says.
+	fig := el(tag.RoleFigure, 1, 0)
+	fig.ActualText = "di\u00adgest\nof the file"
+
+	out, _ := Tagged(d, tree(fig), DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+	}
+	const want = "digest of the file"
+	if got := out.Preamble[0].Replacement; got != want {
+		t.Errorf("replacement = %q, want %q: a block's declaration is inline text too", got, want)
+	}
+}
+
+// TestDeclaredTitleIsAdaptedToo is the third consumer. A heading whose marked content
+// resolved to no spans has nothing for substituted to replace, so title reads the raw value
+// — and clean is not enough on its own: it folds the declared line break, because a break is
+// whitespace, and leaves U+00AD, because it is not.
+func TestDeclaredTitleIsAdaptedToo(t *testing.T) {
+	d := docWith(sp{1, 0, "body text"})
+	h := el(tag.RoleH1, 1)
+	h.ActualText = "7.1 Docu\u00adment\ndigest"
+	tr := tree(h, el(tag.RoleP, 1, 0))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if len(out.Sections) != 1 {
+		t.Fatalf("sections = %d, want 1", len(out.Sections))
+	}
+	const want = "7.1 Document digest"
+	if got := out.Sections[0].Title; got != want {
+		t.Errorf("title = %q, want %q: a declared title is inline text too", got, want)
+	}
+}
+
+// TestSubstitutionKeepsTheWholeRunsBox: a value covering several spans collapses them to one,
+// and that one has to cover the area all of them did. The surviving span keeps the first's
+// style, because a substitution is a string and has none of its own, but the box is the union:
+// the block's own box is the union of its spans', so keeping only the first's would shrink a
+// paragraph to the width of its opening glyph — and layout's column and table logic reads
+// exactly those edges.
+//
+// Asserted here rather than through a block, because every other fixture in this file leaves
+// its spans' boxes zero: dropping the union survived all eleven of the other mutations and the
+// whole corpus, since geom.Rect.Union of two zero rects is zero either way.
+func TestSubstitutionKeepsTheWholeRunsBox(t *testing.T) {
+	first := &doc.Span{Text: "before", Box: geom.NewRect(10, 100, 30, 112)}
+	second := &doc.Span{Text: "after", Box: geom.NewRect(40, 96, 90, 110)}
+	e := &tag.Elem{Role: tag.RoleSpan, ActualText: "declared"}
+
+	out := substituted(e, []*doc.Span{first, second})
+
+	if len(out) != 1 {
+		t.Fatalf("spans = %d, want 1", len(out))
+	}
+	if want := geom.NewRect(10, 96, 90, 112); out[0].Box != want {
+		t.Errorf("box = %+v, want %+v: the surviving span covers the whole run", out[0].Box, want)
+	}
+}
+
+// TestSubstitutionDoesNotEditTheDocument: index hands out pointers into the doc.Document, and
+// the recovery pass reads the same ones. A substitution that edited a span in place would
+// rewrite the page text of a document the caller also asked to extract — and would corrupt
+// Unplaced, whose whole job is to report what the tree did not claim.
+func TestSubstitutionDoesNotEditTheDocument(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "claimed"},
+		sp{1, 1, "unclaimed"},
+	)
+	span := el(tag.RoleSpan, 1, 0)
+	span.ActualText = "declared"
+	Tagged(d, tree(kids(el(tag.RoleP, 1), span)), DefaultOptions)
+
+	if got := d.Pages[0].Blocks[0].Spans[0].Text; got != "claimed" {
+		t.Errorf("document span = %q, want %q: the substitution edited the caller's document", got, "claimed")
+	}
+}
+
+// TestEmptyActualTextIsNotASubstitution: tag.Read leaves the field "" when the key is absent,
+// so an empty value cannot be told from no declaration at all. Substituting it would delete
+// the glyphs of every element in the corpus that declares nothing — which is 90721 of 90737.
+func TestEmptyActualTextIsNotASubstitution(t *testing.T) {
+	d := docWith(sp{1, 0, "the drawn text"})
+	span := el(tag.RoleSpan, 1, 0)
+	span.ActualText = ""
+	out, _ := Tagged(d, tree(kids(el(tag.RoleP, 1), span)), DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+	}
+	if got := out.Preamble[0].Text(); got != "the drawn text" {
+		t.Errorf("text = %q, want the drawn text: an absent /ActualText is not a substitution", got)
+	}
+}
+
+// TestDeclaredLabelIsSubstituted covers the second inline path. gather is not the only walker
+// that claims spans — labelText reads a Lbl's, and that is where all 92 of the corpus's " • "
+// declarations live, in LI>Lbl>Span. A rule wired into one walker and not the other is a rule
+// the corpus's largest declared shape never reaches.
+func TestDeclaredLabelIsSubstituted(t *testing.T) {
+	d := docWith(
+		sp{1, 0, ""},
+		sp{1, 1, "The item's text."},
+	)
+	span := el(tag.RoleSpan, 1, 0)
+	span.ActualText = "•"
+	li := kids(el(tag.RoleLI, 1), kids(el(tag.RoleLbl, 1), span), el(tag.RoleLBody, 1, 1))
+
+	out, _ := Tagged(d, tree(kids(el(tag.RoleL, 1), li)), DefaultOptions)
+
+	if len(out.Preamble) != 1 {
+		t.Fatalf("preamble blocks = %d, want 1", len(out.Preamble))
+	}
+	if got := out.Preamble[0].Marker; got != "•" {
+		t.Errorf("marker = %q, want U+2022: a Lbl's /ActualText is its declared label", got)
 	}
 }
 
@@ -579,10 +812,20 @@ func TestEmptyBlocksAreDropped(t *testing.T) {
 }
 
 func TestTitleSourcePrecedence(t *testing.T) {
-	// /T first when a producer filled it in, then the glyphs, then /ActualText. The
-	// order of the last two is deliberate: /ActualText substitutes for what the glyphs
-	// spell, and where both exist the glyphs are what a reader checking the conversion
-	// sees on the page.
+	// /T first when a producer filled it in, then the text, then /ActualText for a heading
+	// that resolved to no spans at all.
+	//
+	// "the text" is already the substituted text, which is why the middle case wants the
+	// declared value and not the glyphs: substituted applies /ActualText to a declaring
+	// element's spans before title ever sees them, per ISO 32000-2 §14.9.4. This test
+	// asserted the opposite until the substitution was implemented, on the reasoning that
+	// a reader checking the conversion sees the glyphs on the page — which is a reason to
+	// keep the glyphs everywhere or nowhere, not a reason for a heading to disagree with
+	// the paragraph below it. §14.9.4, doc.Block.Replacement and markdown.substitute all
+	// say the declared value stands in, so this is now one rule rather than two.
+	//
+	// /T still wins over both. It is the producer's own title for the element rather than
+	// a statement about what its glyphs spell, so it does not compete with /ActualText.
 	d := docWith(
 		sp{1, 0, "glyphs for the first"},
 		sp{1, 1, "glyphs for the second"},
@@ -597,7 +840,7 @@ func TestTitleSourcePrecedence(t *testing.T) {
 
 	out, st := Tagged(d, tr, DefaultOptions)
 
-	want := []string{"the /T value", "glyphs for the second", "only /ActualText"}
+	want := []string{"the /T value", "the /ActualText value", "only /ActualText"}
 	if got := titles(out.Sections); !equal(got, want) {
 		t.Errorf("titles = %v, want %v", got, want)
 	}

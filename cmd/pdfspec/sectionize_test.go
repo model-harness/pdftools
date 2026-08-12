@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -128,11 +129,17 @@ func TestSectionizeCorpus(t *testing.T) {
 // doc.Outline.Unplaced exists at all.
 //
 // Every character the extractor produced must be reachable from the outline — in a
-// section, in the preamble, or in Unplaced. It measured 0.000% on all four files, and
-// the two alternatives to keeping the unattributed remainder are both worse: dropping
-// it loses a normative clause, and attaching it to the nearest preceding section files
-// the Scope under "0.4 Changes introduced in ISO 32000-2:2020", which is a wrong
+// section, in the preamble, or in Unplaced — unless the producer declared something else
+// in its place. The two alternatives to keeping the unattributed remainder are both worse:
+// dropping it loses a normative clause, and attaching it to the nearest preceding section
+// files the Scope under "0.4 Changes introduced in ISO 32000-2:2020", which is a wrong
 // attribution in a bundle a model will later read as fact.
+//
+// The exception is /ActualText, which is a deliberate loss: §14.9.4 makes the declared
+// value stand in for the glyphs, so a substituted character does not arrive and must not.
+// It is bounded per rune and exactly, in the table below, rather than by loosening the
+// percentage — 102 characters of slack would hide a real loss of the same size, and a
+// count that is exact in both directions also fails if a substitution stops happening.
 //
 // Character multisets rather than substrings, because the outline reorders content
 // relative to the page and what matters is whether a character survived, not where it
@@ -146,33 +153,49 @@ func TestSectionizeCorpus(t *testing.T) {
 // stronger statement than counting the text alone, since a marker both stripped from
 // the text *and* left unrecorded would fail here rather than pass quietly.
 func TestSectionizeLosesNoText(t *testing.T) {
-	for _, file := range []string{
-		"Well-Tagged-PDF-WTPDF-1.0.pdf",
-		"ISO_TS_32001-2022_sponsored_EC3.pdf",
-		"ISO-TS-32005-2023-sponsored.pdf",
-		"ISO_32000-2_sponsored_EC3.pdf",
+	for _, tc := range []struct {
+		file string
+		// replaced is the multiset of drawn characters a declared /ActualText stands in
+		// for, which is the one way a character may legitimately not reach the outline.
+		// Per-rune and exact rather than a percentage bound, so a *different* character
+		// going missing fails here even where a substitution already accounts for some.
+		replaced map[rune]int
+	}{
+		// 92 Lbl spans declare " • " over a drawn U+25A0 BLACK SQUARE. The bullet is not
+		// counted as arriving, because both glyphs are list markers and the sink strips
+		// whichever it gets — so the square leaves and nothing visible takes its place.
+		{"Well-Tagged-PDF-WTPDF-1.0.pdf", map[rune]int{'■': 92}},
+		{"ISO_TS_32001-2022_sponsored_EC3.pdf", nil},
+		// 10 of the corpus's 16 declared soft hyphens are in this file: each replaces a
+		// drawn "-" with U+00AD, which is discretionary, so the word joins.
+		{"ISO-TS-32005-2023-sponsored.pdf", map[rune]int{'-': 10}},
+		{"ISO_32000-2_sponsored_EC3.pdf", nil},
 	} {
-		t.Run(file, func(t *testing.T) {
-			d, out, _ := outlineOf(t, file)
+		t.Run(tc.file, func(t *testing.T) {
+			d, out, _ := outlineOf(t, tc.file)
 
 			have := runeCounts(outlineText(out))
-			var lost, total int
+			lost := map[rune]int{}
+			var n, total int
 			for _, r := range documentText(d) {
 				if unicode.IsSpace(r) {
 					continue
 				}
 				total++
 				if have[r] == 0 {
-					lost++
+					lost[r]++
+					n++
 					continue
 				}
 				have[r]--
 			}
-			pct := 100 * float64(lost) / float64(total)
-			if lost != 0 {
-				t.Errorf("lost %d of %d characters (%.3f%%)", lost, total, pct)
+			pct := 100 * float64(n) / float64(total)
+			if !sameCounts(lost, tc.replaced) {
+				t.Errorf("lost %v (%d of %d, %.3f%%), want exactly the declared replacements %v",
+					codePoints(lost), n, total, pct, codePoints(tc.replaced))
 			}
-			t.Logf("%d characters accounted for, %d lost (%.3f%%)", total, lost, pct)
+			t.Logf("%d characters accounted for, %d replaced by a declared /ActualText (%.3f%%)",
+				total, n, pct)
 		})
 	}
 }
@@ -343,15 +366,28 @@ func TestSectionPagesAreOrdered(t *testing.T) {
 // side: an item whose glyph stayed in its text *and* was recorded as its marker would
 // come out one character over the document's own total, per item, and reading the marker
 // nowhere would come out under it. Measured exact on all four files, over 1,350 markers.
+//
+// A declared /ActualText shifts the sum by whatever it replaces the glyphs with, so the
+// expected difference is stated per file rather than the equality being relaxed. Its sign
+// is the point: WTPDF's 92 declarations put one bullet where one square was drawn and so
+// move the sum by nothing, while 32005's 10 declared soft hyphens are discretionary and
+// drop, one character each. A substitution that quietly started *adding* characters would
+// fail here even though it loses nothing, which the one-directional check in
+// TestSectionizeLosesNoText cannot see.
 func TestOutlineConservesCharacters(t *testing.T) {
-	for _, file := range []string{
-		"Well-Tagged-PDF-WTPDF-1.0.pdf",
-		"ISO_TS_32001-2022_sponsored_EC3.pdf",
-		"ISO-TS-32005-2023-sponsored.pdf",
-		"ISO_32000-2_sponsored_EC3.pdf",
+	for _, tc := range []struct {
+		file string
+		// declared is placed+unplaced minus the document's own count: the net effect of
+		// every /ActualText substitution in the file, in characters.
+		declared int
+	}{
+		{"Well-Tagged-PDF-WTPDF-1.0.pdf", 0},
+		{"ISO_TS_32001-2022_sponsored_EC3.pdf", 0},
+		{"ISO-TS-32005-2023-sponsored.pdf", -10},
+		{"ISO_32000-2_sponsored_EC3.pdf", 0},
 	} {
-		t.Run(file, func(t *testing.T) {
-			d, out, st := outlineOf(t, file)
+		t.Run(tc.file, func(t *testing.T) {
+			d, out, st := outlineOf(t, tc.file)
 
 			// Titles, block spans, and markers. Alt is excluded because /Alt text is not
 			// drawn on the page, so counting it would exceed the document's own total
@@ -378,9 +414,10 @@ func TestOutlineConservesCharacters(t *testing.T) {
 			}
 
 			total := nonSpaceLen(documentText(d))
-			if placed+unplaced != total {
-				t.Errorf("placed %d + unplaced %d = %d, want exactly %d (%+d)",
-					placed, unplaced, placed+unplaced, total, placed+unplaced-total)
+			if placed+unplaced != total+tc.declared {
+				t.Errorf("placed %d + unplaced %d = %d, want exactly %d (%+d, want %+d from declared /ActualText)",
+					placed, unplaced, placed+unplaced, total+tc.declared,
+					placed+unplaced-total, tc.declared)
 			}
 			t.Logf("placed=%d unplaced=%d total=%d (%d unplaced blocks across %d pages)",
 				placed, unplaced, total, st.UnplacedBlocks, len(out.Unplaced))
@@ -476,6 +513,45 @@ func outlineText(o *doc.Outline) string {
 		}
 		sb.WriteString(o.Unplaced[i].Text())
 	}
+	return sb.String()
+}
+
+// sameCounts reports whether two rune multisets are equal, treating a zero count as
+// absent so a nil map and an all-zero map agree.
+func sameCounts(a, b map[rune]int) bool {
+	for r, n := range a {
+		if b[r] != n {
+			return false
+		}
+	}
+	for r, n := range b {
+		if a[r] != n {
+			return false
+		}
+	}
+	return true
+}
+
+// codePoints renders a rune multiset by codepoint, in rune order. By codepoint because
+// the characters this reports on are exactly the ones a terminal is least able to show:
+// a soft hyphen is invisible and a black square is a box either way.
+func codePoints(m map[rune]int) string {
+	rs := make([]rune, 0, len(m))
+	for r, n := range m {
+		if n != 0 {
+			rs = append(rs, r)
+		}
+	}
+	sort.Slice(rs, func(i, j int) bool { return rs[i] < rs[j] })
+	var sb strings.Builder
+	sb.WriteByte('{')
+	for i, r := range rs {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		fmt.Fprintf(&sb, "U+%04X: %d", r, m[r])
+	}
+	sb.WriteByte('}')
 	return sb.String()
 }
 

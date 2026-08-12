@@ -7,6 +7,46 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-12
 
+- **A producer's `/ActualText` was never read, and 16 words came out with a stray hyphen in
+  the middle.** ISO 32000-2 §14.9.4 makes the key a *replacement* for what the glyphs spell.
+  `sectionize.substituted` now applies a declaring element's value to the spans it covers, so
+  `di-gest` reads `digest` — a declared `U+00AD` SOFT HYPHEN is discretionary, drawn only where
+  a line breaks, and nothing downstream has a line width to break at.
+  - **All 4803 values on disk are three strings and every one is on a `Span`.** Measured before
+    implementing, which is what stopped a general rule from being a regression: 4695 declare a
+    line break over a drawn space, 92 declare `" • "` over a drawn `U+25A0` BLACK SQUARE, and
+    16 declare the soft hyphen. Substituting all three verbatim broke the majority case — it
+    put a line break into inline text, and `**Technical Specification**` came out as two lines
+    and lost its bold, since a CommonMark emphasis run cannot span one.
+  - **`inlineText` adapts the value to what a `doc.Span` holds.** A break becomes a space; a
+    soft hyphen is dropped. A dictionary string can say things a run of drawn glyphs cannot,
+    and every sink downstream is entitled to assume it does not.
+  - **Wired into both inline walkers.** All 92 `" • "` declarations are `LI>Lbl>Span` and reach
+    `labelText`, not `gather`; a rule in one walker only would never reach the corpus's largest
+    declared shape.
+  - **All three consumers of the raw value adapt it, which review found and the corpus cannot
+    show.** Besides `substituted`, `emitItem` copies `/ActualText` into `doc.Block.Replacement`
+    — which every sink's `substitute()` prefers over the block's spans — and `title` reads it
+    for a heading that drew no glyphs, where `clean` folds the declared break but leaves the
+    soft hyphen, since it is not whitespace. Either one left raw reinstates exactly this defect
+    one layer further on. No file on disk reaches either, because all 4803 declarations are on
+    a `Span`, so both are held by a test alone.
+  - **Net corpus effect is exactly `{U+002D: -16}`**, reconciled in both directions: 32004 −3,
+    32005 −10, 32002 −2, 32003 −1, nothing else changed anywhere. Every joined word matches its
+    own document's majority spelling — `MACLocation` 16 against `MAC-Location` 0, `digest` 31,
+    `structure` 64, `algorithm` 21 — and 0 `U+00AD` remain in the output. The 92 bullets change
+    nothing visible, because both glyphs are list markers and the sink strips whichever it gets.
+  - **Both conservation invariants were tightened rather than relaxed.**
+    `TestSectionizeLosesNoText` names the lost multiset per rune and exactly, and
+    `TestOutlineConservesCharacters` states the expected delta per file — so a substitution that
+    *stopped happening*, or started adding characters, fails as loudly as one that loses too
+    much. Eleven mutations applied and eleven killed, the last only after dropping the box union
+    survived the whole suite and all 51 files: every fixture leaves its spans' boxes zero.
+  - Line structure inside the ASN.1 listings of ISO/TS 32004 and 32003 is **not** part of this.
+    The declared break appeared to restore it and `pandoc -f gfm` says otherwise — a blank line
+    inside a code *span* is a paragraph break with the backticks left literal. Fencing those
+    blocks is separate work in `doc.Block.Role`.
+
 - **An element's children were read after all of its own text instead of in `/K` order: 32022
   runes displaced across 13 documents.** `tag.Elem` splits `/K` into `Content` (marked-content
   references) and `Kids` (child elements) and kept no record of how the array interleaved them,

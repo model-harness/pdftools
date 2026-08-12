@@ -1527,7 +1527,13 @@ OKF-ified spec.
   `"■ "`) and a soft hyphen (16×, glyphs read `"- "`). The bullet case is benign today because
   neither glyph survives into output, but the soft hyphen is a visible defect —
   `ISO-TS-32004-2024_sponsored.pdf` emits `id-ct- pdfMacIntegrityInfo` where the page says
-  `id-ct-pdfMacIntegrityInfo`.
+  `id-ct-pdfMacIntegrityInfo`. **All three are read now**, by `sectionize.substituted`; see the
+  entry below. That example is half fixed and the figure has moved rather than gone: line 320
+  of the current output reads `id-ct-pdfMacIntegrityInfo` correctly, and line 330 now reads
+  `id-ct-pdf MacIntegrityInfo` — the hyphen is attached and a *different* space, inside one
+  extracted span between `pdf` and `Mac`, is what still splits it. That one is the intra-line
+  gap rule and not this key: the same file shows `Pdf MacIntegrityInfo` 12 more times where no
+  `/ActualText` is involved at all.
 
   **Chasing one of those 16 is what found the `/K`-order defect** described in §3, and the
   triage above is why: the item was logged as "read `/ActualText` from a `Span`", and measuring
@@ -1536,7 +1542,65 @@ OKF-ified spec.
   4695 of them is correct rather than deferred. The remaining question is narrow — whether to
   emit `U+00AD` for the 16, or the `-` the page draws — and it is now reachable, which it was
   not when this bullet was written: those `Span`s' runes land in their `/K` position instead of
-  at the end of the enclosing paragraph.
+  at the end of the enclosing paragraph. Answered in the entry below: neither. A soft hyphen is
+  discretionary, so it is dropped and the word joins.
+- **All 4803 `/ActualText` values are read, and the majority case is the one a blind §14.9.4
+  rule would have broken.** `sectionize.substituted` applies a declaring element's value to the
+  spans it covers, on the inline path — which is the only path that can reach them, since every
+  one of the 4803 is on a `Span` and a `Span` is transparent, so none ever becomes a block with
+  a `Replacement` field. Wired into both inline walkers, `gather` and `labelText`, because
+  **all 92 of the `" • "` declarations are `LI>Lbl>Span`** and reach only the second: a rule in
+  one walker would miss the corpus's largest declared shape entirely, which is what
+  `TestDeclaredLabelIsSubstituted` exists to pin.
+  - **Measuring first is what stopped it being a regression.** The logged item was the 16 soft
+    hyphens, and the general rule is right — but substituting all three values verbatim would
+    have put a line break into 4695 spans of inline text. It did, in the first draft:
+    `**Technical Specification**` came out as two lines and lost its bold, because a CommonMark
+    emphasis run cannot span a line break. So `inlineText` adapts the value to what a
+    `doc.Span` holds — a break becomes a space, a `U+00AD` is dropped — because a dictionary
+    string can say things a run of glyphs cannot and every sink downstream assumes it does not.
+  - **One of the two defects my own draft introduced looked like an improvement.** The declared
+    break restored the line structure of the ASN.1 listings in ISO/TS 32004 and 32003, which
+    currently collapse to one line. It is not an improvement: those are code *spans*, and
+    `pandoc -f gfm` renders a blank line inside one as a paragraph break with the backticks
+    left literal. Settled with the renderer rather than by reading the output. Line structure
+    there is worth having and is separate work — it needs the block *fenced*, which is
+    `doc.Block.Role`'s business and not a side effect of one dictionary key.
+  - **The net corpus effect is exactly `{U+002D: -16}`, in both directions.** 32004 −3, 32005
+    −10, 32002 −2, 32003 −1, and nothing else changed either way across all 51 files. Each
+    joined word now matches its own document's majority spelling: `MACLocation` 16 against
+    `MAC-Location` 0, `digest` 31, `structure` 64, `algorithm` 21, `revision` 4, and 0 `U+00AD`
+    left anywhere in the output. The 92 bullets move nothing, because both the declared `•` and
+    the drawn `U+25A0` are list markers and the sink strips whichever it gets — the value is
+    honoured rather than the square being read as a label the producer disclaimed.
+  - **The conservation invariant was tightened, not relaxed.** A substitution is a deliberate
+    loss, so `TestSectionizeLosesNoText` now names the lost multiset per rune and exactly —
+    `{U+25A0: 92}` for WTPDF, `{U+002D: 10}` for 32005 — rather than raising a percentage bound
+    that 102 characters of slack would fit a real loss inside. Exact in both directions, so a
+    substitution *stopping* fails it too. Its sum-based twin,
+    `TestOutlineConservesCharacters`, states the expected delta per file for the same reason,
+    and its sign carries information the multiset check cannot see: 0 for WTPDF, where one
+    bullet replaces one square, −10 for 32005, where the hyphens drop.
+  - **A substitution copies its spans.** `index` hands out `*doc.Span` pointers into the
+    caller's `doc.Document` and the `Unplaced` recovery pass reads the same ones, so editing in
+    place would rewrite the page text of a document the caller also asked to extract.
+  - **Three call sites read the raw value, and only one of them has a corpus population.**
+    `emitItem` copies `/ActualText` into `doc.Block.Replacement`, which every sink's
+    `substitute()` prefers over the block's spans, and `title` reads it for a heading whose
+    marked content resolved to no spans — where `clean` is not enough on its own, since it
+    folds the declared break, which is whitespace, and leaves `U+00AD`, which is not. Both go
+    through `inlineText` now. Review found this, not the corpus diff and not the mutation run:
+    all 4803 declarations are on a `Span`, so no file on disk can reach either path, and the
+    defect there is the same invisible hyphen one layer further on. Same shape as the
+    zero-population `Replacement` branch above — a rule nothing measures needs the mutation
+    applied to know it is held.
+  - Thirteen mutations applied, thirteen killed — but two of them only after the tests that
+    kill them were written in response to review, and the eleventh only after it survived
+    everything. Dropping the box union passed the entire suite *and* all 51 files, because
+    every fixture in `sectionize_test.go` leaves its spans' boxes zero and `Union` of two zero
+    rects is zero either way; `TestSubstitutionKeepsTheWholeRunsBox` calls `substituted`
+    directly with real geometry. The `labelText` wiring is the other one a narrower test set
+    would have missed.
 - **A `Figure` that draws text now drops its `/Alt` entirely, and that is a deliberate
   trade rather than a solved problem.** On `PDF20_AN001-BPC.pdf` the fix recovers 129
   characters of real caption text and loses the 217-rune description that used to stand in
