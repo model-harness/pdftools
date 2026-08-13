@@ -5,6 +5,49 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-13
+
+- **12342 lines ended in whitespace, and Markdown gives a trailing space a meaning the page
+  never had.** A span's text ends in a space wherever the producer drew one, and the last span
+  of a line carried that space to the line's end: 516 lines across 8 documents ended in two or
+  more, which CommonMark §6.7 makes a hard line break, so the output rendered a `<br>` no
+  document asked for. The other 11826 ended in exactly one, which renders identically but makes
+  every conversion diff-hostile and trips `MD009 no-trailing-spaces` on any linted consumer.
+  12947 whitespace characters in all, over 11 of the 12 corpus documents.
+  - **Held back, not trimmed at each line close, because there are eighteen places that end a
+    line and one that writes bytes.** `writer.str` buffers trailing space and tab in `pend` and
+    flushes it only when a non-whitespace byte follows on the same line; a newline discards it.
+    So a space between two words survives, a space before a newline is never written, and the
+    rule is indifferent to *which* caller closes the line — including the four that write their
+    own `"\n"` inside a longer string. `write` is now the sole path to the underlying writer.
+  - **The alphabet is space and tab**, matching MD009 and CommonMark §2.1. A no-break space is
+    content a producer chose and must survive; 0 lines on disk end in one.
+  - **Whether any of it was content was measured, not assumed.** A trailing space inside a
+    fenced code block is preserved verbatim by a renderer, so trimming it changes the block's
+    bytes — and there are 0 fences in the corpus output at all, so the case is unobservable
+    here. Classifying every such line put 6 inside an unclosed code span and 1 after a table
+    pipe against 13471 plain; neither of the two renders the whitespace. That classification ran
+    the sink directly on `extract`'s output, which is a different layer from the CLI and reaches
+    13478 lines rather than 12342 — the same defect counts differently per stage, so both were
+    measured.
+  - **Reconciled in both directions against a pre-fix baseline: the only rune that changed in
+    any of the 12 files is `U+0020`, `-12947`**, matching the measured total exactly, with 0
+    trailing whitespace remaining and all 36472 line counts unchanged.
+  - **Twelve mutations applied, and the first pass killed seven.** Four survivors were one
+    path — the interior lines of a chunk carrying its own newlines, which only a code block's
+    body produces — now covered by a three-line fixture whose two interior lines end in a space
+    and a tab. A fifth is byte-identical corpus-wide and needed a whitespace-only `Replacement`
+    to reach. The last was deleted rather than tested: `write`'s `if s == ""` guard is
+    unobservable, since `bufio.Writer.WriteString("")` cannot fail with nothing to write.
+  - **A control byte could end a line, which review found and this rule made visible.**
+    `inline`'s whitespace-only branch writes a span's text without `escapeInto`, and
+    `unicode.IsSpace` counts VT and FF where `isControl` does not — so `**word** \v\n` was
+    emitted, since `TrimRight(" \t")` does not remove it. Now sanitized. 0 of the corpus's 11597
+    whitespace-only spans hold a control byte, so the fix is held by a test alone.
+  - The figures previously logged for this defect (539 lines with 2+, 11970 with one) are
+    superseded: the `/K`-order and `/ActualText` fixes changed where lines end, so it was
+    re-measured before implementing.
+
 ### Fixed — 2026-08-12
 
 - **A producer's `/ActualText` was never read, and 16 words came out with a stray hyphen in

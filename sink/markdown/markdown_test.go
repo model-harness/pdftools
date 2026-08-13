@@ -185,17 +185,151 @@ func TestSizeChangeInsideBoldRun(t *testing.T) {
 // CommonMark requires that an opening delimiter run not be followed by whitespace
 // and a closing run not be preceded by it, so "**bold **next" emits literal
 // asterisks. A span boundary landing on the space after a bold word is ordinary.
+//
+// A plain span follows the emphasized one in every row, because the space this rule moves
+// has to have something after it on the line to be observable at all: str holds back
+// whitespace that would end a line, so a fixture ending at the space asserts nothing about
+// where the delimiter went — it only re-asserts the trim. That is exactly what the "trailing"
+// and "both" rows did before the trim existed, and both then read `"**bold** \n"`.
 func TestWhitespaceMovesOutsideDelimiters(t *testing.T) {
 	for _, tc := range []struct {
 		name, text, want string
 	}{
-		{"trailing", "bold ", "**bold** \n"},
-		{"leading", " bold", " **bold**\n"},
-		{"both", " bold ", " **bold** \n"},
+		{"trailing", "bold ", "**bold** next\n"},
+		{"leading", " bold", " **bold**next\n"},
+		{"both", " bold ", " **bold** next\n"},
 	} {
-		if got := render(t, para(span(tc.text, bold))); got != tc.want {
+		if got := render(t, para(span(tc.text, bold), span("next"))); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestTrailingWhitespaceIsNotWritten: two or more trailing spaces are a hard line break in
+// Markdown, and a span's text ends in a space whenever the producer drew one there — so the
+// last span of a line used to carry that space to the line's end, giving it a meaning the
+// page never had. 516 lines across 8 corpus documents rendered a <br> no document asked for,
+// and 11826 more ended in exactly one, which renders the same but trips MD009.
+//
+// A tab counts, matching MD009 and CommonMark §2.1. A no-break space does not: it is content
+// a producer chose rather than layout, and trimming it would delete a character.
+func TestTrailingWhitespaceIsNotWritten(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, want string
+	}{
+		{"one space", "text ", "text\n"},
+		{"two spaces, the hard line break", "text  ", "text\n"},
+		{"many", "text      ", "text\n"},
+		{"tab", "text\t", "text\n"},
+		{"mixed", "text \t ", "text\n"},
+		{"interior space survives", "one two ", "one two\n"},
+		{"leading space survives", " text", " text\n"},
+		{"a no-break space is content", "text\u00a0", "text\u00a0\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := render(t, para(span(tc.text))); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTrailingWhitespaceSpansSeveralWrites is the case a per-line trim at each of the
+// eighteen line closes would get wrong and holding the whitespace back does not: the space
+// and the text that redeems it arrive in separate calls to str, which is the normal shape —
+// one call per span, and one more for a heading's "# " or an item's bullet.
+//
+// Asserted through a heading, whose prefix, content and newline are three writes, and whose
+// last span ends in the space. The space between the two spans must survive and the one at
+// the end must not.
+func TestTrailingWhitespaceSpansSeveralWrites(t *testing.T) {
+	b := doc.Block{
+		Role:  doc.RoleHeading,
+		Level: 2,
+		Spans: []doc.Span{span("7.1 "), span("Scope ")},
+	}
+	const want = "## 7.1 Scope\n"
+	if got := render(t, b); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A chunk that is entirely whitespace must not redeem the whitespace held back before it,
+// and that is a rule the corpus cannot show: dropping the guard on it produces output
+// byte-identical across all 12 documents, because reaching the state needs a whitespace-only
+// write *after* a non-whitespace one on the same line, and every whitespace-only span on
+// disk arrives either first or between two words.
+//
+// A whitespace-only Replacement reaches it. doc.Block.IsEmpty inspects the spans, so the
+// block is emitted, and a heading writes "## " before content() writes the value — leaving
+// the heading's own space held back and a lone space as the next chunk. Nothing may be
+// written after the "##": the line has no content, and two trailing spaces would be the
+// hard line break this whole rule exists to stop.
+func TestAnAllWhitespaceWriteDoesNotFlush(t *testing.T) {
+	b := doc.Block{
+		Role:        doc.RoleHeading,
+		Level:       2,
+		Replacement: " ",
+		Spans:       []doc.Span{span("drawn glyphs")},
+	}
+	const want = "##\n"
+	if got := render(t, b); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestTrailingWhitespaceOnAnInteriorLine covers the other half of str: a single call whose
+// string contains its own newlines, where the whitespace to remove is in the middle of the
+// argument rather than at its end.
+//
+// A code block is the only caller that does this — the fence, the body and the closing fence
+// are separate writes, but the body arrives whole, so lines 1..n-1 of it never pass through
+// the buffered-whitespace path at all and are trimmed where the newline is found. Four
+// mutations of that path survive every other test in the repo, including the alphabet on it:
+// nothing else in the package writes content and a newline in one string, since the four
+// other embedded newlines are a frontmatter rule and nl() itself.
+//
+// Both interior lines end in whitespace and the alphabet differs between them, so a rule
+// covering only space or only tab fails on one of the two.
+func TestTrailingWhitespaceOnAnInteriorLine(t *testing.T) {
+	b := doc.Block{
+		Role:  doc.RoleCode,
+		Spans: []doc.Span{span("<</Type /Page>> \n/Contents 4 0 R\t\nendobj")},
+	}
+	const want = "```\n<</Type /Page>>\n/Contents 4 0 R\nendobj\n```\n"
+	if got := render(t, b); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A control byte cannot end a line, and a whitespace-only span was the one way it could.
+//
+// unicode.IsSpace counts VT and FF where isControl does not, so a span holding one is
+// whitespace-only to inline and took the branch that writes a span's text without calling
+// escapeInto. With no trailing-whitespace rule that byte sat mid-line and was merely wrong;
+// with one it also ends the line, since TrimRight(" \t") leaves it. Found by review — no file
+// reaches it, so nothing but this test holds the sanitize call.
+//
+// The bold span is what makes the whitespace-only span a separate write rather than part of a
+// styled run, and it is asserted byte-wise because U+FFFD and a VT are hard to tell apart in
+// a quoted string.
+func TestAControlByteCannotEndALine(t *testing.T) {
+	for _, tc := range []struct {
+		name, ws string
+	}{
+		{"vertical tab", " \v"},
+		{"form feed", " \f"},
+		{"vertical tab alone", "\v"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render(t, para(span("word", bold), span(tc.ws)))
+			if strings.ContainsAny(got, "\v\f") {
+				t.Errorf("got % x, which ends a line with a control byte", got)
+			}
+			if !strings.Contains(got, replacement) {
+				t.Errorf("got % x, want the control byte replaced with %q", got, replacement)
+			}
+		})
 	}
 }
 

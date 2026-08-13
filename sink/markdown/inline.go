@@ -22,10 +22,20 @@ func inline(spans []doc.Span, plain, cell bool) string {
 	var sb strings.Builder
 	for i := 0; i < len(spans); {
 		if strings.TrimSpace(spans[i].Text) == "" {
-			// Whitespace-only: emitted as-is so word boundaries survive, but never
-			// wrapped. Emphasis delimiters cannot be adjacent to the whitespace they
-			// contain, so "* *" is asterisks and a space, not an emphasized space.
-			sb.WriteString(spans[i].Text)
+			// Whitespace-only: emitted so word boundaries survive, but never wrapped.
+			// Emphasis delimiters cannot be adjacent to the whitespace they contain, so
+			// "* *" is asterisks and a space, not an emphasized space.
+			//
+			// Sanitized, not written raw, because unicode.IsSpace counts VT and FF and
+			// isControl does not: a span holding one is whitespace-only here and reaches
+			// the output unescaped, since this is the one branch that bypasses escapeInto.
+			// That contradicts the invariant sanitize's comment states — no byte outside
+			// tab, newline and carriage return that a parser must replace — and with the
+			// trailing-whitespace rule it also ends a line, because TrimRight(" \t") does
+			// not remove it: "**word** \v\n". No file reaches it (0 of the corpus's 11597
+			// whitespace-only spans hold a control byte, and 0 spans hold one at all), so
+			// it is held by a test alone.
+			sb.WriteString(sanitize(spans[i].Text))
 			i++
 			continue
 		}

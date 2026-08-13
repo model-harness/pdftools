@@ -1648,17 +1648,93 @@ OKF-ified spec.
     population, here it had 483 and still nothing measured it.
   - Distinct from the soft-hyphen `/ActualText` case above, which is 16 structure elements
     rather than a wrap decision, and still open.
-- **A line is written with whatever trailing space its last span carried, and 539 of them end
-  in two or more.** Two or more trailing spaces is a hard line break in Markdown, so those 539
-  lines across 12 documents render a `<br>` no document asked for; 11970 more end in exactly
-  one, which renders identically but makes the output diff-hostile and trips
-  `MD009 no-trailing-spaces` on any linted consumer. A span's text ends in a space whenever the
-  producer drew one there, and nothing trims it at the point a line is closed. Found while
-  reconciling the `/K`-order fix, which moves the figure — spans that used to be glued now sit
-  at a line end — and not folded into it, because trimming at line close is a change to every
-  sink's output and wants its own before/after count. Distinct from the wrap-space rules above:
-  those decide whether to *infer* a space at a break, this one is about a space the file
-  actually contains landing where Markdown gives it a meaning.
+- **No line ends in whitespace any more, and 12947 characters of it came off.** A span's text
+  ends in a space whenever the producer drew one there, and the last span of a line carried
+  that space to the line's end, where Markdown gives it a meaning the page never had: **516
+  lines across 8 documents ended in two or more**, which CommonMark §6.7 makes a hard line
+  break, so the output rendered a `<br>` no document asked for. **11826 more ended in exactly
+  one** — renders identically, makes every conversion diff-hostile, and trips
+  `MD009 no-trailing-spaces` on any linted consumer. Distinct from the wrap-space rules above:
+  those decide whether to *infer* a space at a break, this is a space the file actually
+  contains landing where Markdown reads something into it.
+  - **The figures logged when this was found — 539 with 2+, 11970 with one — were wrong by the
+    time it was fixed**, because the `/K`-order and `/ActualText` fixes both change where a
+    line ends. Re-measuring first is what made the reconciliation below exact; taking the
+    logged numbers would have left a 605-character discrepancy with nothing to attribute it to.
+    They also differ *by layer*: running the sink directly on `extract`'s output reaches 13478
+    such lines where the CLI's own path reaches 12342, so the stage a figure was measured at is
+    part of the figure.
+  - **Held back rather than trimmed at each line's close, because there are eighteen places
+    that end a line and one that writes bytes.** `writer.str` buffers trailing space and tab in
+    `pend` and flushes it only when a non-whitespace byte follows on the same line; a newline
+    discards it. A space between two words survives, a space before a newline is never written,
+    and the rule does not care *which* of the eighteen callers closes the line — including the
+    four that write their own `"
+"` inside a longer string, which a per-close trim would miss
+    entirely. `write` is now the sole path to the underlying writer, which is what makes "one
+    place" true rather than aspirational.
+  - **The alphabet is space and tab**, matching MD009 and CommonMark §2.1. A no-break space is
+    not whitespace for this purpose: it is content a producer chose, and 0 lines on disk end in
+    one, so keeping it costs nothing and dropping it would delete a character.
+  - **Whether any of it was content was measured rather than reasoned about.** Trailing
+    whitespace inside a fenced code block is preserved verbatim by a renderer, so trimming it
+    changes the block's bytes — and there are **0 fences in the corpus output at all**, which
+    makes the case unobservable here. Classifying every affected line put 6 inside an unclosed
+    code span and 1 after a table pipe against 13471 plain; neither of the two renders the
+    whitespace it holds.
+  - **Reconciled in both directions against a pre-fix baseline: `U+0020` is the only rune that
+    changed in any of the 12 files, `-12947`**, matching the measured total exactly, with 0
+    trailing whitespace remaining and all 36472 line counts unchanged.
+  - **Twelve mutations applied, and the first pass killed seven.** Five survivors, all from
+    branches the corpus reaches and no test did — the value of applying a mutation rather than
+    reading the code and judging it covered.
+    - **Four of the five are one path: the interior lines of a chunk that carries its own
+      newlines.** `str` trims those where it finds the newline rather than through `pend`, and
+      a **code block is the only caller that reaches it** — the fence, body and closing fence
+      are separate writes, but the body arrives whole, so its lines 1..n-1 never touch the
+      buffered path. The four other embedded newlines in the package are frontmatter's `---`
+      rules and `nl()` itself, none of which has content before the newline. Dropping the trim
+      there, and either half of its alphabet, survived everything.
+      `TestTrailingWhitespaceOnAnInteriorLine` is a three-line body whose two interior lines
+      end in a space and a tab respectively, so each alphabet mutation fails on one of them.
+    - **One is byte-identical on the whole corpus.** Flushing held-back whitespace from an
+      all-whitespace chunk produces the same bytes for all 12 documents, because reaching the
+      state needs a whitespace-only write *after* a non-whitespace one on the same line and
+      every whitespace-only span on disk arrives first or between two words. A whitespace-only
+      `Replacement` reaches it, since `doc.Block.IsEmpty` inspects the spans;
+      `TestAnAllWhitespaceWriteDoesNotFlush` is that state, and without it the guard is held
+      by nothing.
+    - **Review found a thirteenth defect, in a branch this change made worse rather than
+      created.** `inline`'s whitespace-only case (`sink/markdown/inline.go:24`) writes a span's
+      text without calling `escapeInto`, and `unicode.IsSpace` counts VT and FF where
+      `isControl` does not — so a span holding one is whitespace-only there and reached the
+      output unescaped, contradicting the invariant `sanitize`'s own comment states. Mid-line
+      that was merely wrong; with this rule it also *ends a line*, because `TrimRight(" 	")`
+      leaves it: `**word** 
+`. **0 of the corpus's 11597 whitespace-only spans hold a
+      control byte and 0 spans hold one at all**, so no measurement could have found it and
+      nothing but `TestAControlByteCannotEndALine` holds the fix. Reverting the `sanitize` call
+      is killed by that test and by nothing else in the repo.
+    - **Two of the reviewer's three findings were wrong, and running the code settled both.** A
+      whitespace-only `Replacement` was reported as emitting an invalid `-` list marker and an
+      invalid `>` quote. Rendered, they are `"-
+"` and `">
+"`, both of which CommonMark reads
+      as an empty list item and an empty block quote; before the change they were `"- "` and
+      `"> "`, equally empty. The table case the reviewer did not raise is the one that mattered
+      structurally, and it is safe: `| a |  |` keeps its pipes, because a pipe is not
+      whitespace, so the column count and the delimiter row still agree.
+    - **The twelfth survivor was deleted rather than tested.** `write` had an `if s == ""`
+      guard, and `str` calls it with an empty string routinely — but `bufio.Writer.WriteString("")`
+      returns `(0, nil)` unless it flushes, which it cannot do with nothing to write. The
+      mutation changed no byte and failed no test because the guard is unobservable, which is
+      the definition of code that should not be there.
+  - **One test's claim was rewritten rather than its bound relaxed.**
+    `TestWhitespaceMovesOutsideDelimiters` asserts CommonMark §6.2 — that a caption's trailing
+    space moves outside the emphasis delimiter — and both its rows previously ended at that
+    space, which the trim now removes. A fixture ending at a line's end can no longer observe
+    where the delimiter went, so a plain span follows the emphasized one in every row and the
+    §6.2 claim stays visible.
 - **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
   `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
   `doc.Role`, so the element and its description are dropped together. This is the same debt

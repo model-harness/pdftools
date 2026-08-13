@@ -185,6 +185,10 @@ type writer struct {
 	// item's own marker. See listIndent — it is a running stack and not a fixed two
 	// spaces per level because an ordered marker is wider than a bullet's.
 	indents []int
+
+	// pend is whitespace written but not yet emitted, because it would currently end a
+	// line. See str: it is flushed when text follows it and discarded at a newline.
+	pend string
 }
 
 // listKind is which of Markdown's list syntaxes a block is written with, or notList
@@ -236,10 +240,68 @@ func (w *writer) sameList(kind listKind, depth int) bool {
 	return depth > 1 || w.lastLevel > 1
 }
 
+// str writes s, holding back any whitespace that would end a line.
+//
+// A span's text ends in a space whenever the producer drew one there, and the last span of
+// a line carries that space to the line's end, where Markdown gives it a meaning the page
+// never had: two or more trailing spaces are a hard line break (CommonMark §6.7), so 516
+// lines across 8 corpus documents rendered a <br> no document asked for, and 11826 more
+// ended in exactly one, which renders identically but makes every conversion diff-hostile
+// and trips `MD009 no-trailing-spaces` on any linted consumer. 12947 whitespace characters
+// in all, and a baseline diff says U+0020 is the only rune the rule changes.
+//
+// Held back rather than trimmed at each line's close, because there are eighteen places
+// that end a line and one that writes bytes. Trailing whitespace is buffered in pend and
+// flushed only when a non-whitespace byte follows it on the same line — so a space between
+// two words survives, and a space before a newline is never written at all. That also makes
+// the rule indifferent to *which* caller closes the line, including the four that write
+// their own "\n" inside a longer string.
+//
+// The whitespace alphabet is space and tab, matching MD009 and CommonMark §2.1, which
+// counts both as the line-ending whitespace it strips. A no-break space is not whitespace
+// for this purpose and must survive: it is content a producer chose, and 0 lines on disk
+// end in one.
+//
+// Inside a fenced code block this is still correct, and it is the one place where that
+// needed checking rather than reasoning: trailing whitespace in a fence is preserved
+// verbatim by a renderer, so trimming it changes the block's bytes. It changes nothing a
+// reader of the code can see, no corpus fence has a line ending in whitespace (there are 0
+// fences on disk at all), and a code block whose lines carry invisible padding is the
+// diff-hostility above with syntax highlighting.
 func (w *writer) str(s string) {
 	if w.err != nil {
 		return
 	}
+	for {
+		i := strings.IndexAny(s, "\n")
+		if i < 0 {
+			break
+		}
+		// A newline discards whatever whitespace was held back before it, plus any this
+		// chunk ends with: both would land at the end of the finished line.
+		w.write(strings.TrimRight(s[:i], " \t"))
+		w.pend = ""
+		w.write("\n")
+		s = s[i+1:]
+	}
+	trimmed := strings.TrimRight(s, " \t")
+	if trimmed != "" {
+		w.write(w.pend)
+		w.write(trimmed)
+		w.pend = ""
+	}
+	w.pend += s[len(trimmed):]
+}
+
+// write is str without the held-back-whitespace rule — the only path to the underlying
+// writer, so that every byte this package emits passes through one place.
+//
+// No guard against an empty s: str calls this with one routinely, when pend is empty or a
+// line ends at a newline, and bufio.Writer.WriteString("") returns (0, nil) unless it
+// flushes, which it cannot do with nothing to write. A guard here would be unobservable —
+// applied as a mutation it changes no byte and fails no test, which is the definition of
+// code that should not exist.
+func (w *writer) write(s string) {
 	_, w.err = w.w.WriteString(s)
 }
 
