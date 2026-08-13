@@ -1,0 +1,46 @@
+sink/markdown/inline.go
+  s_5cd1b28ed520c1::t_cce58d86834915 25-38
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_396101bd44d18b 188-191
+  s_5cd1b28ed520c1::t_7d7a22809646ac 283
+  s_5cd1b28ed520c1::t_476deac2b3a84a 298-303
+  s_5cd1b28ed520c1::t_ffe0847f8c3f44 276,282
+  s_5cd1b28ed520c1::t_a5789d34c100e6 243-246,252-270,280-281,284-286,289-292,294-297,304
+  s_5cd1b28ed520c1::t_aa957f627e694d 247-251
+  s_5cd1b28ed520c1::t_3b628556bad046 293
+  s_5cd1b28ed520c1::t_a929b308258ac5 275,277-279,287-288
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_e1ebb86e2bb3a0 10,12,16
+  s_5cd1b28ed520c1::t_564ae80dd35a07 42-46
+  s_5cd1b28ed520c1::t_f4c573cffa5f0d 35-41
+  s_5cd1b28ed520c1::t_fcd4ebfa88a7c8 28-32
+  s_5cd1b28ed520c1::t_30454d41a8df61 8-9,11,13-15,17-27,33-34,47-50
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_352682b297b7e0 1707-1726
+  s_5cd1b28ed520c1::t_9300fea0007e8c 1688-1706,1727-1731
+  s_5cd1b28ed520c1::t_3ddcdfc6f2bb44 1651-1687,1732-1737
+sink/markdown/markdown_test.go
+  s_5cd1b28ed520c1::t_1c1ff9e5c7c2df 281-304
+  s_5cd1b28ed520c1::t_3b4842c339b17b 211-212
+  s_5cd1b28ed520c1::t_3f55ee684b45f3 257-280
+  s_5cd1b28ed520c1::t_7dd68e49834ba6 254-255,305-335
+  s_5cd1b28ed520c1::t_dc55b655df6600 227
+  s_5cd1b28ed520c1::t_88eeaa70f4fab5 188-193,198-200,202,208-210,213-226,228-253
+  s_5cd1b28ed520c1::t_8b1bf02ecec804 256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bd6798f55017ea4c5b0aa39cfea54f9d46785d32",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
