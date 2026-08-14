@@ -1638,7 +1638,9 @@ OKF-ified spec.
     `pandoc -f gfm` renders a blank line inside one as a paragraph break with the backticks
     left literal. Settled with the renderer rather than by reading the output. Line structure
     there is worth having and is separate work — it needs the block *fenced*, which is
-    `doc.Block.Role`'s business and not a side effect of one dictionary key.
+    `doc.Block.Role`'s business and not a side effect of one dictionary key. Half-answered
+    below, and the half this bullet named turned out to be the wrong half: the tagged path is
+    fixed, and 32004 and 32003 declare no `Code` at all.
   - **The net corpus effect is exactly `{U+002D: -16}`, in both directions.** 32004 −3, 32005
     −10, 32002 −2, 32003 −1, and nothing else changed either way across all 51 files. Each
     joined word now matches its own document's majority spelling: `MACLocation` 16 against
@@ -1751,10 +1753,13 @@ OKF-ified spec.
     one, so keeping it costs nothing and dropping it would delete a character.
   - **Whether any of it was content was measured rather than reasoned about.** Trailing
     whitespace inside a fenced code block is preserved verbatim by a renderer, so trimming it
-    changes the block's bytes — and there are **0 fences in the corpus output at all**, which
-    makes the case unobservable here. Classifying every affected line put 6 inside an unclosed
-    code span and 1 after a table pipe against 13471 plain; neither of the two renders the
-    whitespace it holds.
+    changes the block's bytes. Classifying every affected line put 6 inside an unclosed code
+    span and 1 after a table pipe against 13471 plain; neither of the two renders the whitespace
+    it holds. The claim recorded here originally — 0 fences in the corpus output at all — was
+    wrong when written: the corpus already emitted 14 fence markers over 7 lines, from the 7
+    `Code` elements that carry their own content. It is now 36 markers over 106 lines, and the
+    number that matters is that **0 of those 106 lines end in whitespace**, so the conclusion
+    survives on a population that is not zero.
   - **Reconciled in both directions against a pre-fix baseline: `U+0020` is the only rune that
     changed in any of the 12 files, `-12947`**, matching the measured total exactly, with 0
     trailing whitespace remaining and all 36472 line counts unchanged.
@@ -1808,6 +1813,70 @@ OKF-ified spec.
     space, which the trim now removes. A fixture ending at a line's end can no longer observe
     where the delimiter went, so a plain span follows the emphasized one in every row and the
     §6.2 claim stays visible.
+- **Eleven of the corpus's eighteen code listings were dropped whole, and the logged note named
+  the wrong files for the wrong reason.** A `Code` element whose listing is one `P` per line
+  holds no marked content of its own, so `gather` detached all 99 of those paragraphs as blocks
+  in their own right, the `Code` block emitted no spans, and `doc.Block.IsEmpty` discarded it:
+  `declared=11 kidP=99 -> codeblocks=0 empty=0 chars=0`. Every listing came out as ordinary
+  prose with its `/` and `<<` escaped. Fixed on the tagged path.
+  - **The measurement is what found it, because the fence count looked healthy.** 18 `Code`
+    elements on disk in 3 files. The 7 in `PDF-Declarations.pdf` and
+    `PDF20_AN003-ObjectMetadataLocations.pdf` are `kids=0 content=N` and always fenced
+    correctly. All 11 in `Well-Tagged-PDF-WTPDF-1.0.pdf` are `kids=N content=0`. A count of
+    fenced blocks is therefore non-zero while two thirds of the corpus's listings are missing —
+    the same shape as *presence is not correctness* elsewhere in this document. The note said
+    fencing needed `doc.Block.Role` and blamed ISO/TS 32004 and 32003: the role path was already
+    complete end to end, and those two files declare no `Code` at all.
+  - **`linesText` is a second predicate rather than a wider `wrapsText`, and that is the whole
+    design of the fix.** `doc.Block.writeText` joins spans with no separator, so absorbing the
+    paragraphs without restoring the breaks yields one block holding every line run together —
+    the collapse the fence exists to prevent, produced by the fix for it. The distinction is
+    measured: 752 cells hold more than one `P` — over all 18 tagged files, of which the 11
+    sponsored ISO PDFs in `docs/` account for 751 — and their text is one run of prose the
+    producer broke across lines, where joining with nothing is correct; a listing's `P` *is* a
+    line, and the break between two of them is content with no glyph anywhere on the page.
+  - **Three conditions on one `append`, each reachable.** The break goes only after a block role
+    — 10 of the 109 descendants of the corpus's `Code` elements are `Span`, and breaking on any
+    kid splits a styled line in two — only before recursing, so it lands between two lines
+    rather than after the last, and only once there is text, so no listing opens with a blank
+    line. That last guard fires on a `Code` with no content of its own, which is all 11 of them;
+    the shape review proposed instead — a first `P` that resolves to no spans, where the guard
+    would have to hold a second time — has **0 of 99** on disk, and it needs no break there
+    anyway, since there is no first line to separate from.
+  - **The inserted span carries `MCID: -1`, which is what keeps it out of the join.** `newIndex`
+    indexes only spans with `MCID >= 0`, so a fabricated one can never be handed to a second
+    element or double-claimed; and because it is created after extraction it is not in any
+    `doc.Page` for `unplaced` to recover. Its zero `Box` is the same story — nothing unions a
+    span's box except `substituted`, which only touches spans it was given.
+  - **Both sinks were checked, not just the one the fence lives in.** `sink/okf` routes clause
+    bodies through `markdown.WriteBlocks`, so the fence and its breaks arrive there too: 22 fence
+    markers across 7 concept files. The two places okf could have leaked a raw newline into a
+    YAML scalar both fold it — `oneLine` on titles and `collapse` in `describe` — and 0 of the
+    generated files have a malformed frontmatter line.
+  - **Reconciled in both directions: not one character of text changed.** One of 12 files moved.
+    `U+000A -66`, `U+0060 +66`, `U+005C -103` and nothing else — the newlines and backticks are
+    the 11 fences' own three lines each, and the escapes went because fence content is verbatim.
+    49 lines lost a backslash and **0** gained one, taking the lines holding one from 76 to 9.
+    Lines 1934 → 1868; with all whitespace, backslashes and backticks removed — the three runes
+    that moved and nothing else — the two outputs are byte-identical at 104249 characters each.
+    The exclusion of backticks matters and is not slack: 66 of them were added, so a
+    normalization that kept them would differ by exactly that and prove nothing.
+  - **The block count drops 88 and the arithmetic closes.** WTPDF goes 938 → 850, because 99
+    paragraphs that each stood beside an empty `Code` block are now the contents of 11 of them.
+    `TestSectionizeCorpus`'s floor for that file moved 900 → 840 with the reconciliation written
+    beside it, the same treatment the 29218 → 27517 cell merge got: a block count cannot
+    distinguish a merge from a deletion, so the floor documents the change while
+    `TestSectionizeLosesNoText` and `TestOutlineConservesCharacters` — both unchanged and both
+    exact — are what rule the deletion out.
+  - **Eight mutations, eight killed — and one was killed only by the corpus test.** Dropping the
+    `blockRole` guard failed `TestSectionizeCorpus` alone, which skips when the sponsored PDFs
+    are absent, so on a clean clone that guard had no coverage at all.
+    `TestCodeSpansDoNotSplitALine` reproduces the `P > Span` shape those 10 descendants are in
+    and kills it from the `sectionize` package by itself. Same lesson as the inter-fragment
+    write site above: a branch the corpus exercises is not a branch a clone tests.
+  - Still open, and the untagged half of the same defect: ISO/TS 32004's and 32003's ASN.1
+    listings, which collapse to one line and declare no structure to fix them with. `Style.Mono`
+    is the documented signal there, and it is a different rule in a different package.
 - **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
   `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
   `doc.Role`, so the element and its description are dropped together. This is the same debt

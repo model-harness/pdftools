@@ -192,7 +192,7 @@ func (b *builder) heading(e *tag.Elem) {
 	var spans []*doc.Span
 	var nested []*tag.Elem
 	var pg span
-	b.gather(e, &spans, &nested, &pg, false)
+	b.gather(e, &spans, &nested, &pg, false, false)
 
 	b.open(b.title(e, spans), level, pg)
 
@@ -330,7 +330,7 @@ func (b *builder) block(e *tag.Elem, role doc.Role) {
 	if role == doc.RoleListItem {
 		marker = b.label(e)
 	}
-	b.gather(e, &spans, &nested, &pg, wrapsText(role))
+	b.gather(e, &spans, &nested, &pg, wrapsText(role), linesText(role))
 	b.emitItem(e, role, spans, pg, marker)
 	for _, n := range nested {
 		b.visit(n)
@@ -353,7 +353,28 @@ func (b *builder) block(e *tag.Elem, role doc.Role) {
 // nothing on disk does it, and making it transparent would change what title reads
 // with no case to measure against.
 func wrapsText(role doc.Role) bool {
-	return role == doc.RoleListItem || role == doc.RoleTableCell
+	return role == doc.RoleListItem || role == doc.RoleTableCell || role == doc.RoleCode
+}
+
+// linesText reports whether a block of this role holds its text as one paragraph per line,
+// so that absorbing those paragraphs has to put the line breaks back.
+//
+// Only RoleCode, and the distinction from the two roles above it is the whole reason this is
+// a second predicate rather than a wider wrapsText. A cell holding several P is one run of
+// prose the producer happened to break across lines, and joining it with nothing is right —
+// 752 cells across the 18 tagged files do exactly that. A code listing's P *is* a line, and
+// the newline between two of them is content: it is what a fence exists to preserve, and
+// concatenating them yields the single collapsed line this rule was written to stop.
+//
+// Measured rather than assumed, and the measurement is what named the defect. Of the 18 Code
+// elements on disk, 7 carry their own marked content and already fenced correctly; the other
+// 11 are Well-Tagged-PDF-WTPDF-1.0.pdf's, which hold no content of their own and 99 P kids
+// between them. Every one of those 11 emitted nothing and was dropped by IsEmpty, so all 99
+// lines escaped as ordinary paragraphs and not one of the listings was fenced. ISO/TS 32004
+// and 32003, whose ASN.1 listings collapse the same way, declare no Code at all — theirs is
+// the untagged-path half of the same defect and is not what this fixes.
+func linesText(role doc.Role) bool {
+	return role == doc.RoleCode
 }
 
 // label takes a list item's declared /Lbl out of the item and returns it.
@@ -635,7 +656,9 @@ func kidBefore(e *tag.Elem, ki, order int) bool {
 // before descending into them, so a Figure inside a paragraph does not split it in two.
 //
 // wraps says the block being built holds its text in a wrapping paragraph — a list
-// item or a table cell, per wrapsText — which makes a paragraph inside it transparent.
+// item, a table cell, or a code listing, per wrapsText — which makes a paragraph inside it
+// transparent. lines says those absorbed paragraphs are lines rather than prose, per
+// linesText, which is the only thing that separates a listing from a cell here.
 // ISO 32000-2 Table 364 lets an LBody hold any block-level element, and LaTeX's tagging
 // backend uses that: it writes LI > LBody > Part > P, so the item's whole body is a
 // wrapped paragraph. Detaching it emits the item with no spans — dropped by IsEmpty —
@@ -666,7 +689,7 @@ func kidBefore(e *tag.Elem, ki, order int) bool {
 // with a block role is detached here and re-entered through block, where the flag is set
 // from that element's own role. So a nested LI, or a TOCI inside a TOC inside a TOCI,
 // gathers with the flag set from its own role and not its parent's.
-func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span, wraps bool) {
+func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, pg *span, wraps, lines bool) {
 	pg.add(e.Page)
 	inOrder(e,
 		func(refs []tag.MCRef) {
@@ -684,7 +707,28 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 				*nested = append(*nested, k)
 				return
 			}
-			b.gather(k, spans, nested, pg, wraps)
+			// An absorbed paragraph in a lines block is a line, so the break before it is
+			// restored here — the producer drew it as a structure boundary and there is no
+			// glyph anywhere for it. Guarded on there being text already, so the first line
+			// does not open the block with a blank one, and written before recursing so it
+			// lands between two paragraphs rather than after the last.
+			//
+			// Per absorbed *block*, not per absorbed kid: 10 of the 109 descendants of the
+			// corpus's Code elements are Span, one per styled run inside a line, and breaking
+			// on those splits the line they style. MCID -1 keeps the fabricated span out of
+			// the join — newIndex indexes only non-negative identifiers — so it can be neither
+			// claimed by an element nor recovered as unplaced text.
+			//
+			// The len guard fires on every Code holding no content of its own, which is all 11
+			// on disk. It would have to hold a second time for a first paragraph resolving to
+			// no spans, and 0 of the 99 do; a break would be wrong there anyway, since an
+			// empty first line is not a line to separate from.
+			if lines && len(*spans) > 0 {
+				if _, ok := blockRole(k.Role); ok {
+					*spans = append(*spans, &doc.Span{Text: "\n", MCID: -1})
+				}
+			}
+			b.gather(k, spans, nested, pg, wraps, lines)
 		})
 }
 

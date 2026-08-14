@@ -968,6 +968,102 @@ func TestTOCItemOutsideAListIsLevelOne(t *testing.T) {
 	}
 }
 
+// A Code element that holds its listing as one P per line keeps it as one block, with the
+// line breaks the structure declared.
+//
+// This is where the whole listing was lost. Of the 18 Code elements on disk, 11 hold no
+// marked content of their own and 99 P kids between them — every one emitted no spans, was
+// dropped by IsEmpty, and its lines escaped as ordinary paragraphs, so not one of
+// Well-Tagged-PDF-WTPDF-1.0.pdf's eleven listings was fenced. The other 7 carry their own
+// content and always worked, which is why a fence count alone looked healthy.
+//
+// The newline is the assertion, not the block count. Absorbing the paragraphs without
+// restoring the breaks gives one block whose text is every line run together — the same
+// collapsed line the fence exists to prevent, and a defect no role check or
+// character-conservation check can see.
+func TestCodeLinesBecomeOneBlock(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "7.4 Filters"},
+		sp{1, 1, "10 0 obj <<"}, sp{1, 2, "  /Metadata 11 0 R"}, sp{1, 3, ">>"},
+	)
+	code := kids(el(tag.RoleCode, 1),
+		el(tag.RoleP, 1, 1), el(tag.RoleP, 1, 2), el(tag.RoleP, 1, 3))
+	tr := tree(el(tag.RoleH2, 1, 0), code)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blocks := out.Sections[0].Blocks
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1 listing: %v", len(blocks), texts(blocks))
+	}
+	if blocks[0].Role != doc.RoleCode {
+		t.Errorf("role = %s, want %s", blocks[0].Role, doc.RoleCode)
+	}
+	if got, want := blocks[0].Text(), "10 0 obj <<\n  /Metadata 11 0 R\n>>"; got != want {
+		t.Errorf("listing = %q, want %q", got, want)
+	}
+}
+
+// The break goes between two lines and never before the first one.
+//
+// A leading newline opens the fenced block with a blank line, which is content the page does
+// not draw. The guard is on there being spans already, so a Code element whose own marked
+// content precedes its kids is the case that distinguishes it: without the guard the first
+// kid's break would still be correct and only a listing that starts with a kid would show
+// the defect.
+func TestCodeLeadsWithNoBlankLine(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "first"}, sp{1, 2, "second"})
+	code := interleaved(tag.RoleCode, 1, 1, el(tag.RoleP, 1, 2))
+	tr := tree(el(tag.RoleH2, 1, 0), code)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "first\nsecond"; got != want {
+		t.Errorf("listing = %q, want %q", got, want)
+	}
+}
+
+// A Span inside a line takes no break, because a Span is not a line.
+//
+// The break is written per absorbed *block*, not per absorbed kid, and the difference is
+// reachable: 10 of the 109 descendants of the corpus's Code elements are Span, one per styled
+// run inside a listing line. Dropping the blockRole guard breaks each of those lines in two.
+//
+// Its own test because the corpus is the only other thing that holds it, and the corpus tests
+// skip when the sponsored PDFs are absent — so on a clean clone the guard would be covered by
+// nothing at all. This is the shape the WTPDF listings are actually in: a P holding a Span
+// holding the text, not a P holding text directly.
+func TestCodeSpansDoNotSplitALine(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "/Filter "}, sp{1, 2, "/FlateDecode"})
+	line := kids(el(tag.RoleP, 1), el(tag.RoleSpan, 1, 1), el(tag.RoleSpan, 1, 2))
+	tr := tree(el(tag.RoleH2, 1, 0), kids(el(tag.RoleCode, 1), line))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "/Filter /FlateDecode"; got != want {
+		t.Errorf("listing = %q, want %q: a Span is a styled run inside a line, not a line", got, want)
+	}
+}
+
+// A cell's paragraphs still join with nothing, which is what keeps this rule off prose.
+//
+// 752 cells across the 18 tagged files hold more than one P, and their text is one run the
+// producer broke across lines, so a newline between them would put a hard break inside a table
+// cell. The two predicates are separate for exactly this reason, and widening linesText to
+// every wrapping role is the mutation this kills.
+func TestCellParagraphsJoinWithoutABreak(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "name or "}, sp{1, 2, "array"})
+	cell := kids(el(tag.RoleTD, 1), el(tag.RoleP, 1, 1), el(tag.RoleP, 1, 2))
+	tbl := kids(el(tag.RoleTable, 1), kids(el(tag.RoleTR, 1), cell))
+	tr := tree(el(tag.RoleH2, 1, 0), tbl)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "name or array"; got != want {
+		t.Errorf("cell = %q, want %q", got, want)
+	}
+}
+
 func TestTableCellsBecomeBlocks(t *testing.T) {
 	// Table, TR, THead and TBody are containers. The cells are the content, and a
 	// nested P inside a cell must not duplicate it.

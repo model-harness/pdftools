@@ -63,7 +63,14 @@ func TestSectionizeCorpus(t *testing.T) {
 		minBlocks   int
 		maxUnplaced float64 // percent of document characters, see below
 	}{
-		{"Well-Tagged-PDF-WTPDF-1.0.pdf", 183, 173, 6, 900, 0.05},
+		// 840 was 900 until a Code element absorbed its own listing lines. The drop is 938
+		// to 850, and it reconciles exactly: 11 Code elements hold 99 P between them, each
+		// of which used to be a paragraph of its own beside an empty Code block that
+		// IsEmpty then discarded, and the 11 are now blocks holding all 99 lines.
+		// 99 - 11 = 88. A merge rather than a loss, and what proves that is
+		// TestSectionizeLosesNoText and TestOutlineConservesCharacters holding across the
+		// change, not this floor — a block count cannot tell the two apart.
+		{"Well-Tagged-PDF-WTPDF-1.0.pdf", 183, 173, 6, 840, 0.05},
 		{"ISO_TS_32001-2022_sponsored_EC3.pdf", 14, 10, 3, 100, 0.01},
 		{"ISO-TS-32005-2023-sponsored.pdf", 27, 23, 4, 650, 0.01},
 		// 0.231% is not a defect in this package: ISO 32000-2 draws the whole of clause

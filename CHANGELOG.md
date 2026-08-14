@@ -7,6 +7,65 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-14
 
+- **Eleven code listings were dropped entirely, and their 99 lines escaped as prose.** A `Code`
+  element that holds no marked content of its own — its listing is one `P` per line — emitted no
+  spans, so `doc.Block.IsEmpty` discarded it and `gather` had already detached every one of those
+  paragraphs as a block in its own right: `declared=11 kidP=99 -> codeblocks=0 empty=0 chars=0`.
+  The listings came out as ordinary paragraphs with their `/` and `<<` backslash-escaped, and
+  nothing in the output said a fence had been lost.
+  - **The census is what named the defect, and it contradicted the logged note.** There are 18
+    `Code` elements on disk in 3 files. The 7 in `PDF-Declarations.pdf` and
+    `PDF20_AN003-ObjectMetadataLocations.pdf` are `kids=0 content=N` — they carry their own
+    content and already fenced correctly, which is why a fence count alone looked healthy. All
+    11 in `Well-Tagged-PDF-WTPDF-1.0.pdf` are `kids=N content=0`, holding 99 `P` between them.
+    The note blamed ISO/TS 32004 and 32003 and said fencing needed `doc.Block.Role`; both halves
+    were wrong. The role plumbing was already complete end to end — `doc.RoleCode`,
+    `sectionize.go`'s `tag.RoleCode` mapping, and `sink/markdown`'s fence writer — and those two
+    files declare **no** `Code` at all. Their collapsing ASN.1 listings are the untagged-path
+    half of the same defect and are still open.
+  - **The one-line fix is the defect wearing the fix's clothes.** Adding `RoleCode` to
+    `wrapsText` gets the fence, and because `doc.Block.writeText` concatenates spans with no
+    separator it runs all 99 lines together — the collapse a fence exists to prevent. So
+    `linesText` is a *second* predicate rather than a wider `wrapsText`: a cell holding several
+    `P` is one run of prose the producer broke across lines and joining it with nothing is
+    right, which 752 cells on disk do; a listing's `P` *is* a line and the break between two of
+    them is content with no glyph anywhere on the page.
+  - **The break is written per absorbed block, before recursing, and only after there is text.**
+    Three separate conditions, each with its own reachable failure: 10 of the 109 descendants of
+    the corpus's `Code` elements are `Span`, so breaking on any kid splits a styled line in two;
+    writing it after the recursion puts the break after the last line instead of between two;
+    and dropping the `len(*spans) > 0` guard opens every listing with a blank line.
+  - **Reconciled in both directions, and not one character of text changed.** One of 12 files
+    moved. `U+000A -66`, `U+0060 +66`, `U+005C -103`, nothing else: the 66 newlines are the 11
+    fences' own lines and the 66 backticks are their markers (11 × 3 × 2), and the 103 escapes
+    vanished because fence content is verbatim. 49 previously-escaped lines lost their
+    backslashes and **zero** lines gained one; 76 lines held a backslash before and 9 do now.
+    Line count 1934 → 1868, and with all whitespace, backslashes and backticks removed the two
+    outputs are byte-identical at 104249 characters each — the three excluded classes being
+    exactly the three runes that moved.
+  - **The break span is `MCID: -1`, and both sinks were checked.** `newIndex` indexes only spans
+    with a non-negative MCID, so a fabricated one cannot be claimed twice or reach the `unplaced`
+    recovery pass. `sink/okf` sends clause bodies through `markdown.WriteBlocks`, so it gains the
+    fences too — 22 markers across 7 concept files — and the two paths where a raw newline could
+    have entered a YAML scalar, `oneLine` on titles and `collapse` in `describe`, both fold it:
+    0 malformed frontmatter lines in the generated tree.
+  - **The corpus block count moved −88 and reconciles exactly.** WTPDF goes from 938 blocks to
+    850: 99 paragraphs that each used to stand beside a discarded empty `Code` block are now the
+    contents of 11, and 99 − 11 = 88. `TestSectionizeCorpus`'s floor moved to 840 for that file,
+    with the arithmetic recorded beside it — a floor is not evidence of a merge, and
+    `TestSectionizeLosesNoText` and `TestOutlineConservesCharacters` both hold unchanged, which
+    is.
+  - **Eight mutations applied, eight killed, and one of them was killed only by the corpus.**
+    Dropping the `blockRole` guard on the break failed `TestSectionizeCorpus` and nothing else —
+    a guard that would be covered by nothing on a clone without the sponsored PDFs.
+    `TestCodeSpansDoNotSplitALine` is the `P > Span` shape those 10 descendants are in, and it
+    kills the mutation from the `sectionize` package alone.
+  - Corrects a measurement in the 2026-08-13 entry below: "0 fences in the corpus output at
+    all" was already wrong when written — the 7 self-contained `Code` elements produced 14 fence
+    markers over 7 lines. There are now 36 markers over 106 lines, and 0 of those lines end in
+    whitespace, so the conclusion that trailing-whitespace-inside-a-fence is unobservable here
+    still holds on a population that is no longer zero.
+
 - **23598 spaces were inferred into gaps the page had already spaced.** `place` infers a space
   wherever a glyph starts further along than the previous one's advance accounts for, and that
   test is geometric: it cannot see that the producer already drew a space into the same gap.
