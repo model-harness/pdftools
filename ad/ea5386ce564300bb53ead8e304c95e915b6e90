@@ -1,0 +1,47 @@
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_ac2de576da9b19 195
+  s_5cd1b28ed520c1::t_863a7727635f20 365-367
+  s_5cd1b28ed520c1::t_afda417f5a880b 715-725
+  s_5cd1b28ed520c1::t_6170bdee7d7527 356-364,368-377
+  s_5cd1b28ed520c1::t_092e1e8315c1f3 333
+  s_5cd1b28ed520c1::t_60b316ba92a518 692,710-714,726,730
+  s_5cd1b28ed520c1::t_67f4ba45eb6783 659-661
+  s_5cd1b28ed520c1::t_623e364e23ca1a 727-729
+  s_5cd1b28ed520c1::t_79ab6ccac5de47 731
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_5de2d28c8ee0c9 1816-1833,1836-1841,1856-1858,1871-1879
+  s_5cd1b28ed520c1::t_2eed35e1dec629 1756-1762
+  s_5cd1b28ed520c1::t_7ef698189a5bce 1842-1845
+  s_5cd1b28ed520c1::t_2a5ec37f11722e 1641-1643
+  s_5cd1b28ed520c1::t_df1ac4241ca61d 1834-1835
+  s_5cd1b28ed520c1::t_81bff790f82fca 1846-1855
+  s_5cd1b28ed520c1::t_2ae0c4bae0feeb 1864-1870
+  s_5cd1b28ed520c1::t_f1ee86e1bc9099 1859-1863
+sectionize/sectionize_test.go
+  s_5cd1b28ed520c1::t_ae75a8deb62519 1050-1053
+  s_5cd1b28ed520c1::t_d24de3c1a1f3da 1026-1047
+  s_5cd1b28ed520c1::t_bc156c3b28faeb 971-1025,1048-1049,1054-1066
+cmd/pdfspec/sectionize_test.go
+  s_5cd1b28ed520c1::t_1e3e2c1905ab60 66-73
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_a5a7e4bc55912d 52-57
+  s_5cd1b28ed520c1::t_2d7215875f1281 10-41,58-68
+  s_5cd1b28ed520c1::t_5207b2cce8c236 42-45
+  s_5cd1b28ed520c1::t_202b112f50fc27 46-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "adea5386ce564300bb53ead8e304c95e915b6e90",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
