@@ -203,7 +203,7 @@ func TestSplitAtRuleDividesTheFragment(t *testing.T) {
 //
 // The gap here is about 72pt against a 12pt font — six space widths, which is where any
 // threshold would fire. That it does not split is the measurement this package rests on:
-// the ratio of gap to space width is continuous over all 48757 inferred spaces on disk, so
+// the ratio of gap to space width is continuous over all 119246 inferred spaces on disk, so
 // only the stroke separates a cell boundary from wide spacing.
 func TestNoSplitWithoutARule(t *testing.T) {
 	p := extractPage(t, "BT /F1 12 Tf 100 605 Td (Left) Tj 100 0 Td (Right) Tj ET")
@@ -344,6 +344,55 @@ func TestSplitMarksEveryPieceApart(t *testing.T) {
 	want := []string{"One ", "Two ", "Six ", "Ten"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("spans = %q, want %q — a fused pair means a row boundary was lost", got, want)
+	}
+}
+
+// Two cuts can now share a byte offset, and splitFrag has to absorb it.
+//
+// Suppressing the inferred space where the page already drew one made the state reachable:
+// a cut records off = len(c.text), so two consecutive gaps that write no character record
+// the same offset. The guard that handles it — `c.off <= prev` — was written for a
+// different reason and its comment names dropped characters as the outcome it prevents, so
+// the arithmetic is pinned here rather than left as a reading of that comment.
+//
+// Constructed rather than extracted, because no file on disk reaches it: over all 10102
+// cuts recorded across the 51 PDFs on disk, 0 are duplicated, 0 sit at offset 0, and 0 are
+// past the end of their fragment. A guard whose population is zero is exactly the kind that
+// rots, and the empty piece it would otherwise emit is a fragment with no text that
+// appendLine would carry into the span list.
+//
+// These two tests are the guard's only coverage, which is measured rather than assumed:
+// relaxing <= to < leaves the whole extract package passing when they are skipped, and both
+// of them fail — one on each half of the comparison.
+func TestSplitAbsorbsADuplicateCutOffset(t *testing.T) {
+	f := frag{
+		text: []byte("AB"), along0: 0, along1: 100, height: 10,
+		cuts: []cut{{off: 1, x0: 10, x1: 20}, {off: 1, x0: 30, x1: 40}},
+	}
+	out := splitFrag(&f, []doc.Rule{
+		{Vertical: true, Pos: 15, From: 0, To: 20},
+		{Vertical: true, Pos: 35, From: 0, To: 20},
+	}, 5)
+	var got []string
+	for i := range out {
+		got = append(got, string(out[i].text))
+	}
+	if want := []string{"A", "B"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("pieces = %q, want %q: the second cut adds no boundary and no empty piece", got, want)
+	}
+}
+
+// A cut at offset 0 divides nothing, and the fragment has to survive whole.
+//
+// Same guard, other half: `c.off <= prev` with prev starting at 0 rejects it, so out stays
+// empty and splitFrag returns the original as one piece. Emitting the split would produce a
+// leading fragment with no text at all.
+func TestSplitAbsorbsACutAtOffsetZero(t *testing.T) {
+	f := frag{text: []byte("AB"), along0: 0, along1: 100, height: 10,
+		cuts: []cut{{off: 0, x0: 10, x1: 20}}}
+	out := splitFrag(&f, []doc.Rule{{Vertical: true, Pos: 15, From: 0, To: 20}}, 5)
+	if len(out) != 1 || string(out[0].text) != "AB" {
+		t.Errorf("pieces = %d, first = %q, want one piece %q", len(out), string(out[0].text), "AB")
 	}
 }
 

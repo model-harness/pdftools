@@ -876,12 +876,23 @@ OKF-ified spec.
   **Untagged table detection is closed too, and it was not the research problem this said
   it was.** What made it look like one was measuring the wrong quantity. The question was
   taken to be "how wide must a gap be to be a column boundary", which has no answer: over
-  all **48757 inferred spaces on disk** the ratio of gap to nominal space width is
-  continuous from **0.25 to 1303 with no empty band anywhere** — 4351 between 0.25 and 0.50,
-  14337 between 1.75 and 2.00, then a long thin tail past 200 — so no threshold separates a
-  cell boundary from wide word spacing at any value. That is the measurement that rules out
-  the percentile gap clustering pdfplumber and markitdown use, and it is the reason this was
-  deferred rather than attempted with one.
+  all **119246 inferred spaces on disk** the ratio of gap to nominal space width is
+  continuous from the **0.30 the `SpaceFrac` threshold itself imposes out to 1303, with no
+  quarter-width band empty below 5** and the first gap of any size at 182 — 6287 ratios below
+  0.50, 14530 between 1.75 and 2.00, then a thin tail of 11 past 200 — so no threshold
+  separates a cell boundary from wide word spacing at any value. That is the measurement that
+  rules out the percentile gap clustering pdfplumber and markitdown use, and it is the reason
+  this was deferred rather than attempted with one.
+
+  Two things about that sentence were wrong when first written and are worth keeping, because
+  both are the ordinary way a measured figure rots. It said **0.25**, which the threshold makes
+  unreachable: `needSpace` requires `gap > 0.30*space`, so nothing below 0.30 is ever counted
+  and `[0.25,0.50)` and `[0.30,0.50)` hold the same 4351 — a bucket label read back as a
+  minimum. And it said **48757 on disk** while its sub-counts were the twelve specification
+  documents alone, which today give **48530**; the 227 went to two intervening extraction
+  fixes, chiefly `1d0a536`'s rune word-boundary rule, which stopped inferring spaces that the
+  page had already drawn. Fewer inferred spaces after a fix that removes doubled ones is the
+  right direction, which is the check that distinguishes drift from a regression.
 
   The answer is that the producer already states it. A stroke drawn between two glyphs is
   the page's own claim that they are in different cells, where a gap is a statistic about
@@ -902,6 +913,68 @@ OKF-ified spec.
   silently dropped a real boundary, because `reference/table.pdf`'s header row sets wider
   cells than its body — 2.400 space widths against 4.128 — so the filter admitted the body
   rows and discarded the header.
+
+  **A gap is two questions, and conflating them doubled 23598 spaces.** Whether the gap is a
+  candidate cut is geometric and every one qualifies, per the paragraph above. Whether a
+  *space character* belongs in it is not, because geometry cannot see that the producer
+  already drew one there: justified text sets its space glyph and then stretches the word gap
+  around it, so the pen ends up more than a nominal space width from the next glyph and the
+  gap test fires on a boundary that is already spaced. That is the common case in this corpus,
+  not an edge — **25892 of the 48530 inferred spaces follow text already ending in
+  whitespace, and 12836 of those also precede a space glyph**, where the inserted character is
+  the third. **10922 interior runs of two or more spaces reached the Markdown** because of it,
+  9719 of exactly two and 1203 of three or more, in all 12 documents. So `place` now computes
+  `writeSpace` separately from `needSpace`: the cut is recorded on every gap and the character
+  is written only when neither side already has one.
+
+  Three things about it are worth recording, because each was a wrong answer first:
+
+  - **Dropping the cut with the space undoes the table split.** The cut is a *position* and
+    stays one whether or not a character is written there. A header cell whose label ends in a
+    space still has to divide from the cell after it, and mutating the cut onto `writeSpace`
+    put `reference/table.pdf`'s cells back into one fragment — invisible to any
+    character-conservation check, which is why that test asserts on the span list.
+  - **The predicate is over the last rune, not the last byte.** `Well-Tagged-PDF-WTPDF-1.0.pdf`
+    draws U+2002 EN SPACE as its clause-number separator, and a byte compared against `' '`
+    reads that rune's trailing `0x82` as an ordinary character and doubles it — the same defect
+    class as the wrap-join rule's, which had already been through exactly this correction.
+  - **The inter-fragment write site is a separate branch, and only mutation testing found
+    it.** A style change starts a new fragment, and the space between two fragments is carried
+    by the one that follows rather than appended to the one before, so the guard has to be
+    applied twice. Eight of nine mutations died on the first pass; this one survived with the
+    whole suite and 12 corpus documents passing. It is not an obscure path — a normative
+    reference sets its title in italic, so `ISO/TC 171, *Document management*` changes font at
+    a comma the page has already spaced — and it is **reached 15902 times, with 872 Markdown
+    lines across 9 files changing when it is mutated.** A branch the corpus exercises
+    constantly can still be one no test can see.
+
+  **Reconciled in both directions.** Against a pre-fix baseline the only runes that changed in
+  any of the 12 files are `U+0020` at `-23598` and `U+005C` at `+4`, all 36460 line counts are
+  unchanged, and collapsing every whitespace run in both makes all 12 byte-identical — so the
+  change shortens whitespace runs and does nothing else. The 4 backslashes are a consequence:
+  three table cells held `" -"` and one `" #"`, so the block-start escape did not fire on byte
+  0, and with the leading space gone it does. `pandoc 3.9 -f gfm` renders `| \- | x |` as
+  `<td>-</td>`, identical to the unescaped cell. Of the 2874 interior runs that remain, every
+  one is whitespace the page draws — code-listing alignment inside code spans, `© ISO 2020`,
+  `Note 1 to entry:` — so what is left is content rather than inference.
+
+  Both run figures are counted the same way, and the definition is part of the figure: a run is
+  interior when a non-whitespace character stands on each side of it. Bounding it with
+  `[^ \n]` instead — which admits the runs a tab sits beside — gives 10928 before and 2879
+  after, self-consistent and five higher in each direction. Recorded because the two
+  definitions differ by a rounding error's worth of runs while looking like the same
+  measurement, and a re-measurement that picks the other one reads as drift.
+
+  **The threshold itself is still wrong in 12 places and was left alone deliberately.** ISO/TS
+  32004 splits `PdfMacIntegrityInfo` into `Pdf MacIntegrityInfo` twelve times against four
+  joined occurrences, at gap ratios of 0.3023 and 0.3105 — over `SpaceFrac`'s 0.30 but below
+  the distribution's 1st percentile of **0.327**, inside a band holding **1613 inferred spaces
+  that are all correct**. Raising the threshold past 0.31 would fix twelve and break some
+  fraction of those. A discriminator requiring both sides of the gap to read as identifiers was
+  measured instead: it finds **176 such gaps corpus-wide and all 176 are real spaces**
+  (`LBody TH` ×18, `FENote LBody` ×17, `ToUnicode CMap` ×8), and it does not match this case
+  anyway, because `"Pdf"` has no digit, hyphen, or internal capital. Neither instrument
+  separates the twelve, so the defect stays logged rather than papered over.
 
   **Columns come from cell x-overlap with no tolerance, and the alternative is worth
   recording because it shipped first and was wrong twice.** Keying a row by the positions of

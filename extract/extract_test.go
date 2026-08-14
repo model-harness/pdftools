@@ -198,6 +198,83 @@ func TestExplicitSpaceGlyphNotDoubled(t *testing.T) {
 	}
 }
 
+// The wrap-join rule above has an intra-line twin, and only the wrap half was guarded.
+//
+// A gap is inferred from geometry, and geometry cannot see that the page has already drawn
+// a space into it: a justified line sets its space glyph and then stretches the word gap
+// around it, so the pen ends up more than a nominal space width from the next glyph and the
+// rule fires on a boundary that is already spaced. That is the ordinary case in this corpus,
+// not a rare one — 25892 of 48530 inferred spaces follow text already ending in whitespace,
+// and 10922 interior runs of two or more spaces reached the Markdown because of it.
+//
+// One show operation per word, positioned by Td, is how the affected producers write it:
+// the space belongs to the first operation and the second is placed past where its advance
+// lands.
+func TestIntraLineSpaceNotDoubledAfterAnExplicitSpace(t *testing.T) {
+	// "one " advances 20.664pt at 12pt Helvetica; 30 puts "two" 9.3pt further right,
+	// which is 2.8 space widths of unexplained gap.
+	got := extractText(t, `BT /F1 12 Tf 10 700 Td (one ) Tj 30 0 Td (two) Tj ET`)
+	if want := "one two"; got != want {
+		t.Errorf("text = %q, want %q: the drawn space is the word boundary", got, want)
+	}
+}
+
+// The same defect where the drawn space is U+2002 rather than U+0020, which is what makes
+// the predicate a rune test rather than a byte test — the trailing byte of U+2002 is 0x82,
+// and a byte compared against ' ' reads it as an ordinary character and doubles it.
+func TestIntraLineSpaceNotDoubledAfterAUnicodeSpace(t *testing.T) {
+	got := extractText(t, "BT /F3 12 Tf 10 700 Td (one\\200) Tj 30 0 Td (two) Tj ET")
+	if want := "one two"; got != want {
+		t.Errorf("text = %q, want %q: the drawn EN SPACE is the word boundary", got, want)
+	}
+}
+
+// The other end of the gap: the arriving glyph is itself the space. 12836 inferred spaces
+// on disk have whitespace on both sides, where the inserted character would be the third.
+func TestIntraLineSpaceNotDoubledBeforeAnExplicitSpace(t *testing.T) {
+	got := extractText(t, `BT /F1 12 Tf 10 700 Td (one) Tj 30 0 Td ( two) Tj ET`)
+	if want := "one two"; got != want {
+		t.Errorf("text = %q, want %q: the arriving space is the word boundary", got, want)
+	}
+}
+
+// The same suppression across a fragment boundary, which is a separate write site: a style
+// change starts a new fragment, and the space between two fragments is carried by the one
+// that follows rather than appended to the one before.
+//
+// It is the ordinary case in a specification, because the style change is what makes it one:
+// a normative reference sets its title in italic, so "ISO/TC 171, *Document management*"
+// changes font at a comma the page has already put a space after. Reached 15902 times on the
+// corpus and 872 Markdown lines depend on it, yet the whole suite passed with this site left
+// on needSpace — so it is a branch the corpus exercises constantly and no test could see.
+func TestInterFragmentSpaceNotDoubledAfterAnExplicitSpace(t *testing.T) {
+	// "one " in F1, then F2 for "two", positioned past its advance so the gap fires.
+	got := extractText(t, `BT /F1 12 Tf 10 700 Td (one ) Tj /F2 12 Tf 30 0 Td (two) Tj ET`)
+	if want := "one two"; got != want {
+		t.Errorf("text = %q, want %q: the drawn space is the word boundary", got, want)
+	}
+}
+
+// The guard must not reach the gap itself, only the character written into it.
+//
+// A gap is also a position a table's rule can run through, and splitAtRules can divide a
+// fragment only at a recorded cut. A header cell whose label ends in a space still has to
+// divide from the cell after it, so suppressing the cut along with the space puts a row
+// back into one span — the failure spansOf can see and Text() cannot.
+func TestSuppressedSpaceStillRecordsTheCut(t *testing.T) {
+	p := extractPage(t, "1 0 0 RG 190 600 m 190 620 l S\n"+
+		"BT /F1 12 Tf 100 605 Td (Left ) Tj 100 0 Td (Right) Tj ET")
+	var got []string
+	for _, b := range p.Blocks {
+		for _, s := range b.Spans {
+			got = append(got, s.Text)
+		}
+	}
+	if want := "Left |Right"; strings.Join(got, "|") != want {
+		t.Errorf("spans = %q, want %q: the cut is a position, not a character", got, want)
+	}
+}
+
 // TestWordSpaceAppliesToCode32 checks that /Tw is accounted for in the pen. A
 // producer setting Tw to widen spaces has explained that displacement, so no extra
 // space may be inferred from it (§9.3.3).

@@ -5,6 +5,56 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-14
+
+- **23598 spaces were inferred into gaps the page had already spaced.** `place` infers a space
+  wherever a glyph starts further along than the previous one's advance accounts for, and that
+  test is geometric: it cannot see that the producer already drew a space into the same gap.
+  Justified text is where it happens — the line sets its space glyph and then stretches the word
+  gap around it, so the pen ends up more than a nominal space width from the next glyph and the
+  rule fires a second time on a boundary that is already spaced. 25892 of the corpus's 48530
+  inferred spaces followed text already ending in whitespace, and 12836 of those also *preceded*
+  a space glyph, where the inserted character was the third. 10922 interior runs of two or more
+  spaces reached the Markdown output because of it — 9719 of exactly two and 1203 of three or
+  more, across all 12 documents. A run counts as interior when a non-whitespace character stands
+  on both sides of it, which is the definition the 2874 below is measured against too; bounding
+  the run with `[^ \n]` instead admits the runs a tab sits next to and gives 10928 and 2879.
+  - **Only the character is suppressed, never the cut.** A gap is two things at once: a place a
+    space may belong, and a position a table's vertical rule may run through. `splitAtRules` can
+    divide a fragment only at a recorded cut, so a header cell whose label ends in a space still
+    has to divide from the cell after it. Suppressing the cut alongside the space put
+    `reference/table.pdf`'s cells back into one fragment — pinned by a test that asserts on the
+    span list, since `Text()` cannot see it.
+  - **The predicate is a rune test, not a byte test.** `Well-Tagged-PDF-WTPDF-1.0.pdf` draws
+    U+2002 EN SPACE as its clause-number separator, and a byte compared against `' '` reads that
+    rune's trailing `0x82` as an ordinary character and doubles it. `endsInSpace` is the
+    byte-slice twin of the existing `endsWithSpace` and exists for cost: `place` runs once per
+    glyph, 2.76M times over this corpus, and `string(f.text)` would copy a whole fragment per
+    call to read its last rune.
+  - **Reconciled in both directions against a pre-fix baseline.** The only runes that changed in
+    any of the 12 files are `U+0020` at `-23598` and `U+005C` at `+4`; all 36460 line counts are
+    unchanged; and collapsing every whitespace run in both makes all 12 files byte-identical, so
+    the change shortens whitespace runs and does nothing else. The 4 backslashes are a
+    consequence rather than a defect: three cells held `" -"` and one `" #"`, so the block-start
+    escape did not fire on byte 0, and with the leading space gone it does. Verified against
+    pandoc 3.9 `-f gfm` that `| \- | x |` renders `<td>-</td>`, identical to the unescaped cell.
+  - **2874 interior runs remain and every one is a space the page draws** — code-listing
+    alignment inside `` ` `` spans, `© ISO 2020`, `Note 1 to entry:` — so what is left is content
+    rather than inference.
+  - **Nine mutations applied, and the first pass killed eight.** The survivor was the
+    inter-fragment write site, where a style change starts a new fragment and the space is
+    carried by the one that follows. That site is not obscure: a normative reference sets its
+    title in italic, so `ISO/TC 171, *Document management*` changes font at a comma the page has
+    already spaced. It is reached 15902 times on the corpus and 872 Markdown lines across 9 files
+    change when it is mutated — a branch the corpus exercises constantly that no test could see.
+    Covered now, and all nine are killed.
+  - Not fixed, and still logged: the 12 `Pdf MacIntegrityInfo` splits in ISO/TS 32004. Their gap
+    ratios are 0.3023 and 0.3105 against a `SpaceFrac` of 0.30, below the distribution's 1st
+    percentile of 0.327, inside a band holding 1613 inferred spaces that are correct. An
+    identifier-shaped discriminator finds 176 such gaps corpus-wide and all 176 are real spaces —
+    and it does not match this case anyway, since `"Pdf"` has no digit, hyphen, or internal
+    capital. Neither a threshold nor that discriminator separates the twelve.
+
 ### Fixed — 2026-08-13
 
 - **12342 lines ended in whitespace, and Markdown gives a trailing space a meaning the page

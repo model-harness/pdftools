@@ -485,10 +485,30 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 	// reference/table.pdf's header row sets wider cells than its body, so its column
 	// gaps are 2.400 space widths against the body's 4.128, and the filter admitted the
 	// body rows while silently discarding the header. That is the failure mode of every
-	// threshold on this quantity — the gap distribution over all 48757 inferred spaces
-	// on disk is continuous from 0.25 to 1300 space widths with no empty band anywhere —
-	// and the rule is the evidence, so there is nothing for a width to add. The cost is
-	// bookkeeping on a slice that is discarded with the page.
+	// threshold on this quantity — the gap distribution over all 119246 inferred spaces
+	// on disk is continuous from the 0.30 the threshold itself imposes out to 1303 space
+	// widths, with no quarter-width band empty below 5 and the first gap of any size at
+	// 182 — and the rule is the evidence, so there is nothing for a width to add. The cost
+	// is bookkeeping on a slice that is discarded with the page.
+	//
+	// writeSpace is the narrower question of whether that one space is a character the
+	// text does not already have. A gap is inferred from geometry alone, and geometry
+	// does not know that the page has already drawn a space into it: justified text sets
+	// a space glyph and then stretches the word gap around it, so the pen ends up further
+	// from the next glyph than the nominal space width, and the rule fires a second time
+	// on a boundary that is already spaced. Measured on the corpus, 25892 of 48530
+	// inferred spaces follow text that already ends in whitespace and 12836 of those also
+	// precede a space glyph, where the inserted character would be the third — 10922
+	// interior runs of two or more spaces reach the Markdown output because of it, 9719 of
+	// exactly two and 1203 of three or more, counting a run as interior when a
+	// non-whitespace character stands on each side of it.
+	//
+	// Only the character is suppressed, never the cut. A cell boundary is a position in
+	// the text and stays one whether or not a space is written there: a header cell whose
+	// label ends in a space still has to divide from the next cell, and splitAtRules can
+	// only find that division at a recorded cut. Dropping the cut with the space put
+	// reference/table.pdf's cells back into one fragment.
+	writeSpace := needSpace && !endsInSpace(prev) && !startsWithSpace(g.Text)
 	c := r.cur()
 	sameFrag := c != nil && c.mcid == mcid && c.artifact == artifact &&
 		c.style.SameRun(style, r.tol)
@@ -497,7 +517,7 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 		// A space between two fragments is carried by the one that follows it, so
 		// that trimming a fragment's leading space is a decision the sink can still
 		// make.
-		if needSpace {
+		if writeSpace {
 			c = r.cur()
 			c.text = append(c.text, ' ')
 		}
@@ -506,7 +526,7 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 		return
 	}
 
-	if needSpace {
+	if writeSpace {
 		c.text = append(c.text, ' ')
 	}
 	if needSpace {
@@ -515,6 +535,31 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 	}
 	r.appendText(g.Text, along, end, sy)
 	r.setPen(along)
+}
+
+// endsInSpace reports whether a fragment's accumulated text ends in whitespace, so that a
+// gap after it does not add a second space.
+//
+// The byte-slice twin of endsWithSpace, and it exists for cost rather than for semantics:
+// place runs once per glyph, 2.76M times over this corpus, and string(f.text) would copy
+// a whole fragment on each call to read its last rune.
+//
+// The last rune rather than the last byte, because the whitespace to detect is not only
+// U+0020 — Well-Tagged-PDF draws U+2002 EN SPACE as its clause-number separator, and a
+// byte test would read that rune's trailing 0x82 as non-space and double it.
+//
+// No guard for empty text: DecodeLastRune returns U+FFFD for it, which is not a space, so
+// the answer is already false and a guard would change no byte. Empty is reachable — a
+// glyph whose /ToUnicode maps it to nothing appends none.
+//
+// Nil is not guarded either, and that is a precondition rather than a handled case: this
+// dereferences f, so a nil fragment panics. place's sameLine test returns early unless
+// cur() is non-nil, so the one call site cannot pass one. Stated rather than defended
+// because a nil guard here would answer false, and false is "write the space" — turning a
+// caller's bug into a doubled space somewhere unrelated instead of a stack trace at it.
+func endsInSpace(f *frag) bool {
+	r, _ := utf8.DecodeLastRune(f.text)
+	return unicode.IsSpace(r)
 }
 
 // setPen leaves the pen at a glyph's own start position.
