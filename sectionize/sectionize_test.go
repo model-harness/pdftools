@@ -42,6 +42,37 @@ func docWith(runs ...sp) *doc.Document {
 	return d
 }
 
+// atLines gives a document's spans a type size and a baseline each, so that a fixture can
+// express where on the page its text was drawn.
+//
+// docWith leaves both zero, which is the right default for every rule keyed on the structure
+// tree and useless for one keyed on geometry: at size 0 every threshold is 0, so any two spans
+// are on different lines. The baselines are given in the order the spans were added and the
+// heading's span is skipped, since a fixture's heading is not part of the listing being
+// measured.
+func atLines(d *doc.Document, size float64, baselines ...float64) {
+	i := 0
+	for pi := range d.Pages {
+		for bi := range d.Pages[pi].Blocks {
+			spans := d.Pages[pi].Blocks[bi].Spans
+			for si := range spans {
+				spans[si].Style.Size = size
+				if spans[si].MCID == 0 {
+					continue
+				}
+				if i >= len(baselines) {
+					panic("atLines: fewer baselines than spans")
+				}
+				spans[si].Box = geom.Rect{X0: 72, Y0: baselines[i], X1: 300, Y1: baselines[i] + size}
+				i++
+			}
+		}
+	}
+	if i != len(baselines) {
+		panic("atLines: more baselines than spans")
+	}
+}
+
 // el builds an element owning the given marked-content identifiers, all on one page.
 func el(role tag.Role, page int, mcids ...int) *tag.Elem {
 	e := &tag.Elem{Role: role, RawType: role, Page: page}
@@ -1042,6 +1073,153 @@ func TestCodeSpansDoNotSplitALine(t *testing.T) {
 
 	if got, want := out.Sections[0].Blocks[0].Text(), "/Filter /FlateDecode"; got != want {
 		t.Errorf("listing = %q, want %q: a Span is a styled run inside a line, not a line", got, want)
+	}
+}
+
+// A Code element whose lines are marked content rather than paragraphs still gets them back,
+// from the only place they are recorded: the baselines the spans were drawn at.
+//
+// This is the other half of what a listing's lines can be, and gather's rule cannot reach it —
+// there is no paragraph to absorb. PDF-Declarations.pdf declares one Code holding 25 lines as
+// 25 MCIDs under no P at all, and the sink fenced them as a single 892-character line. The
+// text carries no clue either: the page draws a space at each line end, so extract finds a
+// word boundary already written and infers nothing, and dropping this rule loses all 24 breaks
+// while every character-conservation check still passes.
+func TestCodeMarkedContentLinesBreakOnBaseline(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "10 0 obj << "}, sp{1, 2, "  /Metadata 11 0 R "},
+		sp{1, 3, ">>"})
+	// 10pt type on 12pt leading, which is the corpus's shape and well past LineFrac's half.
+	atLines(d, 10, 700, 688, 676)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2, 3))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blocks := out.Sections[0].Blocks
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1 listing: %v", len(blocks), texts(blocks))
+	}
+	if got, want := blocks[0].Text(), "10 0 obj << \n  /Metadata 11 0 R \n>>"; got != want {
+		t.Errorf("listing = %q, want %q", got, want)
+	}
+}
+
+// Two spans on one baseline are one line, so no break goes between them.
+//
+// A styled run inside a listing line is the ordinary case — 25 of PDF-Declarations' 50 spans
+// are a second span on a line already open — and breaking on those splits the line they are
+// part of. Any rule that fires per span rather than per baseline change fails this.
+func TestCodeSpansOnOneBaselineStayOneLine(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "/Filter "}, sp{1, 2, "/FlateDecode"})
+	atLines(d, 10, 700, 700)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "/Filter /FlateDecode"; got != want {
+		t.Errorf("listing = %q, want %q: one baseline is one line", got, want)
+	}
+}
+
+// A step smaller than half the type size is jitter, not a line.
+//
+// The threshold is the extractor's own LineFrac rather than an epsilon of this rule's
+// invention, so a listing set in one size is measured against that size. A superscript or a
+// baseline nudged by a fraction of a point is the shape that would otherwise break a line in
+// two, and comparing against zero would break every one of them.
+func TestCodeIgnoresBaselineJitter(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "x"}, sp{1, 2, "2"})
+	atLines(d, 10, 700, 702)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "x2"; got != want {
+		t.Errorf("listing = %q, want %q: 2pt is under half of 10pt type", got, want)
+	}
+}
+
+// A listing that runs onto the next page steps up, and that is still a line.
+//
+// The corpus has exactly one: PDF-Declarations' XML sample crosses a page and rises 681pt into
+// "<!-- Optional entries". A signed comparison reads a rise as a negative step, never exceeds
+// the threshold, and joins the last line of one page to the first line of the next — the one
+// place in the block where the collapse this rule exists to undo would survive it.
+func TestCodeBreaksOnAnUpwardStep(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "endobj"}, sp{1, 2, "11 0 obj"})
+	atLines(d, 10, 90, 700)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "endobj\n11 0 obj"; got != want {
+		t.Errorf("listing = %q, want %q: a 610pt rise is a page break, not one line", got, want)
+	}
+}
+
+// A raised or lowered run inside a line is measured against the line, not against itself.
+//
+// The threshold is LineFrac of the *larger* of the two sizes, which is the extractor's own line
+// test (run.go's maxf(sy, prev.height)) rather than a second opinion about the same question.
+// The three other readings of "the type size" each break this line, and in a different place,
+// which is why one fixture settles all of them: a 5pt subscript dropped 3pt clears half of 5pt
+// but not half of 10pt, so the smaller size sees a line break where the line sees jitter. Taking
+// the previous span's size splits after the digit, the current span's size splits before it, and
+// the smaller of the two splits both. 49 of the corpus's 179 adjacent pairs inside a Code block
+// change size, so the population is real, but none of today's steps land in the window where the
+// four readings differ — this fixture is the only thing holding the choice.
+func TestCodeSubscriptStaysOnItsLine(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "H"}, sp{1, 2, "2"}, sp{1, 3, "O"})
+	atLines(d, 10, 700, 697, 700)
+	for pi := range d.Pages {
+		for si := range d.Pages[pi].Blocks[0].Spans {
+			if d.Pages[pi].Blocks[0].Spans[si].MCID == 2 {
+				d.Pages[pi].Blocks[0].Spans[si].Style.Size = 5
+			}
+		}
+	}
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2, 3))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "H2O"; got != want {
+		t.Errorf("listing = %q, want %q: a 3pt drop is jitter for a 10pt line", got, want)
+	}
+}
+
+// The break the structure declared is not written twice.
+//
+// Both rules see the same listing when a producer declares one P per line *and* draws them at
+// descending baselines, which is what 5 of the corpus's 6 multi-line Code blocks do. gather's
+// break is a fabricated span carrying no geometry, so a rule comparing it against the next
+// real line reads its zero box as a several-hundred-point jump and writes a second newline
+// after every first — a blank line between every pair of listing lines.
+func TestCodeDeclaredAndDrawnLinesBreakOnce(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "<<"}, sp{1, 2, ">>"})
+	atLines(d, 10, 700, 688)
+	code := kids(el(tag.RoleCode, 1), el(tag.RoleP, 1, 1), el(tag.RoleP, 1, 2))
+	tr := tree(el(tag.RoleH2, 1, 0), code)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "<<\n>>"; got != want {
+		t.Errorf("listing = %q, want %q: one break per line boundary", got, want)
+	}
+}
+
+// A paragraph drawn across several lines is still joined with a space, not broken.
+//
+// The baseline rule is confined to a role the producer declared, and this is what that buys:
+// every wrapped prose paragraph in the corpus spans several baselines, so a rule keyed on
+// geometry alone would put a hard break inside all of them.
+func TestParagraphLinesDoNotBreakOnBaseline(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "a stream shall "}, sp{1, 2, "be indirect"})
+	atLines(d, 10, 700, 688)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "a stream shall be indirect"; got != want {
+		t.Errorf("paragraph = %q, want %q", got, want)
 	}
 }
 

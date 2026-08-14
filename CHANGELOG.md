@@ -114,6 +114,49 @@ All notable changes to this project are documented here, following
     and it does not match this case anyway, since `"Pdf"` has no digit, hyphen, or internal
     capital. Neither a threshold nor that discriminator separates the twelve.
 
+- **A 25-line XML sample came out as one 892-character fenced line.** `PDF-Declarations.pdf`
+  declares a `Code` element holding its 25 listing lines as 25 MCIDs under no `P` at all, so the
+  breaks survive nowhere but the fact that consecutive spans were drawn at descending baselines.
+  `sectionize` now restores them geometrically for a producer-declared lines role, recovering all
+  25 lost breaks across the corpus (`underBroken=2 -> 0`).
+  - **The logged note's premise was false, and measuring is what showed it.** The item was
+    recorded as the *untagged* half of the collapse, with `Style.Mono` as the signal and
+    `extract`'s `appendLine` as the site. All three were wrong for the population that reaches
+    output: every mono-bearing file in the corpus is tagged (11 of 12; the one untagged file has
+    no mono at all), so `inferRoles` — and therefore all of `layout` — never runs on any of them.
+    Mono and `Code` turn out to be disjoint signals here: WTPDF's 11 listings are declared, not
+    monospaced.
+  - **The extract-side fix was abandoned because a real renderer refuted it.** Verified with
+    pandoc 3.9 `-f gfm` that a newline inside an inline `` ` `` span renders as a space, so the
+    break would have been unobservable in 3886 of 4246 mono-mono wraps — and *destructive* in the
+    other 360, where the next line opens with `>>` and the span becomes nested `<blockquote>`s
+    with literal backticks. The newline can only be written where the block is fenced, which puts
+    the rule in `sectionize` and confines it to `RoleCode`.
+  - **Geometric in a declaration-driven package, and deliberately narrow.** The rule is not a
+    heuristic about what a block is — `RoleCode` is the producer's own statement — only about
+    where its lines end, and a listing is the one role for which that answer must survive to the
+    sink. It is idempotent with `gather`'s paragraph-absorption break rather than layered on it:
+    the two agree on 5 of the corpus's 6 multi-line `Code` blocks, and this one is strictly wider,
+    supplying PDF-Declarations' 24 breaks plus one WTPDF break `gather` cannot write because both
+    sides of it are spans inside a single `P`.
+  - **The threshold is the extractor's own line test, not a second opinion about it.** `LineFrac`
+    of the *larger* of the two type sizes, matching `run.go`'s `maxf(sy, prev.height)`, and the
+    magnitude of the step rather than its sign — the corpus has one listing that crosses a page
+    and rises 681pt, which a signed comparison would read as one long line. 49 of 179 adjacent
+    pairs inside a `Code` block change size and none land in the window where the four readings of
+    "the type size" differ, so fixtures rather than the corpus hold that choice.
+  - **Eighteen mutations applied and all eighteen killed from the package alone**, with no
+    corpus-only kills. Four needed fixtures the corpus cannot supply: the upward page-crossing
+    step, and the three wrong readings of the type size, which one subscript fixture settles
+    because each breaks the same line in a different place. Two earlier "kills" were invalid
+    mutants — dropping `math.Abs` or the tolerance leaves an import unused, so the compile error
+    was being counted as a test failure.
+  - **Two output files change and both diffs are pure newline additions**, nothing else, against a
+    pre-fix baseline of all 12 files.
+  - Not fixed, and now logged: PDF-Declarations encodes its listing indentation as x-position
+    only, so the restored lines are flush-left. That indentation was equally lost before this
+    change, when the whole listing was one line.
+
 ### Fixed — 2026-08-13
 
 - **12342 lines ended in whitespace, and Markdown gives a trailing space a meaning the page

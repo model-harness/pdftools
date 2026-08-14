@@ -1874,9 +1874,92 @@ OKF-ified spec.
     `TestCodeSpansDoNotSplitALine` reproduces the `P > Span` shape those 10 descendants are in
     and kills it from the `sectionize` package by itself. Same lesson as the inter-fragment
     write site above: a branch the corpus exercises is not a branch a clone tests.
-  - Still open, and the untagged half of the same defect: ISO/TS 32004's and 32003's ASN.1
-    listings, which collapse to one line and declare no structure to fix them with. `Style.Mono`
-    is the documented signal there, and it is a different rule in a different package.
+  - Logged here as "the untagged half of the same defect" — ISO/TS 32004's and 32003's ASN.1
+    listings, with `Style.Mono` as the signal and a rule in a different package. **That framing
+    was wrong and the entry below is what came of measuring it.** There is no untagged half:
+    every mono-bearing file in the corpus is tagged, so the rule would have had no population.
+- **A listing's lines can exist only as geometry, and one of the corpus's does.** The entry above
+  restored the breaks of listings whose producer declares one `P` per line. `PDF-Declarations.pdf`
+  declares the other shape: a single `Code` holding 25 lines as 25 MCIDs under **no `P` at all**.
+  `gather` has no paragraph to absorb, so the sink fenced a 25-line XML sample as one
+  892-character line, with every character-conservation check passing and all 24 breaks lost.
+  Nothing in the text marks them — the page draws its own space at each line end, so `extract`'s
+  wrap rule finds a boundary already written and infers nothing. `sectionize.breakAtBaselines` now
+  writes them from the one place they survive, the distinct `Box.Y0` values.
+  - **The logged note was wrong in all three of its claims, and each was disproved by a specific
+    probe rather than by argument.** It said the remaining half was *untagged*, that `Style.Mono`
+    was the signal, and that the loss happened in `extract`'s `appendLine`. A tagged/untagged
+    census over mono-bearing files: **11 of 12 are tagged, and the twelfth has no mono at all**,
+    so `inferRoles` — and with it the whole of `layout` — never executes on this population. A
+    prior measurement pass of 360 mono blocks had already been run against a code path that does
+    not run. Mono and `Code` are disjoint signals on this corpus: WTPDF's 11 listings are declared
+    rather than monospaced, and six other files have no mono whatsoever.
+  - **A newline in an inline code span is not invisible, it is destructive — settled with a real
+    renderer.** pandoc 3.9 `-f gfm` turns `` `a\nb` `` into `<code>a b</code>`, so an
+    `appendLine` break would have been unobservable in 3886 of 4246 mono-mono wraps. In the other
+    **360 the next line opens with `>>`**, and there the newline destroys the span: nested
+    `<blockquote>` elements and literal backticks in the output. So the break can only be written
+    where the block is fenced, which is what moved the rule out of `extract` and into a role the
+    producer declared. The originally-planned fix site was the wrong one and this is what showed
+    it — the same lesson as *escaping needs a real renderer* elsewhere in this document.
+  - **Geometric in a package that is otherwise declaration-driven, which is why it is confined.**
+    The gate is `linesText(role)`, so the rule never asks what a block *is* — `RoleCode` is the
+    producer's own statement — only where its lines end. A listing is the one role for which that
+    answer must survive to the sink at all: every other role either folds a newline to a space or,
+    for a table cell, cannot hold one. `TestParagraphLinesDoNotBreakOnBaseline` is what keeps it
+    off the corpus's wrapped prose, and mutating the gate to `true` fails it.
+  - **Idempotent with `gather`'s rule rather than layered on it.** A break is written only where
+    there is not one already. The two rules see the same block for 5 of the corpus's 6 multi-line
+    `Code` listings, and this one is strictly wider: it supplies PDF-Declarations' 24 missing
+    breaks plus one WTPDF break `gather` cannot write, where `"…report67890"` wraps into
+    `"</ pdfd:claimReport>"` with both sides being `Span`s inside a single `P`. Census before and
+    after: `code=18 oneBaseline=11 fullyBroken=5 underBroken=2 lostBreaks=25` →
+    `fullyBroken=7 underBroken=0 lostBreaks=0`.
+  - **A fabricated span's zero box is a trap, and it bit twice.** `gather`'s break spans carry
+    `MCID: -1` and no geometry, so a zero `Box.Y0` reads as a several-hundred-point jump from
+    every real line. In my own census probe it inflated every already-broken WTPDF block by
+    exactly one, giving a wrong `underBroken=7 lostBreaks=31` before the correction to `2` and
+    `25`. In the rule itself it is a design constraint: `newLine` must skip `MCID < 0` on **both**
+    sides or it writes a blank line between every pair of listing lines, and
+    `TestCodeDeclaredAndDrawnLinesBreakOnce` kills all three ways of dropping those guards.
+  - **The threshold is the extractor's own line test, not a second opinion about the same
+    question.** `LineFrac` of the *larger* of the two type sizes, matching `run.go`'s
+    `maxf(sy, prev.height)`. The larger size is also the conservative direction: a superscript
+    half its line's height clears half of *its own* size long before it clears half of the line's,
+    so measuring against the small span breaks a line at every raised digit. **49 of the 179
+    adjacent pairs inside a corpus `Code` block change type size, and 0 of them land in the window
+    where the four readings of "the type size" differ** — so the corpus cannot hold this choice
+    and a fixture does. The comparison is on the step's magnitude rather than its sign for the
+    same kind of reason: PDF-Declarations' listing crosses a page and **rises 681pt**, which a
+    signed comparison reads as one long line.
+  - **Eighteen mutations, all eighteen killed from `./sectionize/` alone**, with no corpus-only
+    kills — the clone-gap trap named in the entry above is avoided by construction here. Four of
+    the eighteen required fixtures the corpus cannot supply: the upward page-crossing step,
+    and the three wrong readings of the type size, which one subscript fixture settles at once
+    because a 5pt run dropped 3pt on a 10pt line breaks in a *different place* under each. Two
+    results from the first pass had to be thrown out as **invalid mutants** — dropping `math.Abs`
+    or the tolerance lookup leaves an import unused, so the harness was counting a compile error
+    as a test failure; both now keep the import alive with a blank reference. Two further patterns
+    reported NOT-FOUND because the harness's own escape pass turned the Go literal `\n` into a
+    real newline before searching for it.
+  - **Two output files change and both diffs are pure newline additions.** PDF-Declarations' one
+    892-character line becomes 25; one WTPDF line becomes two. Nothing else moves in any of the 12.
+  - **The rule compares two coordinate spaces at a page boundary, and the corpus does not punish
+    it.** `emitItem` takes a page *range* precisely because content crosses page breaks, and
+    `doc.Span` carries no page number — its own doc comment says the join key is the MCID
+    *combined with* the page. So `newLine` compares a `Box.Y0` from page *n* against one from page
+    *n+1* as though they were one space, and a listing whose next page resumes at nearly the same
+    height as the previous page's last line would be a **missed** break: the exact defect this
+    rule exists to fix, wearing the rule's own clothes. Measured: **1 of the 18 `Code` elements
+    crosses a page, and its step is 680.64pt against a threshold of 4.56pt** — a 149× margin, so
+    there is no instance on disk. Left as it is rather than threading a page through the span,
+    because the honest fix is a page number on `doc.Span` and that is a wider change than this
+    defect justifies; recorded here so the next listing that crosses a page is diagnosed rather
+    than re-derived.
+  - Still open: PDF-Declarations encodes its listing indentation as **x-position only**, so the
+    restored lines are flush-left. In a fence the leading spaces are content, so this is a wrong
+    answer about the listing — but it is a pre-existing one, equally lost when the whole block was
+    a single line, so the fix is an improvement with a stated limit rather than a regression.
 - **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
   `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
   `doc.Role`, so the element and its description are dropped together. This is the same debt

@@ -25,11 +25,13 @@
 package sectionize
 
 import (
+	"math"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/tag"
 )
 
@@ -370,11 +372,82 @@ func wrapsText(role doc.Role) bool {
 // elements on disk, 7 carry their own marked content and already fenced correctly; the other
 // 11 are Well-Tagged-PDF-WTPDF-1.0.pdf's, which hold no content of their own and 99 P kids
 // between them. Every one of those 11 emitted nothing and was dropped by IsEmpty, so all 99
-// lines escaped as ordinary paragraphs and not one of the listings was fenced. ISO/TS 32004
-// and 32003, whose ASN.1 listings collapse the same way, declare no Code at all — theirs is
-// the untagged-path half of the same defect and is not what this fixes.
+// lines escaped as ordinary paragraphs and not one of the listings was fenced.
+//
+// The membership requirement, since two rules now depend on it and neither can check it: a
+// role belongs here only if every sink renders it somewhere a newline survives — a fence, not
+// prose and not a scalar. That is a property of the sinks, not of this package, so adding a
+// role here is a change to sink/markdown and sink/okf as much as to this line. A newline in a
+// paragraph is folded to a space by every renderer, so the failure would be silent rather than
+// loud; TestParagraphLinesDoNotBreakOnBaseline pins the one role that is deliberately out.
 func linesText(role doc.Role) bool {
 	return role == doc.RoleCode
+}
+
+// breakAtBaselines restores the line breaks of a lines block whose lines the producer
+// declared as neither paragraphs nor /ActualText — they exist only as the fact that two
+// consecutive spans were drawn at different heights.
+//
+// This is the second of the two things a listing's lines can be, and it needs its own rule
+// because gather's cannot see it. gather writes a break where it absorbs a *paragraph*, so a
+// producer who declares one P per line is served; PDF-Declarations.pdf declares a single Code
+// holding 25 lines as 25 MCIDs under no P at all, and the sink then fenced a 25-line XML
+// sample as one 892-character line. Nothing in the text marks those breaks: the page draws a
+// space at each line end, so extract's wrap rule finds a boundary already written and infers
+// nothing, and the newline is recoverable only from the geometry.
+//
+// Geometric where the rest of this file is declaration-driven, which is the reason it is
+// confined to a role the producer declared. It is not a heuristic about what a block is —
+// RoleCode is the producer's own statement — only about where its lines end, and a code
+// listing is the one role for which that answer must survive to the sink at all: every other
+// role either folds a newline to a space or, for a table cell, cannot hold one.
+//
+// LineFrac of the type size rather than a fixed epsilon, so a listing set in 6pt is measured
+// against 6pt, and of the larger of the two sizes — which is the extractor's own line test
+// (run.go's maxf(sy, prev.height)) rather than a second opinion about the same question. The
+// larger size is also the conservative direction: a superscript half the height of its line
+// clears half of its own size long before it clears half of the line's, so measuring against
+// the small span would break a line in two at every raised digit. 49 of the corpus's 179
+// adjacent pairs inside a Code block change size, and 0 of them are far enough apart for the
+// four readings of "the type size" — this one, prev, cur, and the smaller — to disagree, so the
+// fixtures rather than the corpus are what pin the choice.
+//
+// Idempotent with gather's rule rather than layered on it: a break is written only where there
+// is not one already, so the 5 WTPDF listings that gather breaks correctly are untouched. On
+// the corpus the two rules agree on 5 of the 6 multi-line Code blocks and this one is strictly
+// wider — it supplies PDF-Declarations' 24 missing breaks, plus one WTPDF break gather cannot
+// write because both sides of it are Spans inside the same P ("…report67890" wrapping into
+// "</ pdfd:claimReport>").
+func breakAtBaselines(blk *doc.Block) {
+	out := make([]doc.Span, 0, len(blk.Spans))
+	for i := range blk.Spans {
+		sp := &blk.Spans[i]
+		if n := len(out); n > 0 && newLine(&out[n-1], sp) {
+			out = append(out, doc.Span{Text: "\n", MCID: -1})
+		}
+		out = append(out, *sp)
+	}
+	blk.Spans = out
+}
+
+// newLine reports whether cur was drawn on a different line than prev, with no break already
+// written between them.
+//
+// A fabricated span — MCID -1, which is gather's break and this rule's own — has no geometry,
+// so it can be neither side of the comparison: its zero box would read as a 700pt jump from
+// every line and put a second break after every first one. Skipping it also makes the two
+// rules compose, since prev is then the last span that was really drawn.
+//
+// The magnitude of the step, not its sign: a listing that continues onto the next page steps
+// *up* by most of a page, and the corpus has one (PDF-Declarations, a 681pt rise into
+// "<!-- Optional entries"). A signed comparison would take that for one long line.
+func newLine(prev, cur *doc.Span) bool {
+	if prev.MCID < 0 || cur.MCID < 0 {
+		return false
+	}
+	tol := geom.DefaultTolerance
+	step := math.Abs(prev.Box.Y0 - cur.Box.Y0)
+	return step > tol.LineFrac*math.Max(prev.Style.Size, cur.Style.Size)
 }
 
 // label takes a list item's declared /Lbl out of the item and returns it.
@@ -780,6 +853,9 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 		blk.Spans = append(blk.Spans, *s)
 		blk.Box = blk.Box.Union(s.Box)
 		blk.MCIDs = append(blk.MCIDs, s.MCID)
+	}
+	if linesText(role) {
+		breakAtBaselines(&blk)
 	}
 	// Before IsEmpty, though on this corpus it makes no difference: ListMarker requires
 	// content after the separator, so a strip cannot empty a block, and all 16 declared
