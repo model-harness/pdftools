@@ -432,6 +432,171 @@ func TestOutlineConservesCharacters(t *testing.T) {
 	}
 }
 
+// TestListingIndentsReachTheirListing pins the population the leading-indent rule runs on,
+// and the band that separates it from the untagged whitespace that is not an indent.
+//
+// A corpus test because the rule's unit tests are fixtures and the figures in its comment are
+// claims about these two files: change either one and the fixtures still pass. It is also the
+// test the character-conservation check above cannot be, since that one counts non-space
+// characters and so is blind to whitespace by construction — which is why 23 dropped runs
+// survived it.
+//
+// The two counts move for different reasons. 23 is how many indent runs the producers draw
+// outside marked content; 43 is how many other untagged whitespace runs the corpus holds, and
+// a rule that started claiming one of those would move the second number without the first.
+// The band between them is the evidence that no threshold is being tuned: measured, every
+// indent meets its text within 0.243pt and every other run with a same-line successor stands at
+// least 2.000pt clear, so the threshold — SpaceFrac of half the type size, 1.37pt at the 9.12pt
+// the listing is set in — sits in an empty 8.2× gap.
+//
+// The indented-line count is what watches the rule rather than the data. indentGap below is a
+// deliberate copy of leadingIndent's conditions, so on its own this test measures the population
+// and cannot fail when the rule that reads it changes: three mutants of the attachment threshold
+// — LineFrac for SpaceFrac, WideSpaceFrac for SpaceFrac, and the em in place of the space advance
+// — survived it while each adopted 8 further runs standing 2.184pt off their text. Counting the
+// output lines that begin with whitespace closes that, because an adopted run is a line's indent
+// and a rejected one is at most a single inferred space.
+//
+// 3944 across the corpus, and most of it is not this rule's: ISO 32000-2 alone contributes 3396
+// from table cells and declared listings, and only PDF-Declarations' 23 come from here. That is
+// the point of asserting the total rather than the delta — the figure is sensitive to this rule in
+// both directions while also pinning that the rule did not disturb the other 3921.
+func TestListingIndentsReachTheirListing(t *testing.T) {
+	// Every figure below is a count over the whole corpus, so an absent corpus does not make
+	// them 0 — it makes them unmeasured, and asserting 23 against a clone that legitimately has
+	// none of the sponsored PDFs would fail a test that had nothing to run. corpusFiles says as
+	// much in its own comment; this is the guard that keeps the promise.
+	files := corpusFiles()
+	if len(files) == 0 {
+		t.Skip("corpus absent")
+	}
+
+	indents, others, lines := 0, 0, 0
+	var attached, detached []float64
+	for _, name := range files {
+		d, out, _ := outlineOf(t, name)
+		for pi := range d.Pages {
+			p := &d.Pages[pi]
+			for bi := range p.Blocks {
+				b := &p.Blocks[bi]
+				for si := range b.Spans {
+					sp := &b.Spans[si]
+					if sp.MCID >= 0 || sp.Text == "" || strings.TrimSpace(sp.Text) != "" {
+						continue
+					}
+					gap, ok := indentGap(b, si)
+					if ok {
+						indents++
+						attached = append(attached, gap)
+					} else {
+						others++
+						if gap >= 0 {
+							detached = append(detached, gap)
+						}
+					}
+				}
+			}
+		}
+		// Every recovered run reaches a block, so no listing is left flush-left and no
+		// whitespace-only block appears in unplaced text.
+		for i := range out.Unplaced {
+			for _, b := range out.Unplaced[i].Blocks {
+				if strings.TrimSpace(b.Text()) == "" {
+					t.Errorf("%s: unplaced whitespace-only block %q", name, b.Text())
+				}
+			}
+			lines += indentedLines(out.Unplaced[i].Blocks)
+		}
+		lines += indentedLines(out.Preamble)
+		for _, s := range out.Sections {
+			lines += indentedLinesIn(s)
+		}
+	}
+	if indents != 23 || others != 43 {
+		t.Errorf("untagged whitespace runs: %d indents, %d others; want 23 and 43", indents, others)
+	}
+	if lines != 3944 {
+		t.Errorf("indented output lines = %d, want 3944", lines)
+	}
+	sort.Float64s(attached)
+	sort.Float64s(detached)
+	if len(attached) == 0 || len(detached) == 0 {
+		t.Fatalf("no band to measure: %d attached, %d detached", len(attached), len(detached))
+	}
+	hi, lo := attached[len(attached)-1], detached[0]
+	if hi > 0.25 || lo < 2.0 {
+		t.Errorf("band = (%.3f, %.3f), want an empty gap from under 0.25 to over 2.0", hi, lo)
+	}
+	t.Logf("indents=%d others=%d  widest attached=%.3f narrowest detached=%.3f (%.1fx)  indented lines=%d",
+		indents, others, hi, lo, lo/hi, lines)
+}
+
+// indentedLines counts the blocks' lines that begin with whitespace, which is what an adopted
+// indent produces and a rejected run does not: the gap a rejection leaves is filled by at most one
+// inferred space, and never at the front of a line.
+func indentedLines(bs []doc.Block) int {
+	n := 0
+	for i := range bs {
+		for _, ln := range strings.Split(bs[i].Text(), "\n") {
+			if strings.TrimSpace(ln) != "" && (ln[0] == ' ' || ln[0] == '\t') {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// indentedLinesIn counts a section's indented lines and those of every subsection. Recursive
+// because sections nest and the listing that motivated this rule is three levels down: a walk over
+// out.Sections alone reported 0 indented lines in PDF-Declarations while its .md held 22.
+func indentedLinesIn(s *doc.Section) int {
+	n := indentedLines(s.Blocks)
+	for _, k := range s.Kids {
+		n += indentedLinesIn(k)
+	}
+	return n
+}
+
+// indentGap reports the distance from the whitespace run at i to the tagged span it precedes,
+// and whether that run is the leading indent of a line. Negative when there is no same-line
+// tagged span after it at all, so the caller can tell "stood too far off" from "had nothing to
+// attach to". A copy of sectionize.leadingIndent's conditions rather than a call, since the
+// point is to measure the population from outside the package that decides it.
+func indentGap(b *doc.Block, i int) (float64, bool) {
+	sp := &b.Spans[i]
+	line := func(x, y *doc.Span) bool {
+		return absf(x.Box.Y0-y.Box.Y0) <= 0.5*maxf(x.Style.Size, y.Style.Size)
+	}
+	if i+1 >= len(b.Spans) {
+		return -1, false
+	}
+	nx := &b.Spans[i+1]
+	if nx.MCID < 0 || !line(sp, nx) {
+		return -1, false
+	}
+	gap := absf(nx.Box.X0 - sp.Box.X1)
+	for k := 0; k < i; k++ {
+		if line(&b.Spans[k], sp) {
+			return gap, false
+		}
+	}
+	return gap, gap <= 0.30*0.5*nx.Style.Size
+}
+
+func absf(f float64) float64 {
+	if f < 0 {
+		return -f
+	}
+	return f
+}
+
+func maxf(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // TestUntaggedFileYieldsNoSections confirms the tagged path declines rather than
 // guessing. The layout path produces headings for these files; sectionize.Tagged
 // returning the document as preamble is the honest result, not an error.

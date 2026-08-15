@@ -1981,10 +1981,88 @@ OKF-ified spec.
     because the honest fix is a page number on `doc.Span` and that is a wider change than this
     defect justifies; recorded here so the next listing that crosses a page is diagnosed rather
     than re-derived.
-  - Still open: PDF-Declarations encodes its listing indentation as **x-position only**, so the
+  - ~~Still open: PDF-Declarations encodes its listing indentation as **x-position only**, so the
     restored lines are flush-left. In a fence the leading spaces are content, so this is a wrong
     answer about the listing — but it is a pre-existing one, equally lost when the whole block was
-    a single line, so the fix is an improvement with a stated limit rather than a regression.
+    a single line, so the fix is an improvement with a stated limit rather than a regression.~~
+    **Fixed, and the premise was wrong: the indentation is drawn as real space glyphs, not as
+    x-position.** They are drawn *outside marked content*, which is why they vanished — `newIndex`
+    skips `MCID < 0`, the same mechanism as the dropped leader below, so 23 runs corpus-wide were
+    never claimed by any element. Nor did they reach `Unplaced`: a rebuilt block holding only
+    whitespace is dropped by the `len(keep.Spans) == 0` guard, so the comment promising the
+    recovery pass keeps them was false for exactly this shape. `leadingIndent` adopts a run under
+    the key of the span it is attached to. Both halves of this item were one defect — the "one
+    WTPDF listing line missing its leading indent" logged separately is the single WTPDF run of the
+    23; the other 22 are PDF-Declarations' whole sample, which is why one file lost one line's
+    indent and the other lost all of them.
+    - **Contiguity is the discriminator, and the band is empty for 8.2×.** The corpus holds 66
+      untagged whitespace-only spans: 23 indents and 43 that are not — a dotted leader's trailing
+      space, the space beside a bullet glyph, a TOC entry's padding. Three conditions separate them
+      with no overlap: whitespace by rune, first on its baseline, and *attached* to the following
+      span. Measured, every indent meets its text within **0.243pt** and every other run with a
+      same-line successor stands at least **2.000pt** clear, so the threshold — `SpaceFrac` of half
+      the type size, 1.37pt at the listing's 9.12pt — sits in an empty gap. Expressed as the
+      negation of `gapSpace`'s own space test, so the two rules cannot disagree about the same gap.
+    - **The indexed span is a copy carrying the key's MCID, and that is not cosmetic.** `newLine`
+      skips `MCID < 0`, so an indent left at −1 answers false on *both* sides of itself: the first
+      version of this fix restored every indent and collapsed the 25-line listing back into one
+      892-character line — the very defect `breakAtBaselines` exists to undo, reintroduced by its
+      own repair. The original is marked consumed where the copy is indexed, or the same spaces
+      appear in a section and in `Unplaced` both.
+    - **20 of 22 lines land on the right column; 5 runs are drawn with stretched spaces.** The
+      producer draws 18 of the 23 runs at a uniform 4.97pt per space and 5 at **10.16 and
+      20.51pt** — 4 glyphs across 82pt where the column wants 16. The character count is exact
+      wherever the advance is nominal and under-reports by 2.2× and 4.5× where it is not, so those
+      5 lines come out short. Left verbatim: correcting them needs a per-font space advance, and
+      `doc.Style` carries `Size` and no advance by deliberate design (`block.go:267`) — the same
+      trade `spaceAdvance` documents. Reporting what the page drew is the honest answer, and the
+      remaining error is 5 lines under-indented against 25 formerly flush-left.
+    - **The character-conservation test could not have caught this**, which is the transferable
+      part. `TestOutlineConservesCharacters` counts *non-space* characters, so 23 dropped
+      whitespace runs pass it by construction. `TestListingIndentsReachTheirListing` pins the
+      population (23 and 43) and the band from outside the package that decides it — the two counts
+      move for different reasons, so a rule that started claiming a leader's space would move the
+      second without the first.
+    - **Mutation testing found the same-line rule written three times, and duplicated arithmetic
+      cannot be tested — only tested somewhere.** Six mutants of `leadingIndent`'s own copy of the
+      baseline comparison survived (drop the guard, `math.Min` for `math.Max`, either size alone,
+      `SpaceFrac` for `LineFrac`, `<` for `<=`), because every fixture that would have killed one
+      was already killing its twin in `gapSpace`. The answer was to delete two of the three copies
+      rather than to write six more fixtures: `sameLine` is now the one reading of "the same line"
+      this package has, `newLine` is its negation, and `gapSpace` and `leadingIndent` both call it.
+    - **A fixture that clears a threshold by an order of magnitude tests the comparison's sign, not
+      its constant.** The first detached-run fixture stood a full 14pt off its text where the
+      threshold is 1.5pt, and three mutants of the threshold itself survived it — `LineFrac` for
+      `SpaceFrac`, `WideSpaceFrac` for `SpaceFrac`, and the em in place of the space advance — while
+      each adopted **8 further corpus runs** at a gap of 2.184pt. The corpus test could not see
+      them either: `indentGap` is a deliberate copy of the rule, so it measures the population and
+      not the code. Retightened to 1.6pt against 1.5, which is 1.07×.
+    - **The corpus cannot reach five of the rule's conditions**, so they are pinned by fixtures and
+      the counts say why: 0 of the 66 untagged runs are non-whitespace *and* line-first *and*
+      attached, 0 are non-ASCII whitespace, 0 are empty, 1 of 66 is followed by another untagged
+      run, and 0 adopted pairs differ in type size. Of the 23 adopted runs, 18 stop short of their
+      text by up to 0.028pt, 4 overlap it by up to 0.243, and exactly 1 meets it — which is why
+      attachment is `|X0 − X1|` against a real tolerance and not a signed test or an exact one. The
+      empty case is the one whose guard looks redundant and is not: `TrimFunc` of the empty string
+      *is* the empty string, so "no non-space characters remain" is true of a span with no
+      characters at all, and the mutant that drops the `== ""` half adopts a span that draws
+      nothing. It survived a full 41-mutant run on an equivalence argument that a five-line
+      program disproved.
+    - **`Block.MCIDs` is documented as a union and two of its three writers do not build one, which
+      this change makes 23 entries worse against a pre-existing 34104.** `doc/block.go:247` calls
+      the field a union, and `extract` (`run.go:1113`, `hasMCID` + `mcid >= 0`) and
+      `layout/tables.go`'s `mcidsOf` both honour that. `sectionize.go:995` appends one entry per
+      span with neither the dedup nor the `>= 0` filter, and `:1445` filters but does not dedup. A
+      two-line adopted listing emits `MCIDs=[1 1 2 2]` where the union is `[1 2]`, and the second
+      copy of each is the adopted indent carrying its successor's key — which is the whole point of
+      the copy, so the duplicate is a consequence of the fix and not a mistake in it. Measured by
+      switching adoption off: 34104 duplicate entries across 7411 blocks become 34127, exactly the
+      23 adopted runs, with no block changing category (ISO 32000-2 33078 both ways, WTPDF
+      968→969, PDF-Declarations 61→83). **Not fixed here and not a wrong answer today, because
+      nothing reads the field for logic** — a repo-wide grep finds writers, a probe counter, and no
+      consumer, which is also why the corpus render is byte-identical. Logged rather than bundled:
+      the fix is one `mcidsOf` call shared by all three writers, it touches `layout` and
+      `sectionize` together, and 34104 of the 34127 entries have nothing to do with listings.
 - **A dropped artifact welded two words together, in 3 of PDF-Declarations' 13 contents entries.**
   The entry reads `2 Scope1` where the page draws `2 Scope` … `1`. Nothing geometric is wrong:
   `extract` puts the dotted leader in a run of its own whose text *ends in a space*, and infers one

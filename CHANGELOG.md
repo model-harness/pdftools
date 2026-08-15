@@ -81,6 +81,73 @@ All notable changes to this project are documented here, following
     `- 2 Scope 1`), and the `/Alt` on each contents `Link` independently confirms the three
     against the page.
 
+- **A 25-line XML listing came out flush-left, because its indentation was drawn outside marked
+  content.** Both listing producers in the corpus draw nesting as real space glyphs, and both draw
+  some of those runs as an artifact rather than inside the line's own marked content — so
+  `newIndex` skipped them for the same reason it skipped the dotted leader above, and `take` could
+  not claim them. Nor did they reach `Unplaced`: a rebuilt block holding only whitespace is dropped
+  by the `len(keep.Spans) == 0` guard, so the comment promising the recovery pass keeps such spans
+  was false for exactly this shape. `leadingIndent` adopts a run under the key of the span it is
+  attached to. `PDF-Declarations.pdf`'s sample now nests, and the one WTPDF line logged separately
+  as "missing its leading indent" was the same defect — it is the single WTPDF run of the 23.
+  - **The population is 23 of 66, and the band separating them is empty for 8.2×.** The corpus
+    holds 66 untagged whitespace-only spans; 43 are not indents — a leader's trailing space, the
+    space beside a bullet glyph, a TOC entry's padding. Whitespace by rune, first on its baseline,
+    and *attached* to the following span separate them with no overlap: every indent meets its text
+    within 0.243pt and every other run with a same-line successor stands at least 2.000pt clear.
+    The threshold is the negation of `gapSpace`'s own space test, so the two rules cannot disagree
+    about one gap.
+  - **The indexed span is a copy carrying the key's MCID, and the first version without that
+    collapsed the listing it had just fixed.** `newLine` skips `MCID < 0`, so an indent left at −1
+    answers false on both sides of itself; every restored indent arrived and all 24 line breaks
+    disappeared, back to one 892-character line. The original is marked consumed where the copy is
+    indexed, or the same spaces appear in a section and in `Unplaced` both.
+  - **20 of 22 lines reach the right column; 5 runs are drawn with stretched spaces.** 18 of the 23
+    runs are set at a uniform 4.97pt per space and 5 at 10.16 and 20.51pt — 4 glyphs across 82pt
+    where the column wants 16 — so those lines come out short. Left verbatim: correcting them needs
+    a per-font space advance, and `doc.Style` carries `Size` and no advance by deliberate design.
+  - **`TestOutlineConservesCharacters` could not have caught this**, because it counts non-space
+    characters and so is blind to whitespace by construction. `TestListingIndentsReachTheirListing`
+    pins both counts and the band from outside the package that decides them; the two numbers move
+    for different reasons, so a rule that began claiming a leader's space would move one and not
+    the other.
+  - **Mutation testing found the same-line test written three times, and the fix was to delete two
+    copies rather than write six more fixtures.** Six mutants of the new rule's own baseline
+    comparison survived — dropping the guard, `math.Min` for `math.Max`, either size alone,
+    `SpaceFrac` for `LineFrac`, `<` for `<=` — because every fixture that would kill one was already
+    killing its twin inside `gapSpace`. Duplicated tolerance arithmetic cannot be tested, only
+    tested somewhere. `sameLine` is now the single reading of "the same line" in the package;
+    `newLine` is its negation and `gapSpace` and `leadingIndent` both call it.
+  - **The detached-run fixture cleared its threshold by 9× and so tested the comparison's sign
+    instead of its constant.** It stood 14pt off where the threshold is 1.5pt, and three mutants of
+    the threshold itself passed it while each adopted 8 further corpus runs at 2.184pt; the corpus
+    test could not see them either, since `indentGap` is a copy of the rule and measures the
+    population rather than the code. Retightened to 1.6pt against 1.5. Five of the rule's conditions
+    have no corpus instance at all — 0 untagged text runs are line-first and attached, 0 are
+    non-ASCII whitespace, 0 are empty, 1 of 66 has an untagged successor, 0 adopted pairs differ in
+    type size — so each now has a fixture. The empty case is the guard that looks redundant and is
+    not: `TrimFunc("")` is `""`, so "no non-space characters remain" holds of a span with no
+    characters, and the mutant dropping the `== ""` half adopts a span that draws nothing.
+
+- **Logged, not fixed: `Block.MCIDs` is documented as a union and two of its three writers do not
+  build one.** `sectionize.go:995` appends one entry per span with neither dedup nor the `MCID >= 0`
+  filter that `extract` and `layout`'s `mcidsOf` both apply, so an adopted two-line listing emits
+  `[1 1 2 2]` where the union is `[1 2]`. Measured with adoption switched off: 34104 duplicate
+  entries across 7411 blocks corpus-wide become 34127 — exactly the 23 adopted indents, each
+  carrying its successor's key by design. No wrong answer today, because nothing reads the field for
+  logic and the corpus render is byte-identical; the fix is one shared helper across `layout` and
+  `sectionize`, and 34104 of the entries predate listings entirely.
+
+- **Two corpus tests failed instead of skipping on a clone without the sponsored PDFs, and the
+  suite is green there again.** A test that asserts a corpus-wide total reads 0 when the corpus is
+  absent, and `0 != 23` fails — iterating `corpusFiles()` is not a guard, since it returns an empty
+  list and the loop simply does not run. `TestListingIndentsReachTheirListing` (new above) and
+  `TestOKFFrontmatterLoads` (pre-existing, whose 1350-block and 19000-scalar floors read 0 and
+  whose scalars-per-block ratio reads 0/0) now take the `t.Skip` that `content_test.go` already
+  used. Invisible from a dev machine by construction: the only environment that exercises the path
+  is one where the files are missing, so it was found in a detached worktree, where
+  `go test ./...` now passes with none of the 11 gitignored PDFs present.
+
 ### Investigated — 2026-08-15
 
 - **The 12 remaining dash-space pairs are what the page draws, and the item is closed as a
@@ -256,7 +323,8 @@ All notable changes to this project are documented here, following
     pre-fix baseline of all 12 files.
   - Not fixed, and now logged: PDF-Declarations encodes its listing indentation as x-position
     only, so the restored lines are flush-left. That indentation was equally lost before this
-    change, when the whole listing was one line.
+    change, when the whole listing was one line. (Fixed on 2026-08-15, and the premise was wrong:
+    the indentation is real space glyphs drawn outside marked content.)
 
 ### Fixed — 2026-08-13
 

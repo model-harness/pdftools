@@ -1206,6 +1206,417 @@ func TestCodeDeclaredAndDrawnLinesBreakOnce(t *testing.T) {
 	}
 }
 
+// indented builds a listing whose lines each carry an untagged run of leading spaces, drawn
+// as the page draws them: at the block's left edge, running up to the tagged text.
+//
+// Its own builder because docWith gives every span MCID >= 0 and atLines puts every span at
+// X0 72, and the rule under test is about a span with neither — an artifact run whose right
+// edge meets the next span's left. lines are (spaces, text) pairs, one per baseline, and
+// spaces is the count drawn at half the type size, which is what spaceAdvance estimates.
+func indented(size float64, lines ...[2]string) *doc.Document {
+	d := &doc.Document{Meta: doc.Metadata{Path: "test.pdf", Tagged: true}}
+	blk := doc.Block{Role: doc.RoleParagraph}
+	add := func(sp doc.Span) {
+		blk.Spans = append(blk.Spans, sp)
+		blk.MCIDs = append(blk.MCIDs, sp.MCID)
+		blk.Box = blk.Box.Union(sp.Box)
+	}
+	add(doc.Span{Text: "7.4 Filters", MCID: 0, Style: doc.Style{Size: size},
+		Box: geom.Rect{X0: 72, Y0: 720, X1: 300, Y1: 720 + size}})
+	y := 700.0
+	for i, ln := range lines {
+		x := 72.0
+		if n := len(ln[0]); n > 0 {
+			w := float64(n) * 0.5 * size
+			add(doc.Span{Text: ln[0], MCID: -1, Style: doc.Style{Size: size},
+				Box: geom.Rect{X0: x, Y0: y, X1: x + w, Y1: y + size}})
+			x += w
+		}
+		add(doc.Span{Text: ln[1], MCID: i + 1, Style: doc.Style{Size: size},
+			Box: geom.Rect{X0: x, Y0: y, X1: x + 200, Y1: y + size}})
+		y -= 2 * size
+	}
+	d.Pages = append(d.Pages, doc.Page{Number: 1, Blocks: []doc.Block{blk}})
+	return d
+}
+
+// A line's leading indent is drawn outside marked content, and the listing keeps it.
+//
+// Both of the corpus's listing producers draw nesting as real space glyphs, and both draw some
+// of those runs outside the line's marked content, where take cannot claim them. 23 runs are
+// that shape on disk: PDF-Declarations' whole XML sample, whose 25 lines came out flush-left,
+// and one line of WTPDF's. The spaces are on the page with an advance each, so keeping them is
+// reporting what was drawn rather than inferring an indent.
+func TestCodeKeepsAnUntaggedLeadingIndent(t *testing.T) {
+	d := indented(10, [2]string{"", "<rdf:RDF>"}, [2]string{"  ", "<rdf:Bag>"})
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "<rdf:RDF>\n  <rdf:Bag>"; got != want {
+		t.Errorf("listing = %q, want %q: the indent is drawn, not inferred", got, want)
+	}
+}
+
+// A recovered indent still breaks the line it opens.
+//
+// The reason the indexed span is a copy carrying the key's own MCID rather than the artifact
+// itself: newLine skips MCID < 0, so an indent left at -1 answers false on both sides of
+// itself, and every break in the listing disappears. Measured on PDF-Declarations, which
+// collapsed from 25 nested lines to one 892-character line — the exact defect breakAtBaselines
+// was written to undo, reintroduced by the fix for the indent.
+func TestARecoveredIndentDoesNotSuppressTheLineBreak(t *testing.T) {
+	d := indented(10, [2]string{"  ", "<a>"}, [2]string{"    ", "<b>"}, [2]string{"  ", "</a>"})
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2, 3))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "  <a>\n    <b>\n  </a>"; got != want {
+		t.Errorf("listing = %q, want %q: an indent is part of its line, not a barrier", got, want)
+	}
+}
+
+// A run of spaces standing away from the text after it is positioning, not an indent.
+//
+// This is the condition that separates the 23 indents from the 43 other untagged whitespace
+// spans on disk — a dotted leader's trailing space, the space beside a bullet glyph, a TOC
+// entry's padding. The band is empty for 8.2×: every indent meets its text within 0.243pt and
+// every other run with a same-line successor stands at least 2.000pt off. Expressed as the
+// negation of gapSpace's own space test, so what this calls attached is what that rule would
+// refuse to put a space into.
+//
+// The gap is 1.6pt against a threshold of 1.5, which is 1.07× and deliberately that tight. The
+// first version of this fixture stood a full 14pt clear — 9× the threshold — and three mutants
+// of the threshold itself survived it while adopting 8 more corpus runs each: LineFrac for
+// SpaceFrac, WideSpaceFrac for SpaceFrac, and the em in place of the space advance are all
+// wider, and nothing between 1.5 and 14 could tell them apart. A fixture that clears a
+// threshold by an order of magnitude tests the sign of the comparison, not its constant.
+func TestADetachedWhitespaceRunIsNotAnIndent(t *testing.T) {
+	d := indented(10, [2]string{"", "1 Scope"})
+	blk := &d.Pages[0].Blocks[0]
+	// A leader's trailing space, at the left edge but standing off the text after it.
+	pad := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 82, Y1: 690}}
+	num := doc.Span{Text: "7", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 83.6, Y0: 680, X1: 88.6, Y1: 690}}
+	blk.Spans = append(blk.Spans, pad, num)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "1 Scope\n7"; got != want {
+		t.Errorf("listing = %q, want %q: 1.6pt on a 1.5pt threshold is positioning", got, want)
+	}
+}
+
+// Whitespace in the middle of a line is not a leading indent.
+//
+// "Leading" is a position, not a character class, and 31 of the 43 non-indent runs on disk are
+// mid-line, and the narrowest of them is what sets the lower edge of the 8.2× band: 2.000pt.
+// Asserted on leadingIndent directly rather than through the output, because what an
+// artifact run leaves behind when it is correctly rejected is a gap, and spaceAtGaps then puts
+// a space there on its own — so the rendered text is the same either way and cannot tell the
+// two rules apart. The distinction that matters is whose space it is: a gap-inferred one is a
+// single space wherever the run was wide, an adopted one is the run itself.
+func TestMidLineWhitespaceIsNotAnIndent(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	// Same baseline as the line already open, attached to the span after it.
+	mid := doc.Span{Text: "    ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 272, Y0: 700, X1: 292, Y1: 710}}
+	tail := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 292, Y0: 700, X1: 315, Y1: 710}}
+	blk.Spans = append(blk.Spans, mid, tail)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: only a line's first run is its indent", nx.Text)
+	}
+
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "<a> <b>"; got != want {
+		t.Errorf("listing = %q, want %q: the gap rule fills it with one space, not four", got, want)
+	}
+}
+
+// A run of drawn text is not an indent, whatever its geometry.
+//
+// The condition that makes this rule about whitespace rather than about position: an untagged run
+// can be anything the producer drew outside marked content, and the two the corpus has are both
+// whitespace only by coincidence of what these files contain. 0 of the 66 untagged runs on disk
+// are non-whitespace *and* first on a line *and* attached, so the corpus cannot fail this and a
+// fixture has to. Adopting text would be worse than dropping a space: it would move real
+// characters into a block the producer did not put them in.
+func TestUntaggedTextIsNotAnIndent(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	// A drawn page number at the line's left edge, running right up to the tagged text.
+	num := doc.Span{Text: "42", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 40, Y0: 680, X1: 50, Y1: 690}}
+	txt := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 50, Y0: 680, X1: 73, Y1: 690}}
+	blk.Spans = append(blk.Spans, num, txt)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: an untagged run of text is not an indent", nx.Text)
+	}
+
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got := out.Sections[0].Blocks[0].Text(); strings.Contains(got, "42") {
+		t.Errorf("listing = %q: drawn text no element claims was adopted into the block", got)
+	}
+}
+
+// An empty span is not an indent, and the guard that says so is not redundant.
+//
+// TrimFunc of the empty string is the empty string, so "no non-space characters left" is true of a
+// span with no characters at all: dropping the sp.Text == "" half of the test adopts it. That
+// mutant survived a full run, and the equivalence argument for it — the two halves overlap — is
+// simply wrong on this one input. The corpus has 0 empty untagged spans (extract emits none), so
+// this is a guard rather than a measured case, and the same one gapSpace makes on the same
+// quantity for the same reason: an empty span has no width to indent by, and adopting it consumes
+// an artifact and copies it into a block to no effect.
+func TestAnEmptySpanIsNotAnIndent(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	empty := doc.Span{Text: "", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 72, Y1: 690}}
+	txt := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 95, Y1: 690}}
+	blk.Spans = append(blk.Spans, empty, txt)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: an empty span has no width to indent by", nx.Text)
+	}
+}
+
+// An indent is whitespace by rune, so a run of U+00A0 is one.
+//
+// The reason the test is TrimFunc(unicode.IsSpace) and not a byte scan for ' ' and '\t': a
+// producer can indent with any space glyph its font has, and a listing indented with no-break or
+// en spaces is indented. The corpus has 0 such runs — all 23 indents on disk are U+0020 — so this
+// is the rule extract's own endsWithSpace makes on the same question (run.go:1143), pinned by a
+// fixture because the files cannot pin it.
+func TestANonASCIISpaceIsAnIndent(t *testing.T) {
+	d := indented(10, [2]string{"  ", "<a>"})
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "  <a>"; got != want {
+		t.Errorf("listing = %q, want %q: any space rune indents, not just ' '", got, want)
+	}
+}
+
+// An indent needs a tagged span to attach to, and the last run on a block has none.
+//
+// Two guards, both unreachable from the corpus — every one of the 23 indents on disk has a tagged
+// successor, and only 1 untagged run of the 66 is followed by another untagged one. Without the
+// bounds check the rule indexes past the block; without the MCID check it keys an indent to a span
+// that has no key, which is key{page, -1} and a bucket take never looks up, so the spaces would be
+// consumed and then dropped — silently losing content rather than crashing.
+func TestAnIndentWithNoTaggedSuccessorIsRejected(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	trailing := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 40, Y0: 680, X1: 50, Y1: 690}}
+	blk.Spans = append(blk.Spans, trailing)
+	blk.MCIDs = append(blk.MCIDs, -1)
+
+	// Last span in the block: nothing follows it at all.
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: nothing follows the last span", nx.Text)
+	}
+
+	// A second untagged run after it: something follows, but nothing that owns a key.
+	another := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 50, Y0: 680, X1: 60, Y1: 690}}
+	blk.Spans = append(blk.Spans, another)
+	blk.MCIDs = append(blk.MCIDs, -1)
+
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: an untagged successor has no key to join", nx.Text)
+	}
+}
+
+// An indent belongs to the line it was drawn on, not to the next one down.
+//
+// Attachment is measured in x alone, so without the same-line test a run at the end of one line
+// and the first span of the line below it read as attached whenever their x-coordinates happen to
+// meet — which is exactly what a listing's line ends look like, since every line starts at the
+// same left margin. The corpus has no instance because its indents sit 0.243pt from their text at
+// most, but the failure mode is a whole line's indent taken from the line above it.
+//
+// The run is alone on its baseline, and that detail is what makes the fixture reach the rule it is
+// named for. A first version put it at the end of a line that already held text, and dropping the
+// same-line guard still rejected it — the first-on-baseline loop got there first, on the span it
+// shared a line with. Two guards that both decline leave neither one tested.
+func TestAnIndentDoesNotReachTheLineBelow(t *testing.T) {
+	d := &doc.Document{Meta: doc.Metadata{Path: "test.pdf", Tagged: true},
+		Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{{
+			Role:  doc.RoleParagraph,
+			Box:   geom.Rect{X0: 62, Y0: 680, X1: 300, Y1: 730},
+			MCIDs: []int{0, -1, 1},
+			Spans: []doc.Span{
+				{Text: "7.4 Filters", MCID: 0, Style: doc.Style{Size: 10},
+					Box: geom.Rect{X0: 72, Y0: 720, X1: 300, Y1: 730}},
+				// Alone on its baseline, ending exactly where the line below begins.
+				{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+					Box: geom.Rect{X0: 62, Y0: 700, X1: 72, Y1: 710}},
+				{Text: "<b>", MCID: 1, Style: doc.Style{Size: 10},
+					Box: geom.Rect{X0: 72, Y0: 680, X1: 95, Y1: 690}},
+			},
+		}}}}}
+	blk := &d.Pages[0].Blocks[0]
+
+	if nx, ok := leadingIndent(blk, 1); ok {
+		t.Errorf("leadingIndent = %q, want rejected: 20pt down is another line", nx.Text)
+	}
+}
+
+// An indent that overlaps the text it indents is still attached to it.
+//
+// Attachment is |X0 - X1| and not X0 - X1, because the quantity that matters is how far apart the
+// two runs are and a producer can draw them overlapping: 4 of the 23 indents on disk do, up to
+// 0.243pt, which is where the band's upper edge comes from. A signed test reads every one of those
+// as attached-by-a-mile and would pass here by accident, so the fixture overlaps by more than a
+// space instead — 3pt on a 1.5pt threshold, which a signed comparison accepts and this rejects.
+func TestAnOverlappingRunIsMeasuredByDistance(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	wide := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 95, Y1: 690}}
+	txt := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 92, Y0: 680, X1: 115, Y1: 690}}
+	blk.Spans = append(blk.Spans, wide, txt)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: a 3pt overlap is not a 0.2pt one", nx.Text)
+	}
+}
+
+// The gap is measured against the text's own space, not the indent's.
+//
+// Which span's type size sets the threshold is a real choice and the corpus cannot make it: all 23
+// adopted pairs on disk are set in one size, so the two readings agree on every one of them. The
+// answer here is the one gapSpace already documents for the same quantity — the *following* span's
+// advance, matching run.go:448, where extract reads it per glyph as it draws. An indent's own size
+// is the wrong instrument besides: a run of spaces set in a display size would license a gap wide
+// enough to swallow a word.
+//
+// 6pt spaces ahead of 20pt text: 1.5pt of gap is under the following span's threshold of 3.0 and
+// over its own of 0.9, so the two readings disagree and the fixture picks one.
+func TestTheGapIsMeasuredAgainstTheIndentedText(t *testing.T) {
+	d := &doc.Document{Meta: doc.Metadata{Path: "test.pdf", Tagged: true},
+		Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{{
+			Role:  doc.RoleParagraph,
+			Box:   geom.Rect{X0: 72, Y0: 680, X1: 300, Y1: 740},
+			MCIDs: []int{0, -1, 1},
+			Spans: []doc.Span{
+				{Text: "7.4 Filters", MCID: 0, Style: doc.Style{Size: 20},
+					Box: geom.Rect{X0: 72, Y0: 720, X1: 300, Y1: 740}},
+				{Text: "  ", MCID: -1, Style: doc.Style{Size: 6},
+					Box: geom.Rect{X0: 72, Y0: 690, X1: 78, Y1: 696}},
+				{Text: "<a>", MCID: 1, Style: doc.Style{Size: 20},
+					Box: geom.Rect{X0: 79.5, Y0: 690, X1: 130, Y1: 710}},
+			},
+		}}}}}
+	blk := &d.Pages[0].Blocks[0]
+
+	if _, ok := leadingIndent(blk, 1); !ok {
+		t.Error("leadingIndent rejected 1.5pt before 20pt text: the threshold is the text's space, not the indent's")
+	}
+}
+
+// A gap narrower than a space is attached, and zero is not the threshold.
+//
+// 18 of the 23 indents on disk stop short of their text rather than meeting it, by up to 0.028pt,
+// which is rounding in the producer's advance arithmetic and not a space; 4 overlap it and exactly
+// 1 meets it. So an exact test — the whole tolerance replaced by zero — would keep that one and
+// drop the 18, which is most of what this rule exists for. The fixture leaves a gap that is real
+// but sub-space: 1pt against a 1.5pt threshold.
+func TestASubSpaceGapIsStillAttached(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	ind := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 82, Y1: 690}}
+	txt := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 83, Y0: 680, X1: 106, Y1: 690}}
+	blk.Spans = append(blk.Spans, ind, txt)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if _, ok := leadingIndent(blk, 2); !ok {
+		t.Error("leadingIndent rejected a 1pt gap on a 1.5pt threshold: 19 of 23 indents are this shape")
+	}
+}
+
+// A recovered indent is not also left in Unplaced.
+//
+// The artifact is marked consumed where its copy is indexed, so the recovery pass no longer
+// reaches it. Without that the same spaces appear twice in one outline: once inside the listing
+// and once in the unplaced text of the block they were drawn in.
+//
+// The block has to hold something else unclaimed for that to be observable, and this is the shape
+// that took a mutation run to find. A block whose *only* survivor is the indent rebuilds as
+// whitespace and unplaced drops it at the len(keep.Spans) == 0 guard, so the first version of this
+// test — an indent alone in its block — asserted something that could not happen and the mutant
+// that forgets to consume survived it. Here a drawn page number is unclaimed too, so the block
+// reaches Unplaced on its own merits and the indent either rides along or does not.
+func TestARecoveredIndentIsNotAlsoUnplaced(t *testing.T) {
+	d := indented(10, [2]string{"  ", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	// Drawn text no element claims, on its own line: enough to keep the rebuilt block.
+	folio := doc.Span{Text: "42", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 300, Y0: 40, X1: 310, Y1: 50}}
+	blk.Spans = append(blk.Spans, folio)
+	blk.MCIDs = append(blk.MCIDs, -1)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "  <a>"; got != want {
+		t.Fatalf("listing = %q, want %q", got, want)
+	}
+	found := false
+	for i := range out.Unplaced {
+		for _, b := range out.Unplaced[i].Blocks {
+			found = true
+			if strings.Contains(b.Text(), "  ") {
+				t.Errorf("unplaced = %q: the indent is in the listing and here both", b.Text())
+			}
+		}
+	}
+	if !found {
+		t.Error("no unplaced block: the fixture no longer reaches the recovery pass at all")
+	}
+}
+
+// An indent whose line no element claims is not emitted on its own.
+//
+// The consequence of keying the indent to the following span rather than tracking document
+// order, and the behaviour to want: spaces with no line to indent are not content. They stay
+// unconsumed, so the recovery pass still accounts for them.
+func TestAnIndentWithoutItsLineIsNotEmitted(t *testing.T) {
+	d := indented(10, [2]string{"  ", "<a>"})
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	for _, b := range out.Sections[0].Blocks {
+		if strings.Contains(b.Text(), "  ") {
+			t.Errorf("block = %q: an unclaimed line's indent was emitted", b.Text())
+		}
+	}
+}
+
 // A paragraph drawn across several lines is still joined with a space, not broken.
 //
 // The baseline rule is confined to a role the producer declared, and this is what that buys:

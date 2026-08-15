@@ -74,10 +74,19 @@ func frontmatterOf(content string) (string, bool) {
 // gopkg.in/yaml.v2 rather than v3 because the module graph already contains it, through
 // pdfcpu, so validating with a real loader adds no dependency the build did not have.
 func TestOKFFrontmatterLoads(t *testing.T) {
+	// Both floors below are corpus-wide totals, so an absent corpus reads as 0 and fails a test
+	// that had nothing to walk — and the scalars-per-block ratio is 0/0. A clone without the
+	// sponsored PDFs has to pass; this skips instead. Found while fixing the same defect in
+	// TestListingIndentsReachTheirListing, which is why it is in that change.
+	files := corpusFiles()
+	if len(files) == 0 {
+		t.Skip("corpus absent")
+	}
+
 	blocks, scalars := 0, 0
 	coerced := map[string]int{}
 
-	for _, file := range corpusFiles() {
+	for _, file := range files {
 		files, _ := bundleOf(t, file)
 		for _, f := range files {
 			fm, ok := frontmatterOf(f.Content)

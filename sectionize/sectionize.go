@@ -530,11 +530,28 @@ func gapSpace(prev, cur *doc.Span) bool {
 	if prev.Style.Size <= 0 || cur.Style.Size <= 0 {
 		return false
 	}
-	tol := geom.DefaultTolerance
-	if math.Abs(prev.Box.Y0-cur.Box.Y0) > tol.LineFrac*math.Max(prev.Style.Size, cur.Style.Size) {
+	if !sameLine(prev, cur) {
 		return false
 	}
+	tol := geom.DefaultTolerance
 	return cur.Box.X0-prev.Box.X1 > tol.SpaceFrac*spaceAdvance(cur.Style.Size)
+}
+
+// sameLine reports whether two spans were drawn on the same line.
+//
+// The one reading of "the same line" this package has, shared by the three rules that ask —
+// gapSpace, newLine, and leadingIndent. It was written three times before it was written once,
+// and mutation testing is what found that: six mutants of the third copy survived, because
+// every fixture that would have killed one of them was already killing its twin in the first.
+// Duplicated tolerance arithmetic cannot be tested, only tested somewhere.
+//
+// LineFrac of the larger of the two sizes, which is the extractor's own line test
+// (run.go's maxf(sy, prev.height)) rather than a second opinion about the same question; see
+// breakAtBaselines for why the larger size is also the conservative direction. Unsigned, since
+// a listing that continues onto the next page steps up rather than down.
+func sameLine(a, b *doc.Span) bool {
+	tol := geom.DefaultTolerance
+	return math.Abs(a.Box.Y0-b.Box.Y0) <= tol.LineFrac*math.Max(a.Style.Size, b.Style.Size)
 }
 
 // spaceAdvance estimates the nominal space advance at a type size.
@@ -561,16 +578,16 @@ func spaceAdvance(size float64) float64 { return 0.5 * size }
 // every line and put a second break after every first one. Skipping it also makes the two
 // rules compose, since prev is then the last span that was really drawn.
 //
-// The magnitude of the step, not its sign: a listing that continues onto the next page steps
-// *up* by most of a page, and the corpus has one (PDF-Declarations, a 681pt rise into
-// "<!-- Optional entries"). A signed comparison would take that for one long line.
+// Exactly the negation of sameLine and not a comparison of its own, so a listing cannot be
+// broken at a boundary gapSpace reads as one line. That shared rule is unsigned, which matters
+// here: a listing continuing onto the next page steps *up* by most of a page, and the corpus has
+// one (PDF-Declarations, a 681pt rise into "<!-- Optional entries"), where a signed comparison
+// would take the rise for one long line.
 func newLine(prev, cur *doc.Span) bool {
 	if prev.MCID < 0 || cur.MCID < 0 {
 		return false
 	}
-	tol := geom.DefaultTolerance
-	step := math.Abs(prev.Box.Y0 - cur.Box.Y0)
-	return step > tol.LineFrac*math.Max(prev.Style.Size, cur.Style.Size)
+	return !sameLine(prev, cur)
 }
 
 // label takes a list item's declared /Lbl out of the item and returns it.
@@ -1277,8 +1294,28 @@ func newIndex(d *doc.Document) *index {
 				sp := &blk.Spans[si]
 				if sp.MCID < 0 {
 					// Drawn outside any marked-content sequence, so no element can name
-					// it and no key would ever be looked up. Not indexed, but still
-					// unconsumed, so the recovery pass keeps it.
+					// it and no key would ever be looked up. Indexed anyway when it is a
+					// line's leading indent, under the key of the span it is attached to;
+					// see leadingIndent. Otherwise not indexed, and still unconsumed, so
+					// the recovery pass keeps it.
+					//
+					// A copy carrying that key as its own MCID, not the span itself, for
+					// two reasons. Indexing under a key is already the statement that this
+					// span joins that marked content, so the join key it exposes has to
+					// agree — and the geometric rules downstream read it: newLine skips
+					// MCID < 0, so an indent that kept -1 would suppress the line break
+					// both before and after itself, collapsing the very listing this
+					// recovers. Marked consumed here rather than in take, because the
+					// original is what unplaced walks and it is accounted for the moment
+					// a copy of it is indexed; leaving it unconsumed would put the same
+					// spaces in a section and in Unplaced both.
+					if nx, ok := leadingIndent(blk, si); ok {
+						adopted := *sp
+						adopted.MCID = nx.MCID
+						k := key{p.Number, nx.MCID}
+						ix.spans[k] = append(ix.spans[k], &adopted)
+						ix.consumed[sp] = true
+					}
 					continue
 				}
 				k := key{p.Number, sp.MCID}
@@ -1287,6 +1324,69 @@ func newIndex(d *doc.Document) *index {
 		}
 	}
 	return ix
+}
+
+// leadingIndent reports whether the span at i is a line's leading indent drawn outside
+// marked content, and returns the tagged span it indents.
+//
+// A producer has two ways to indent a listing's line, and only one of them survives the
+// rebuild on its own. PDF-Declarations.pdf's XML sample and Well-Tagged-PDF-WTPDF-1.0.pdf's
+// both draw their nesting as real space glyphs; WTPDF puts most of them inside the line's
+// own marked content, where take claims them with the rest of the text, and both producers
+// also draw some as a separate run outside it. That run is what this finds. It is not
+// inference: the spaces are on the page, with an advance each, and dropping them is the
+// defect — 23 runs corpus-wide, 22 in PDF-Declarations' listing and 1 in WTPDF's, which is
+// why one listing came out entirely flush-left and the other lost a single line's indent.
+//
+// Attached to the *following* span's key rather than tracked in document order, so take
+// returns the indent immediately before the text it belongs to without the index having to
+// model position. The consequence is that an indent whose line the tree never claims is
+// never emitted either, which is the behaviour to want: the spaces are meaningless without
+// the line.
+//
+// Three conditions, and each one is load-bearing against the 43 untagged whitespace spans
+// on disk that are *not* indents — a dotted leader's trailing space, the space after a
+// bullet glyph, a TOC entry's padding:
+//
+//   - Whitespace only, and by rune rather than by byte, for the reason gapSpace decodes:
+//     a run of U+00A0 is an indent too.
+//   - First on its baseline within the block, which is what "leading" means. This is what
+//     rejects 31 of the 43, all of them mid-line. The other 12 are line-start and are
+//     rejected by attachment below: a bullet's space, whose glyph an element claims while
+//     the space beside it stays an artifact.
+//   - Attached to the next span, meaning a gap too narrow for a space of its own to fit.
+//     A separate run of spaces the producer drew as positioning stands *away* from the text
+//     after it; an indent runs right up to it. Measured, the gap is ≤ 0.243pt for all 23
+//     indents and ≥ 2.000 for every other run that has a same-line successor at all — an 8.2×
+//     empty band, so this is an order-of-magnitude test like spaceAtGaps' and not a tuned
+//     constant. Expressed as the negation of that rule's own space test, so the two cannot
+//     disagree: what this calls attached is exactly what gapSpace would refuse to put a space
+//     into.
+func leadingIndent(blk *doc.Block, i int) (*doc.Span, bool) {
+	sp := &blk.Spans[i]
+	if sp.Text == "" || strings.TrimFunc(sp.Text, unicode.IsSpace) != "" {
+		return nil, false
+	}
+	if i+1 >= len(blk.Spans) {
+		return nil, false
+	}
+	nx := &blk.Spans[i+1]
+	if nx.MCID < 0 {
+		return nil, false
+	}
+	if !sameLine(sp, nx) {
+		return nil, false
+	}
+	for k := 0; k < i; k++ {
+		if sameLine(&blk.Spans[k], sp) {
+			return nil, false
+		}
+	}
+	tol := geom.DefaultTolerance
+	if math.Abs(nx.Box.X0-sp.Box.X1) > tol.SpaceFrac*spaceAdvance(nx.Style.Size) {
+		return nil, false
+	}
+	return nx, true
 }
 
 // take returns the unclaimed spans for an element's marked content, in the order the
