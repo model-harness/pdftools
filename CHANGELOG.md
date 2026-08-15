@@ -81,6 +81,31 @@ All notable changes to this project are documented here, following
     `- 2 Scope 1`), and the `/Alt` on each contents `Link` independently confirms the three
     against the page.
 
+### Investigated — 2026-08-15
+
+- **The 12 remaining dash-space pairs are what the page draws, and the item is closed as a
+  non-defect.** `48- byte`, `32- byte`, `2- byte` and `2- unit` in ISO 32000-2 read like joins the
+  wrap rule missed, and they are not: every one of the 12 is a space the producer set as a glyph,
+  so `dashHoldsTheWord` — which fires only at a line break, on an *inferred* space — never sees
+  them. Established by marking each of `place`'s three insertion sites with a distinct sentinel
+  byte and regenerating, which attributed all 12 to the glyph stream and none to `writeSpace` or
+  the wrap rule; instrumenting the wrap path directly found exactly one dash wrap whose space is
+  drawn (`XA/11– recommended`), and it is correct.
+  - **The pen settles the four ambiguous ones.** Each of those space glyphs is drawn with a
+    *negative* gap against the dash — as much as −1.85pt of overlap — so the coordinates alone do
+    not say whether the page shows a gap. The advance does: the glyph after the space lands where
+    the space's own advance puts the pen (`12700` against the dash's `12476`, the same 224-unit
+    displacement in all four), so the space is on the page and joining it would be the extractor
+    overruling the document.
+  - **Six are correct suspended hyphens** (`four- or five-element`, `human- or machine-readable`,
+    `both forward- and backward-compatible`, `both 2- and 4-byte`, `Mixed one- and
+    two-dimensional`, `at both the document- and object-level`), one is `%PDF-` naming the header
+    prefix, and three are the known math-layout limit.
+  - **The count had moved on its own, 17 → 12**, because the intra-line gap rule reached three of
+    them — a backlog figure measured before an unrelated fix describes the old pipeline. A drawn
+    space and an inferred one are identical in the output and no assertion on text separates them;
+    sentinels at the insertion sites separate them in one regeneration.
+
 ### Fixed — 2026-08-14
 
 - **Eleven code listings were dropped entirely, and their 99 lines escaped as prose.** A `Code`

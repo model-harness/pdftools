@@ -1694,9 +1694,10 @@ OKF-ified spec.
   attachment to a letter or digit — not the dash,
   and not what follows the break, since 26 of the 483 continue into a digit and 17 into a
   capital (`41- 44`, `GREATER- THAN`, `UTF- 8`). Removing 193 characters from ISO 32000-2's
-  Markdown, 208 breaks in `mupdf_explored.pdf`, 15 in WTPDF, and 17 remain corpus-wide of
-  which 12 are correct suspended hyphens (`one- and two-dimensional`, `human- or
-  machine-readable`).
+  Markdown, 208 breaks in `mupdf_explored.pdf`, 15 in WTPDF, and 12 remain corpus-wide — 17
+  when this was written, since three were reached later by the intra-line gap rule and the
+  count is downstream of it. All 12 are drawn spaces rather than wrap decisions, and none is a
+  defect; see the sub-entry below.
   - **16 of the 483 need a walk back through spans**, because the dash is frequently a span
     of its own — a different style run, or its own MCID — leaving `prev` as a bare `-` with
     the word one span earlier. Those are the `surrounding`, `structure`, `constituent` and
@@ -1723,6 +1724,30 @@ OKF-ified spec.
     population, here it had 483 and still nothing measured it.
   - Distinct from the soft-hyphen `/ActualText` case above, which is 16 structure elements
     rather than a wrap decision, and still open.
+  - **~~The dash-space pairs that remain~~ are 12, and 11 of them are what the page draws.**
+    Closed as a non-defect after measurement, having been logged as remaining work on the
+    assumption that a `<digit>- <letter>` reading like `48- byte` had to be a lost join. It is
+    not. Every one of the 12 is a space the producer *drew*, not one this package inferred —
+    established by marking `place`'s three insertion sites with distinct sentinel bytes and
+    regenerating, which attributed all 12 to the glyph stream and none to `writeSpace` or the
+    wrap rule. Six are correct suspended hyphens (`four- or five-element`, `human- or
+    machine-readable`, `both forward- and backward-compatible`, `both 2- and 4-byte`, `Mixed
+    one- and two-dimensional`, `at both the document- and object-level`), one is `%PDF-`
+    naming the header prefix, and three more are the math-layout limit recorded below.
+    - **What settles the remaining four — `48- byte`, `32- byte`, `2- byte`, `2- unit` — is
+      the pen, not the text.** Each space glyph is drawn with a *negative* gap against the
+      dash before it, as little as −1.85pt, so it overlaps the dash and the appearance is
+      ambiguous from the coordinates alone. But it carries a full advance (2428/1000 em, the
+      font's own `SpaceWidth`), and the glyph after it lands where that advance puts the pen
+      rather than back at the dash's end: `12700` against `12476` for `The 48-`, and the same
+      224-unit displacement in all four. The gap is on the page. `48- byte` is what ISO
+      32000-2 renders, so joining it would be the extractor overruling the document.
+    - **The instrument is the transferable part.** A drawn space and an inferred one are
+      indistinguishable in the output, and no assertion on text can separate them — sentinels
+      at each insertion site can, in one regeneration, and that is what turned a five-item
+      backlog entry into a closed question. The count had also moved on its own, from 17 to
+      12, because the intra-line gap fix reached three of them; a backlog figure measured
+      before an unrelated fix is a figure about the old pipeline.
 - **No line ends in whitespace any more, and 12947 characters of it came off.** A span's text
   ends in a space whenever the producer drew one there, and the last span of a line carried
   that space to the line's end, where Markdown gives it a meaning the page never had: **516
