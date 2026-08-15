@@ -1242,6 +1242,515 @@ func TestCellParagraphsJoinWithoutABreak(t *testing.T) {
 	}
 }
 
+// atX gives the spans after the heading an X range each, so a fixture can express a horizontal
+// gap. atLines fixes every span at 72..300, which is the right default for a rule about
+// baselines and useless for one about the space between two runs on one of them.
+//
+// Pairs, in the order the spans were added: X0 then X1 per span.
+func atX(d *doc.Document, xs ...float64) {
+	i := 0
+	for pi := range d.Pages {
+		for bi := range d.Pages[pi].Blocks {
+			spans := d.Pages[pi].Blocks[bi].Spans
+			for si := range spans {
+				if spans[si].MCID == 0 {
+					continue
+				}
+				if i+1 >= len(xs) {
+					panic("atX: fewer bounds than spans")
+				}
+				spans[si].Box.X0, spans[si].Box.X1 = xs[i], xs[i+1]
+				i += 2
+			}
+		}
+	}
+	if i != len(xs) {
+		panic("atX: more bounds than spans")
+	}
+}
+
+// A contents entry whose dotted leader the tree does not name still separates from its page
+// number.
+//
+// The defect this fixes, at the width it has on disk: PDF-Declarations draws "2 Scope", a
+// leader, then "1" at a 395.57pt gap — 219.76 times the space test — and the leader is an
+// artifact, so newIndex never indexes it and take cannot return it. Without the rule the entry
+// reads "2 Scope1", which is what three of that file's thirteen entries did.
+func TestGapAcrossADroppedLeaderKeepsItsSpace(t *testing.T) {
+	d := docWith(sp{1, 0, "Table of Contents"}, sp{1, 1, "2 Scope"}, sp{1, 2, "1"})
+	atLines(d, 10.94, 682.8, 682.8)
+	atX(d, 72, 121.2, 516.7, 522.7)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "2 Scope 1"; got != want {
+		t.Errorf("entry = %q, want %q: a 395pt gap is a word boundary", got, want)
+	}
+}
+
+// The narrowest real gap in the corpus is a space, and it is what pins the space advance.
+//
+// ISO 32000-2's L*a*b* definition draws "× (𝑥 −" at 11.04pt then "4 29" at 8.04pt, 2.313pt
+// apart on one baseline. That is 1.918 times SpaceFrac of the 8.04pt span's space advance and
+// only 0.959 of SpaceFrac of its em — so the first version of this rule, which measured against
+// the em, left it joined as "(𝑥 −4 29)" while fixing the identical join earlier on the same
+// output line. No fixture could have caught that: every other one in this file is either far
+// above both thresholds or far below. This is the only geometry on disk that separates them,
+// which is why it is stated in points from the file rather than in round numbers.
+func TestNarrowGapAtARealFormulaIsASpace(t *testing.T) {
+	prev := doc.Span{Text: "× (𝑥 −", MCID: 1,
+		Box:   geom.Rect{X0: 300, Y0: 500, X1: 330, Y1: 511.04},
+		Style: doc.Style{Size: 11.04}}
+	cur := doc.Span{Text: "4 29", MCID: 2,
+		Box:   geom.Rect{X0: 332.313, Y0: 500, X1: 350, Y1: 508.04},
+		Style: doc.Style{Size: 8.04}}
+
+	if !gapSpace(&prev, &cur) {
+		t.Error("2.313pt on an 8.04pt span is 1.918 space widths and must space; " +
+			"measuring against the em scores it 0.959 and joins it")
+	}
+}
+
+// The widest gap the corpus joins is still a join, which is the other half of the boundary.
+//
+// A subscript returning to body size is the densest cluster in the distribution: 68 pairs
+// between 0.404 and 0.435 of the threshold, all of them ISO 32000-2 mathematical variables
+// meeting punctuation, and the widest is "5" at 6.96pt then ")" at 9.96pt with 0.650pt between.
+// It has to stay joined — "(𝑥5)" is one token — so the rule's headroom is measured from here
+// rather than asserted: 0.435 below against 1.918 above is the whole empty band, and a fixture
+// on only one side of it would let the threshold drift into the other.
+func TestWidestJoinedSubscriptGapStaysJoined(t *testing.T) {
+	prev := doc.Span{Text: "5", MCID: 1,
+		Box:   geom.Rect{X0: 300, Y0: 500, X1: 305, Y1: 506.96},
+		Style: doc.Style{Size: 6.96}}
+	cur := doc.Span{Text: ")", MCID: 2,
+		Box:   geom.Rect{X0: 305.65, Y0: 500, X1: 310, Y1: 509.96},
+		Style: doc.Style{Size: 9.96}}
+
+	if gapSpace(&prev, &cur) {
+		t.Error("0.650pt on a 9.96pt span is 0.435 of the threshold: a subscript touching " +
+			"its bracket is one token, not two words")
+	}
+}
+
+// Two runs the producer already separated get one space, not two.
+//
+// 25892 of the extractor's inferred spaces follow text that already ends in whitespace
+// (run.go:499), so this is the common case rather than an edge: ten of PDF-Declarations' own
+// thirteen entries have the space on the title span and must come out unchanged.
+func TestGapAfterASpaceAddsNothing(t *testing.T) {
+	d := docWith(sp{1, 0, "Table of Contents"}, sp{1, 1, "3 Normative references "}, sp{1, 2, "2"})
+	atLines(d, 10.94, 661.4, 661.4)
+	atX(d, 72, 200.4, 516.7, 522.7)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "3 Normative references 2"; got != want {
+		t.Errorf("entry = %q, want %q: the space is already there", got, want)
+	}
+}
+
+// A space that leads the following span counts too, since a fragment carries its own leading
+// space (run.go:517) and either side can hold the boundary.
+func TestGapBeforeASpaceAddsNothing(t *testing.T) {
+	d := docWith(sp{1, 0, "Table of Contents"}, sp{1, 1, "4 Terms"}, sp{1, 2, " 2"})
+	atLines(d, 10.94, 640, 640)
+	atX(d, 72, 121.2, 516.7, 522.7)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "4 Terms 2"; got != want {
+		t.Errorf("entry = %q, want %q", got, want)
+	}
+}
+
+// A non-breaking space is a boundary, so a byte scan for ' ' would add a second one.
+//
+// The rule decodes a rune where a byte test would see only the last byte of U+00A0 and call it
+// not-a-space. Nothing on the corpus has this shape, which is exactly why it needs a fixture.
+func TestGapAfterANonBreakingSpaceAddsNothing(t *testing.T) {
+	d := docWith(sp{1, 0, "Table of Contents"}, sp{1, 1, "Table 1"}, sp{1, 2, "5"})
+	atLines(d, 10.94, 620, 620)
+	atX(d, 72, 121.2, 516.7, 522.7)
+	d.Pages[0].Blocks[0].Spans[1].Text = "Table 1 "
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "Table 1 5"; got != want {
+		t.Errorf("entry = %q, want %q: U+00A0 is already a boundary", got, want)
+	}
+}
+
+// A kerned pair on one line is not a gap.
+//
+// This is the whole corpus on the other side of the rule: 19223 same-line pairs join with no
+// space, p50 at 0.014 of the space test and p99 at 0.198, and every one of them must stay
+// joined. A word split across two spans by a style change is the shape — "PDF" then "2.0" — and
+// a rule that spaced those would corrupt far more than it fixed.
+func TestTightPairOnOneLineStaysJoined(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "PDF"}, sp{1, 2, "2.0"})
+	atLines(d, 10, 700, 700)
+	atX(d, 72, 90, 90.2, 108)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "PDF2.0"; got != want {
+		t.Errorf("pair = %q, want %q: 0.2pt is kerning, not a space", got, want)
+	}
+}
+
+// Overlapping runs are not a gap either. A negative distance must not read as a wide one, which
+// is what dropping the comparison's direction would do.
+func TestOverlappingPairStaysJoined(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "super"}, sp{1, 2, "script"})
+	atLines(d, 10, 700, 700)
+	atX(d, 72, 120, 100, 140)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "superscript"; got != want {
+		t.Errorf("pair = %q, want %q: an overlap is not a gap", got, want)
+	}
+}
+
+// A gap between a span and one on the line *above* it is not a space either.
+//
+// The same-line test takes the magnitude of the baseline step, so it declines in both
+// directions. A signed comparison reads an upward step as negative and therefore as
+// same-line, which would put a space where a paragraph's second line rejoins the first —
+// or, on the corpus's one cross-page listing, inside a 681pt rise.
+func TestGapFromTheLineAboveIsNotASpace(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "second line"}, sp{1, 2, "first line"})
+	atLines(d, 10, 688, 700)
+	atX(d, 72, 130, 400, 460)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "second linefirst line"; got != want {
+		t.Errorf("pair = %q, want %q: a 12pt rise is another line in either direction", got, want)
+	}
+}
+
+// The same-line test measures against the type size itself, not against the space advance.
+//
+// The two thresholds in this rule read the same field and scale it differently — LineFrac of the
+// larger size, SpaceFrac of the following span's space advance — and nothing but a fixture at the
+// boundary keeps the second scaling from creeping into the first. At LineFrac 0.50 a 10pt pair
+// admits a 5pt step; passing the size through spaceAdvance would halve that to 2.5pt and split
+// the line, which is why the step here is 4pt rather than the 4pt-of-24 the superscript fixture
+// below uses: that one has enough headroom to survive the halving unnoticed.
+func TestLineTestMeasuresTheSizeNotTheSpaceAdvance(t *testing.T) {
+	prev := doc.Span{Text: "a", MCID: 1,
+		Box:   geom.Rect{X0: 100, Y0: 500, X1: 110, Y1: 510},
+		Style: doc.Style{Size: 10}}
+	cur := doc.Span{Text: "b", MCID: 2,
+		Box:   geom.Rect{X0: 120, Y0: 504, X1: 130, Y1: 514},
+		Style: doc.Style{Size: 10}}
+
+	if !gapSpace(&prev, &cur) {
+		t.Error("a 4pt step on a 10pt pair is one line (LineFrac 0.50 allows 5pt), and the " +
+			"10pt gap is a space: scaling the line test by the space advance would allow only 2.5pt")
+	}
+}
+
+// The same-line test takes the larger of the two sizes, which is the extractor's own reading
+// (maxf(sy, prev.height) at run.go:462) and the conservative one.
+//
+// Where the space test reads the following span, this one reads the pair, so the two thresholds
+// need separate fixtures. A 24pt run and a 6pt one 4pt apart vertically: LineFrac is 0.50, so
+// the larger size allows 12pt of step and calls it one line, while cur and the smaller allow 3pt
+// and call it two. That is a superscript, and reading the small span would space every raised
+// digit away from the word it belongs to — the same failure newLine's threshold avoids, in the
+// other rule.
+func TestSuperscriptIsOnItsLineForTheGapRule(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "Note"}, sp{1, 2, "1"})
+	atLines(d, 24, 700, 704)
+	atX(d, 72, 120, 130, 134)
+	for si := range d.Pages[0].Blocks[0].Spans {
+		if d.Pages[0].Blocks[0].Spans[si].MCID == 2 {
+			d.Pages[0].Blocks[0].Spans[si].Style.Size = 6
+		}
+	}
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "Note 1"; got != want {
+		t.Errorf("pair = %q, want %q: a 4pt rise is one line for a 24pt run", got, want)
+	}
+}
+
+// The mirror of the fixture above, with the large span second, which is what makes the reading
+// "the larger of the two" rather than "the first one".
+//
+// 6pt then 24pt, 4pt of step: prev allows 3pt and reads two lines, the larger allows 12 and
+// reads one. Both halves are needed because either alone passes under prev-or-max.
+func TestSuperscriptBeforeItsWordIsOnOneLine(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "1"}, sp{1, 2, "Note"})
+	atLines(d, 6, 704, 700)
+	atX(d, 72, 76, 86, 130)
+	for si := range d.Pages[0].Blocks[0].Spans {
+		if d.Pages[0].Blocks[0].Spans[si].MCID == 2 {
+			d.Pages[0].Blocks[0].Spans[si].Style.Size = 24
+		}
+	}
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "1 Note"; got != want {
+		t.Errorf("pair = %q, want %q: the larger size decides, whichever side it is on", got, want)
+	}
+}
+
+// A span with no text is not one side of a join.
+//
+// take returns empty spans — 943 of them on the corpus, all in ISO_32000-2, where a marked
+// content sequence draws no glyphs — and each sits at the left margin, so the gap to the text
+// after it is the whole indent. Spacing that would put a leading space on the block, and the
+// separator between two adjacent empties would be a space between nothing and nothing.
+func TestGapBesideAnEmptySpanAddsNothing(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, ""}, sp{1, 2, "PDF/A (ISO 19005)"})
+	atLines(d, 10, 700, 700)
+	atX(d, 72, 72, 84.92, 200)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "PDF/A (ISO 19005)"; got != want {
+		t.Errorf("block = %q, want %q: an empty side is not a boundary", got, want)
+	}
+}
+
+// The two geometric rules run in a fixed order, and a listing that both could touch comes out
+// with one break and no space in front of it.
+//
+// spaceAtGaps runs first so that it sees only spans the page drew: breakAtBaselines inserts a
+// newline span, and running after it would leave that fabricated span as one side of every
+// join. The MCID guard makes each rule skip the other's insertion, so the order is belt and
+// braces — but the guard is what holds it, and a listing whose lines are also horizontally
+// offset is where the two would collide.
+func TestListingGetsABreakAndNoSpace(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "<< /Type /Page"}, sp{1, 2, "/Parent 2 0 R"})
+	atLines(d, 10, 700, 688)
+	atX(d, 72, 150, 400, 470)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "<< /Type /Page\n/Parent 2 0 R"; got != want {
+		t.Errorf("listing = %q, want %q: one break, no space before it", got, want)
+	}
+}
+
+// A gap exactly equal to the threshold is not a space.
+//
+// Strictly greater, matching needSpace (run.go:474), and the boundary is where the two could
+// silently disagree: the threshold is SpaceFrac of the space advance, and at 0.30 of half a
+// 20pt em that is exactly 3pt, which is representable, so a `>=` here would space a pair the
+// extractor joins. Stated as 20pt rather than 10pt for that reason — the em is not the unit
+// the rule measures in, and a fixture written in ems is what hid the 4× error this boundary
+// now pins. Asserted through gapSpace rather than Tagged because the equality has to be
+// exact, and a fixture's box arithmetic is the only place that can be guaranteed.
+func TestGapExactlyAtTheThresholdIsNotASpace(t *testing.T) {
+	prev := doc.Span{Text: "a", MCID: 1,
+		Box:   geom.Rect{X0: 90, Y0: 100, X1: 100, Y1: 110},
+		Style: doc.Style{Size: 20}}
+	cur := doc.Span{Text: "b", MCID: 2,
+		Box:   geom.Rect{X0: 103, Y0: 100, X1: 113, Y1: 110},
+		Style: doc.Style{Size: 20}}
+
+	if gapSpace(&prev, &cur) {
+		t.Error("a 3pt gap is exactly 0.30 of a 20pt span's 10pt space, and the test is strictly greater")
+	}
+	// A hair over is, so the boundary is the boundary and not an off-by-one in the fixture.
+	over := cur
+	over.Box.X0 = 103.01
+	if !gapSpace(&prev, &over) {
+		t.Error("3.01pt is over the threshold and should space")
+	}
+}
+
+// A span with no type size does not get a gap read into it.
+//
+// At size 0 both thresholds are 0, so every positive gap is a space and every unequal baseline is
+// another line — the two questions decided the wrong way at once. doc.Style.Size is sy from the
+// composed text matrix and nothing clamps it, so a Tf of 0 produces this; the corpus has 0 of
+// 97452 such spans, which makes it a guard rather than a case, and unreachable from Tagged for
+// the same reason the fabricated-span guard is.
+func TestGapSpaceDeclinesWithoutATypeSize(t *testing.T) {
+	sized := doc.Span{Text: "y", MCID: 7,
+		Box:   geom.Rect{X0: 400, Y0: 0, X1: 440, Y1: 10},
+		Style: doc.Style{Size: 10}}
+	none := doc.Span{Text: "x", MCID: 6,
+		Box: geom.Rect{X0: 0, Y0: 0, X1: 10, Y1: 10}}
+
+	if gapSpace(&none, &sized) {
+		t.Error("prev has no size, so the pair has no line test")
+	}
+	// Placed *after* the sized span, so the gap is positive and the guard is the only thing
+	// that can decline: with cur unsized the threshold is 0, which any gap clears.
+	after := doc.Span{Text: "x", MCID: 6,
+		Box: geom.Rect{X0: 460, Y0: 0, X1: 470, Y1: 10}}
+	if gapSpace(&sized, &after) {
+		t.Error("cur has no size, so the gap has nothing to be a fraction of")
+	}
+	negative := none
+	negative.Style.Size = -10
+	if gapSpace(&negative, &sized) {
+		t.Error("a negative size is not a smaller threshold, it is no threshold")
+	}
+	// The same pair with a size is a gap, so the guard is declining on the size and not on
+	// something else about these spans.
+	withSize := none
+	withSize.Style.Size = 10
+	if !gapSpace(&withSize, &sized) {
+		t.Error("two sized spans 390pt apart are a gap; the guard is doing nothing")
+	}
+}
+
+// A fabricated span is never one side of a gap, whatever its text.
+//
+// Called directly rather than through Tagged, because the state cannot be built from a structure
+// tree: every span the index returns has a real identifier, and every fabricated one this
+// package inserts holds whitespace, which the space test rejects before the geometry is read. So
+// the guard is unreachable from Tagged today and decisive in itself — the same inputs answer
+// false with it and true without, since a zero box against a span at X0 400 reads as a 400pt
+// gap. Pinning it here says the rule is geometric on purpose, rather than leaving it to be
+// covered by a coincidence about the three insertions that exist now.
+func TestGapSpaceIgnoresAFabricatedSpan(t *testing.T) {
+	box := geom.Rect{X0: 400, Y0: 0, X1: 440, Y1: 10}
+	// Sized, so that the zero-size guard is not what declines and this test still measures the
+	// identifier. A fabricated span carries no style in practice, which is why the two guards
+	// have to be told apart deliberately.
+	fab := doc.Span{Text: "x", MCID: -1, Style: doc.Style{Size: 10}}
+	real := doc.Span{Text: "y", MCID: 7, Box: box, Style: doc.Style{Size: 10}}
+
+	if gapSpace(&fab, &real) {
+		t.Error("a fabricated prev span has no geometry, so it cannot open a gap")
+	}
+	if gapSpace(&real, &fab) {
+		t.Error("a fabricated cur span has no geometry, so it cannot close a gap")
+	}
+	// The same pair with identifiers is a gap, which is what makes the guard load-bearing
+	// rather than a restatement of the space test.
+	withID := fab
+	withID.MCID = 5
+	if !gapSpace(&withID, &real) {
+		t.Error("two real spans 400pt apart are a gap; the guard is doing nothing")
+	}
+}
+
+// A listing with both a wide gap on one line and a break to the next gets exactly one of each,
+// and the inserted space is invisible to the rule that writes the break.
+//
+// This is where the fabricated span's MCID earns itself. A real identifier on it would make
+// newLine read its zero box as a 700pt step from the line either side, so the one space would
+// become two spurious breaks — and a listing is the only role where both rules run, so it is the
+// only place the collision can be seen.
+func TestListingSpacesAGapAndBreaksALine(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"},
+		sp{1, 1, "/Type"}, sp{1, 2, "/Page"}, sp{1, 3, "/Parent 2 0 R"})
+	atLines(d, 10, 700, 700, 688)
+	atX(d, 72, 100, 140, 180, 72, 150)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2, 3))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "/Type /Page\n/Parent 2 0 R"; got != want {
+		t.Errorf("listing = %q, want %q: one space, one break, nothing else", got, want)
+	}
+}
+
+// The gap is measured against the size of the span that follows it, which is the size the
+// extractor's own space test reads (run.go:448, per glyph and never maximised).
+//
+// The four readings of "the type size" — cur, prev, the larger, the smaller — put the threshold
+// in four places, so one gap between two differently-sized spans settles all four. A 24pt run
+// followed by a 6pt one, with a 2.5pt gap: SpaceFrac is 0.30, so cur wants 1.8 and spaces it,
+// while prev and max want 7.2 and join it. The corpus cannot make this call — its three real
+// cases are all 10.94pt on both sides — so this fixture is the only thing holding it.
+func TestGapIsMeasuredAgainstTheFollowingSpan(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "Note"}, sp{1, 2, "1"})
+	atLines(d, 24, 700, 700)
+	atX(d, 72, 120, 122.5, 126)
+	for si := range d.Pages[0].Blocks[0].Spans {
+		if d.Pages[0].Blocks[0].Spans[si].MCID == 2 {
+			d.Pages[0].Blocks[0].Spans[si].Style.Size = 6
+		}
+	}
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "Note 1"; got != want {
+		t.Errorf("pair = %q, want %q: 2.5pt clears 0.30 of 6pt, not of 24pt", got, want)
+	}
+}
+
+// The same gap under the same sizes reversed stays joined, which is what makes the reading a
+// choice rather than a coincidence: 6pt then 24pt wants 7.2 and 2.5pt does not reach it. Without
+// this half, "use the smaller size" would pass the test above.
+func TestGapAgainstALargeFollowingSpanStaysJoined(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "H"}, sp{1, 2, "2"})
+	atLines(d, 6, 700, 700)
+	atX(d, 72, 120, 122.5, 126)
+	for si := range d.Pages[0].Blocks[0].Spans {
+		if d.Pages[0].Blocks[0].Spans[si].MCID == 2 {
+			d.Pages[0].Blocks[0].Spans[si].Style.Size = 24
+		}
+	}
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "H2"; got != want {
+		t.Errorf("pair = %q, want %q: 2.5pt is inside 0.30 of 24pt", got, want)
+	}
+}
+
+// The threshold is SpaceFrac, not one of the other three fractions in the same struct.
+//
+// A gap of 0.40 of the type size is a space — it clears SpaceFrac's 0.30 — and is under
+// LineFrac's 0.50 and far under WideSpaceFrac's 2.50, so it fails under any of those
+// substitutions. That band is what the corpus cannot supply: its three cases are at 49.94, 76.35
+// and 109.88 space widths, which clear every candidate at once.
+func TestGapJustOverTheSpaceThresholdIsASpace(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "shall"}, sp{1, 2, "be"})
+	atLines(d, 10, 700, 700)
+	atX(d, 72, 100, 104, 120)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "shall be"; got != want {
+		t.Errorf("pair = %q, want %q: 4pt is 0.40 of 10pt, over SpaceFrac and under LineFrac", got, want)
+	}
+}
+
+// A wide gap between two lines is a line break, not a space. The two rules divide on the
+// baseline test, and a listing is where both could fire: this one must decline so that
+// breakAtBaselines writes the newline alone, with no space in front of it.
+func TestGapOnAnotherLineIsNotASpace(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "endobj"}, sp{1, 2, "11 0 obj"})
+	atLines(d, 10, 700, 688)
+	atX(d, 72, 110, 400, 460)
+	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "endobj\n11 0 obj"; got != want {
+		t.Errorf("listing = %q, want %q: the break carries the boundary", got, want)
+	}
+}
+
 func TestTableCellsBecomeBlocks(t *testing.T) {
 	// Table, TR, THead and TBody are containers. The cells are the content, and a
 	// nested P inside a cell must not duplicate it.

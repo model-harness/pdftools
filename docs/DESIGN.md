@@ -1960,11 +1960,131 @@ OKF-ified spec.
     restored lines are flush-left. In a fence the leading spaces are content, so this is a wrong
     answer about the listing — but it is a pre-existing one, equally lost when the whole block was
     a single line, so the fix is an improvement with a stated limit rather than a regression.
-- **`/Alt` on a `Link` never reaches a block.** Raw counts over the 51: **413 elements carry
-  `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218 arrive.** `RoleLink` has no
-  `doc.Role`, so the element and its description are dropped together. This is the same debt
-  as the deferred annotation/cross-reference mapping rather than a new one, but the 194 is the
-  figure that says how much text it costs.
+- **A dropped artifact welded two words together, in 3 of PDF-Declarations' 13 contents entries.**
+  The entry reads `2 Scope1` where the page draws `2 Scope` … `1`. Nothing geometric is wrong:
+  `extract` puts the dotted leader in a run of its own whose text *ends in a space*, and infers one
+  across the gap besides. The loss is in the tagged rebuild. `take` reads the MCID index and
+  `newIndex` skips `MCID < 0`, so a span drawn outside marked content cannot be claimed by any
+  element — it reaches `Unplaced` instead — and **decoration is exactly what producers leave
+  unmarked**. The two spans either side of the leader were then concatenated across 395.57pt.
+  - **The class is 6 of 14538, and the band the threshold sits in is empty for 4.4×.** Over every
+    same-line adjacent pair in a sectionized block that joins with no space on either side —
+    excluding the spans `sectionize` fabricates, since a count taken after the rule runs measures a
+    different population — the gap as a multiple of the test runs **p50 0.007, p90 0.073,
+    p99 0.355**, then clusters densely from **0.404 to 0.435** (69 pairs, every one an ISO 32000-2
+    mathematical variable meeting punctuation — a subscript touches its bracket), and then stops:
+    **nothing until 1.918**. Above that lie exactly six — 1.918, 2.515, 2.596 in ISO 32000-2's
+    L\*a\*b\* definition and 99.873, 152.694, 219.760 in PDF-Declarations' contents list. So the
+    order of magnitude carries the rule, not the constant; but the band is 4.4× and not 53×, and
+    getting that wrong is what let the error below through.
+  - **Two thresholds, because `extract` uses two — and the first draft used one.** The same-line
+    test takes the larger of the pair's sizes, matching `run.go:462`'s `maxf(sy, prev.height)`;
+    the space test takes the **following** span's advance, matching `run.go:448`, where it is read
+    per glyph and never maximised. The first version applied one `math.Max` to both, which is
+    the same mismatch class as the entry above — a comment claiming to match an existing rule that
+    had not been diffed against it. Correcting it changed the output, and *for the better*: two
+    lines in ISO 32000-2's L\*a\*b\* definition where an operator was glued to its operand,
+    `𝑥 ≥6 29` → `𝑥 ≥ 6 29` and `=108 841` → `= 108 841`. The `cur` reading is the tighter one, so
+    it catches boundaries `max` misses.
+  - **The advance was proxied by the em, and that was a 4× error that left this very defect in the
+    output.** `extract` measures `SpaceFrac` against the font's nominal space advance; `doc.Style`
+    carries `Size` and no advance, and widening the type every sink reads to serve one rule is the
+    wrong trade — so an estimate is right. Measuring against the em *directly* is not an estimate,
+    it is a different quantity, roughly 4× too wide, and the corpus had a case inside the difference:
+    ISO 32000-2 draws `× (𝑥 −` at 11.04pt then `4 29` at 8.04pt with **2.313pt** between them, which
+    is 1.918 space widths and only 0.959 ems. The rule scored it a near miss and left `(𝑥 −4 29)`
+    joined — the same defect class as the three contents entries, **on the same output line as one
+    of the two joins it did fix**. Half an em closes it, and it is not a new constant: it is the
+    fallback `extract` uses for a font that reports no space glyph (`run.go:449`), so the one
+    quantity this rule cannot read already had an answer in the codebase.
+  - **What made the error invisible was that every fixture sat far from the boundary.** Fourteen
+    tests, all of them either far above both readings or far below, so the 4× cancelled out of every
+    one — and the corpus figures were stated in the wrong units, which made the band look 53× wide
+    and the near-miss look like part of the empty gap. Both edges are now pinned to the real
+    geometry: `TestNarrowGapAtARealFormulaIsASpace` at 1.918 above and
+    `TestWidestJoinedSubscriptGapStaysJoined` at 0.435 below, both stated in points from the file
+    rather than round numbers, because those two pairs are the only geometry on disk that separates
+    the readings. `TestGapExactlyAtTheThresholdIsNotASpace` moved from a 10pt span to a 20pt one for
+    the same reason: written in ems, its exact-boundary assertion was exact about the wrong unit.
+  - **A rune test, not a byte scan.** A span ending in U+00A0 or U+2002 has its boundary already,
+    and `strings.HasSuffix(s, " ")` cannot see one — the same reason `extract`'s `endsWithSpace`
+    decodes a rune. `TestGapAfterANonBreakingSpaceAddsNothing` is the fixture, and the corpus has
+    no instance of the shape, which is exactly why it needs one.
+  - **A zero type size decides both questions the wrong way at once, and the review found it.**
+    At `Size == 0` both thresholds are 0, so every positive gap is a space and every unequal
+    baseline is another line. `doc.Style.Size` is `sy` from the composed text matrix with nothing
+    clamping it (`extract/run.go:635`), so a `Tf` of 0 or a degenerate matrix produces one.
+    Measured: **0 of the 96569 spans `extract` emits**, so this is a guard rather than a case — and
+    the same guard `extract` makes on the same quantity one line from where it reads it
+    (`run.go:449`). The layer matters and naming it is what resolved a review finding: a *finished
+    outline* holds **119** zero-size spans, and every one is fabricated by this package — 113
+    newlines from `breakAtBaselines` and `gather`, 6 spaces from this rule, one per firing pair.
+    Same field, two populations, and the post-pipeline count is the one a naive measurement reaches
+    first. It is also a count the fix itself moved — 118 while the em proxy left the sixth join
+    unmade — so it had to be re-measured after the threshold changed rather than carried forward,
+    which is the same mistake in miniature as the one the threshold error was.
+    Adding it also exposed an entanglement worth recording: `TestGapSpaceIgnoresAFabricatedSpan`
+    began failing because its fabricated span had no size, so the new guard was declining before
+    the identifier was ever read. Left alone it would have started passing for the wrong reason.
+    The fixture is now sized deliberately, which is the only thing keeping the two guards
+    distinguishable.
+  - **38 mutations, 37 killed, every kill named to a test.** The one survivor is the call order
+    against `breakAtBaselines` and is a genuine **equivalent mutant**: the two predicates are
+    exclusive per pair — one requires the pair on the same line, the other requires it not — so an
+    insertion between one pair cannot change another's answer. Recorded as equivalent rather than
+    papered over with a test that would be asserting something untrue.
+  - **A second survivor looked equivalent, was not, and is now killed.** Dropping the `MCID < 0`
+    guard initially survived every test *and* all 51 files, because every span this package
+    fabricates holds whitespace, which the space test rejects on its own. But the guard is decisive
+    in itself — the same pair answers `false` with it and `true` without, since a zero box against
+    a span at X0 400 reads as a 400pt gap. What made it unreachable was a coincidence about today's
+    insertions, not a property of the rule, so `TestGapSpaceIgnoresAFabricatedSpan` calls `gapSpace`
+    directly and now kills it. Leaving a geometric rule to be saved by a text rule is what would
+    make the next fabricated span — a marker, a separator — a silent defect.
+  - **That kill was itself hiding behind an ambiguous anchor, and the size guard exposed it.** The
+    mutant had been anchored on the bare `if prev.MCID < 0 || cur.MCID < 0 {` line, which `newLine`
+    also holds verbatim, so `replace(…, 1)` was resolving by file order rather than by intent — the
+    same harness bug as `mut7.py` below, in the harness written to avoid it. Re-anchoring through
+    the following empty-text check is what made the result trustworthy. A find-string that matches
+    twice is worse than one that matches never: the miss announces itself, the alias reports
+    confidently on the wrong function.
+  - **Five of the 38 mutants exist because the 4× error existed.** Four drive `spaceAdvance` itself
+    — the em, a quarter em, zero, and a fixed constant — and `advance-is-the-em` is the shipped
+    defect reinstated, killed now by `TestNarrowGapAtARealFormulaIsASpace`. The fifth,
+    `line-guard-uses-advance`, pushes the estimate into the *line* test, halving a threshold that
+    should not scale by it; every existing line fixture had enough headroom to survive that
+    unnoticed, so `TestLineTestMeasuresTheSizeNotTheSpaceAdvance` states the 10pt case where 5pt is
+    one line and 2.5pt is not. Two thresholds reading one field is the kind of coupling only a
+    boundary fixture per threshold can hold apart.
+  - **Two harness bugs, both of which had been scoring false kills.** Three mutants that drop a
+    `unicode.IsSpace` call leave `last`/`first` unused; that is a compile error, which an
+    exit-code harness reads as a kill no test produced, and all three die once made valid. Worse,
+    `mut7.py`'s guard anchor became **ambiguous** when `gapSpace` introduced a byte-identical line
+    earlier in the same file, so `replace(…, 1)` silently mutated the wrong function — which
+    presented as a coverage regression in the *previous* rule and was not one. Both harnesses now
+    report `NO-OP` when a replacement leaves the file unchanged, since that state otherwise reads
+    as `SURVIVED`.
+  - **Five lines change across the 12 outputs, all five are corrections, and they carry six
+    joins** — confirmed in both sinks (`okf`'s `table-of-contents.md` reads `- 2 Scope 1`). Measured
+    against a baseline generated with the call site switched off, not against an earlier run of the
+    rule, which is the difference that made the sixth join visible: comparing two versions of a rule
+    shows what changed between them, and only the off-state shows what the rule is worth. The three
+    contents entries are independently confirmed by the `/Alt` on each `Link`, which holds the
+    correct text — see the entry below. The formula lines still show `6 29` for 6/29 and `4 29` for
+    4/29, which is the pre-existing math-layout limit and untouched by this change.
+- **`/Alt` on a `Link` never reaches a block — measured, and closed as a non-defect.** Raw counts
+  over the 51: 413 elements carry `/Alt` — `Figure` 218, `Link` 194, `Table` 1 — and only the 218
+  arrive, because `RoleLink` has no `doc.Role` and the element goes with its description. The
+  question is whether the 194 cost any text, and they do not. `Alt` is a stand-in for content
+  that draws nothing: both consumers read it only when the block's own text is empty
+  (`sink/markdown/markdown.go:568`, `sink/okf/okf.go:567`). Of the 194, **0 describe a block that
+  draws nothing** and **192 restate the visible text exactly**, so carrying them would add
+  nothing to any output. The remaining debt is the annotation/cross-reference mapping — a link's
+  *target* — which is deferred separately and is not about `/Alt`.
+  - The 2 outliers were worth the measurement: they are contents entries whose `/Alt` disagreed
+    with the drawn text, which is how the leading-space defect above was found. Where the two
+    disagree the `/Alt` is a gold answer already on disk, and it confirmed all three entries
+    independently of the geometry.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

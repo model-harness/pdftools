@@ -5,6 +5,82 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-15
+
+- **Three contents entries read `2 Scope1`, because the span holding the space was one the
+  structure tree could not name.** The extractor gets this right: a dotted leader is a run of its
+  own whose text ends in a space, and `needSpace` infers one across the gap besides. What lost it
+  was the tagged rebuild — `newIndex` indexes only spans with a non-negative MCID, so an artifact
+  cannot be claimed by any element, and decoration is exactly what producers leave unmarked. The
+  entry's title and its page number were then concatenated across a 395.57pt gap.
+  - **The population is 6 of 14538, and the band the threshold sits in is empty for 4.4×.**
+    Measured over every same-line adjacent pair in a sectionized block that joins with no space on
+    either side, excluding the spans `sectionize` itself fabricates: the gap as a multiple of the
+    test runs p50 0.007, p90 0.073, p99 0.355, then a dense cluster from 0.404 to 0.435 — 69 pairs,
+    every one an ISO 32000-2 mathematical variable meeting punctuation — and nothing until 1.918.
+    Above that lie exactly six: 1.918, 2.515 and 2.596 in ISO 32000-2's L\*a\*b\* definition, and
+    99.873, 152.694 and 219.760 in `PDF-Declarations.pdf`'s contents list. A subscript touches its
+    bracket; a dropped span leaves most of a line.
+  - **Two thresholds, because `extract` uses two.** The same-line test takes the larger of the
+    pair's type sizes, matching `run.go:462`'s `maxf(sy, prev.height)`; the space test takes the
+    *following* span's advance, matching `run.go:448`, where it is read per glyph and never
+    maximised. Collapsing both onto one reading would be a second opinion about a question the
+    extractor has already answered twice.
+  - **The advance is estimated at half an em, and the first version's failure to estimate it at
+    all was a 4× error that left a defect of this very class in the output.** `doc.Style` carries
+    `Size` and no advance, so the first version measured against the em directly — which is roughly
+    four times too wide. It left ISO 32000-2's `× (𝑥 −4 29)` joined at a 2.313pt gap on an 8.04pt
+    span, scoring it 0.959 of the threshold: the same defect as the three contents entries, on the
+    same output line as one of the two joins the rule did fix. Half an em is not a guess — it is
+    the fallback `extract` itself uses when a font reports no space glyph (`run.go:449`), so the
+    one quantity this rule cannot read already had a documented answer. `TestNarrowGapAtARealFormulaIsASpace`
+    and `TestWidestJoinedSubscriptGapStaysJoined` now pin both edges of the empty band, because no
+    other geometry on disk separates the two readings.
+  - **A rune test, not a byte scan.** A span ending in U+00A0 or U+2002 already has its boundary,
+    and `strings.HasSuffix(s, " ")` cannot see one. This is the test `extract`'s own
+    `endsWithSpace` makes, for the same reason.
+  - **A zero type size decides both questions the wrong way at once**, since at `Size == 0` both
+    thresholds are 0 — every positive gap becomes a space and every unequal baseline another line.
+    `doc.Style.Size` is the composed matrix's `sy` with nothing clamping it (`extract/run.go:635`),
+    so a `Tf` of 0 produces one; the corpus has 0 of the 96569 spans `extract` emits, so this is a
+    guard and not a case, and it is the guard `extract` already makes on the same quantity at
+    `run.go:449`. Review found it. Adding it also entangled two fixtures:
+    `TestGapSpaceIgnoresAFabricatedSpan` had an unsized span, so the new guard declined before the
+    identifier was read, and the test would have gone back to passing for the wrong reason.
+  - **A finished outline holds 119 zero-size spans and every one is `sectionize`'s own**, which is
+    what a naive count of that quantity reaches first — 113 are the newlines `breakAtBaselines` and
+    `gather` insert and 6 are this rule's spaces, one per firing pair. The two numbers answer
+    different questions and the layer has to be named for either to mean anything, which is how the
+    review's `118 vs 0` was resolved and what led to the 4× finding above. The count moved with the
+    fix: it was 118 while the em proxy left the sixth join unmade, so a figure written before a
+    threshold changes is a figure about the old threshold.
+  - **38 mutations applied, 37 killed, every kill named to a test.** The survivor is the call
+    order against `breakAtBaselines`, which is an equivalent mutant: the two predicates are
+    exclusive per pair, so neither can change the other's answer. Dropping the fabricated-span
+    guard first looked equivalent too — it survives from `Tagged`, because every span this package
+    fabricates holds whitespace — and is not: the same pair answers false with it and true without,
+    since a zero box against a span at X0 400 reads as a 400pt gap. That is a fact about today's
+    insertions and not about the rule, so `TestGapSpaceIgnoresAFabricatedSpan` calls `gapSpace`
+    directly and kills it.
+  - **Two harness bugs found, both of which had been scoring false kills.** Three mutants that
+    drop a `unicode.IsSpace` call leave `last`/`first` unused, which is a compile error and
+    scored as a kill no test produced; all three die once made valid. And `mut7.py`'s guard
+    anchor became ambiguous when `gapSpace` introduced a byte-identical line earlier in the file,
+    so `replace(…, 1)` had been mutating the wrong function — `drop-cur-mcid-guard` looked like a
+    coverage regression and was an aliased anchor. The new harness had the same bug on the same
+    line, which is how the count reached 33: an anchor that matches twice resolves by file order
+    rather than intent, and unlike a miss it never announces itself. Both harnesses now report
+    `NO-OP` when a replacement leaves the file unchanged, which is the failure that reads as
+    `SURVIVED`.
+  - **Five lines change across the 12 outputs, all five are corrections, and they carry six
+    joins.** Verified against a baseline generated with the rule switched off rather than against
+    an earlier run of it, which is what made the sixth join visible: three contents entries, and
+    two lines of ISO 32000-2's L\*a\*b\* definition where an operator had been welded to its
+    operand — `𝑥 ≥6 29` → `𝑥 ≥ 6 29`, and `=108 841 × (𝑥 −4 29)` → `= 108 841 × (𝑥 − 4 29)`,
+    which is two joins on one line. Both sinks carry the fix (`okf`'s `table-of-contents.md` reads
+    `- 2 Scope 1`), and the `/Alt` on each contents `Link` independently confirms the three
+    against the page.
+
 ### Fixed — 2026-08-14
 
 - **Eleven code listings were dropped entirely, and their 99 lines escaped as prose.** A `Code`

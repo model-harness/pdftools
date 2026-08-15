@@ -430,6 +430,129 @@ func breakAtBaselines(blk *doc.Block) {
 	blk.Spans = out
 }
 
+// spaceAtGaps restores the space at a join the tagged path closed by dropping the span that
+// carried it.
+//
+// The extractor already writes this space, and correctly: needSpace (run.go:474) infers one at
+// every gap wider than SpaceFrac of the nominal space advance, and a leader's own trailing
+// space is a real glyph besides. What loses it is the rebuild. take reads the MCID index, and
+// newIndex skips MCID < 0, so a span drawn outside marked content cannot be claimed by any
+// element — it reaches Unplaced instead. Decoration is exactly what producers leave unmarked,
+// so the two words the decoration stood between are concatenated: PDF-Declarations' contents
+// list draws "2 Scope", a dotted leader ending in a space, then "1", and the leader is an
+// artifact, so the entry came out "2 Scope1".
+//
+// Not a threshold question, though it is expressed as one. Of the corpus's 14538 same-line
+// adjacent pairs that are joined with no space on either side, the ratio of the gap to this
+// test is p50 0.007, p90 0.073, p99 0.355 — a kerned pair touches — and the distribution then
+// stops: a dense cluster at 0.404 to 0.435 (69 pairs, all of them ISO 32000-2 mathematical
+// variables abutting punctuation), and nothing until 1.918. Above that lie exactly six: 1.918,
+// 2.515, 2.596 in ISO 32000-2's L*a*b* definition and 99.873, 152.694, 219.760 in
+// PDF-Declarations' contents list. So the band the threshold sits in is empty for 4.4×, and
+// what separates a dropped span from tight typesetting is the order of magnitude rather than
+// the constant.
+//
+// Two sizes, not one, because the extractor uses two. Its line test takes the larger of the
+// pair — maxf(sy, prev.height) at run.go:462, and newLine matches it for the same reason — while
+// its space test takes the incoming glyph's own advance (run.go:448, read per glyph and never
+// maximised). So the same split is kept here: the larger size decides "one line", the following
+// span's size decides "one space". Collapsing both onto one reading would be a second opinion
+// about a question extract has already answered twice.
+//
+// The space advance is estimated rather than read, because doc.Style carries Size and no
+// advance (block.go:267) and widening the type every sink reads to serve one rule is the wrong
+// trade. See spaceAdvance for the estimate and for the 4× error the first version of this rule
+// made by skipping it.
+func spaceAtGaps(blk *doc.Block) {
+	out := make([]doc.Span, 0, len(blk.Spans))
+	for i := range blk.Spans {
+		sp := &blk.Spans[i]
+		if n := len(out); n > 0 && gapSpace(&out[n-1], sp) {
+			out = append(out, doc.Span{Text: " ", MCID: -1})
+		}
+		out = append(out, *sp)
+	}
+	blk.Spans = out
+}
+
+// gapSpace reports whether prev and cur were drawn on one line with a gap between them that
+// no character accounts for.
+//
+// Ordered before breakAtBaselines at the call site, so the two rules cannot both fire on one
+// join: this one requires the pair to be on the same line and that one requires it not to be.
+// Both skip MCID < 0, so neither reads the other's fabricated span as geometry.
+//
+// The order is documentation rather than a constraint, and mutation testing is what established
+// that: swapping the two calls survives every test in the package. The predicates are exclusive
+// per pair, so an insertion between one pair never changes another's answer, and all three
+// fabricated spans in this package hold whitespace ("\n" here and at gather, " " above), which
+// the space test below rejects before any geometry is read. That mutant is equivalent rather
+// than uncovered, and a test asserting a difference would be asserting something untrue.
+//
+// The MCID guard is a different matter: it survives mutation from Tagged for the same reason,
+// and it is still decisive in itself. The same pair answers false with it and true without —
+// a zero box against a span at X0 400 is a 400pt gap — so what makes it unreachable is only
+// that today's three insertions happen to be whitespace. That is a coincidence about this
+// package's current contents, not a property of the rule, so TestGapSpaceIgnoresAFabricatedSpan
+// pins it by calling gapSpace directly. Leaving a geometric rule to be saved by a text rule is
+// what would make the next fabricated span — a marker, a separator — a silent defect.
+//
+// An empty side is not a join. take can return a span whose text is empty — the corpus has 1380
+// such adjacent pairs, 1311 of them in ISO 32000-2 and the rest spread over six more files — and
+// a space against nothing is a leading or trailing one, which is the sink's to trim rather than
+// a boundary that was lost.
+//
+// Any space rune on either side, not the ' ' byte: a span ending in U+00A0 or U+2002 has a
+// boundary already, and a byte scan cannot see one. This is the rune test extract's own
+// endsWithSpace makes (run.go:1143) for the same reason, kept as a decode here rather than a
+// third exported helper.
+func gapSpace(prev, cur *doc.Span) bool {
+	if prev.MCID < 0 || cur.MCID < 0 {
+		return false
+	}
+	if prev.Text == "" || cur.Text == "" {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(prev.Text)
+	first, _ := utf8.DecodeRuneInString(cur.Text)
+	if unicode.IsSpace(last) || unicode.IsSpace(first) {
+		return false
+	}
+	// A size of zero makes both thresholds zero, which decides both questions the wrong way at
+	// once: every positive gap becomes a space and every baseline that is not exactly equal
+	// becomes another line. doc.Style.Size is sy from the composed text matrix and nothing
+	// clamps it (extract/run.go:635), so a Tf of 0 or a degenerate matrix produces one; the
+	// corpus has 0 of 96569 spans the extractor emits, so this is a guard rather than a measured
+	// case — the 119 zero-size spans in a finished outline are all fabricated by this package,
+	// which is a different quantity and the one a naive count reaches first. Declining is the
+	// conservative answer — the join is left as the page drew it — and it is the same guard
+	// extract makes on the same quantity one line from where it reads it (run.go:449).
+	if prev.Style.Size <= 0 || cur.Style.Size <= 0 {
+		return false
+	}
+	tol := geom.DefaultTolerance
+	if math.Abs(prev.Box.Y0-cur.Box.Y0) > tol.LineFrac*math.Max(prev.Style.Size, cur.Style.Size) {
+		return false
+	}
+	return cur.Box.X0-prev.Box.X1 > tol.SpaceFrac*spaceAdvance(cur.Style.Size)
+}
+
+// spaceAdvance estimates the nominal space advance at a type size.
+//
+// extract measures the real thing from the font (run.go:448) and doc.Style does not carry it,
+// so this is the one quantity gapSpace cannot read. Half an em is not a guess: it is the
+// fallback extract itself uses when a font reports no space glyph (run.go:449), so a caller
+// without an advance already has a documented answer and this is it.
+//
+// Using the em instead — SpaceFrac of Size — was the first version of this rule and it was
+// wrong by the ratio between an em and a space, roughly 4×, which is a whole threshold. It
+// left ISO 32000-2's "× (𝑥 −4 29)" joined at a gap of 2.313pt on an 8.04pt span: the same
+// defect class as the three contents entries, on the same output line as one of the two
+// formula joins this rule does fix, and the em proxy scored it 0.959 of the threshold. Review
+// found the discrepancy that led here, so the band the first version claimed was empty for
+// 53× was not empty at all.
+func spaceAdvance(size float64) float64 { return 0.5 * size }
+
 // newLine reports whether cur was drawn on a different line than prev, with no break already
 // written between them.
 //
@@ -854,6 +977,7 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 		blk.Box = blk.Box.Union(s.Box)
 		blk.MCIDs = append(blk.MCIDs, s.MCID)
 	}
+	spaceAtGaps(&blk)
 	if linesText(role) {
 		breakAtBaselines(&blk)
 	}
