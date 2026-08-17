@@ -7,6 +7,54 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-17
 
+- **A geometric rule was comparing two page coordinate spaces as if they were one.** A `Box.Y0` is
+  a position within its own page's user space, and `sectionize` joins spans in the order a
+  structure element lists its content — so a paragraph continuing past a page break is one element
+  naming two pages, and `sameLine` was measuring page *n+1*'s baseline against page *n*'s.
+  `doc.Span` now carries `Page`, stamped by the extractor at the single site that produces
+  geometry, and `sameLine` refuses to compare across pages. Both rules that ask — `newLine` and
+  `gapSpace` — inherit the guard, and they failed in opposite directions without it: a listing
+  welded into one line, and a space inferred into the middle of a word across the boundary.
+  - **Nothing on disk changes.** 7 adjacent cross-page pairs across the 11 tagged documents, and
+    the smallest baseline step is 107.7× its own threshold, because a paragraph that breaks does so
+    at the bottom of one page and resumes at the top of the next. All 7 already carry a space at
+    the join from `extract`'s wrapped-line rule; the 12 rendered documents are byte-identical to
+    `25dcccc`. The margin is a fact about where those paragraphs happen to break — a short page or
+    a table continued in a header band steps by nothing at all — so the two fixtures draw the case
+    the corpus does not have.
+  - **The logged reason for deferring it was wrong.** `docs/DESIGN.md` declined the fix as needing
+    "a page number on `doc.Span`, a wider change than this defect justifies". Of the 12 non-test
+    `doc.Span{…}` construction sites, exactly one produces geometry, and the page number is already
+    in scope at its caller. Counting construction sites instead of geometry-producing ones is what
+    made it look expensive.
+  - **The fix invalidated a neighbouring rule's stated rationale.** `sameLine` is unsigned and its
+    witness was the cross-page rise, which no longer reaches the arithmetic. Measured: 0 upward
+    steps in 3357 adjacent same-page pairs, so a signed comparison would now pass every corpus
+    assertion in the repo and only `TestCodeBreaksOnAnUpwardStep` holds it. Recorded on the rule so
+    a fixture's claim is not read as a measured one.
+  - **A second cross-page comparison, found by review, in code the guard does not cover.**
+    `substituted` replaces an element's whole run of marked content with one span carrying the
+    declared `/ActualText`, and it unioned every span's box into the survivor's — across a page
+    break that is not a rectangle anywhere, and the survivor names a single page, so it would
+    assert the fiction belongs to that one. The union now stops at the first page. Reachable but
+    not present: 92 of the corpus's 4803 declaring elements list more than one marked-content
+    reference and 0 of them cross a page, so `TestSubstitutionStopsAtThePageBreak` is the witness.
+  - **A third one, found by the review after that, in the block builder itself.** `emitItem` unioned
+    every span's box into `doc.Block.Box`, which the field documented as "in the page's coordinate
+    space" — singular, and false for the 7 of 30301 blocks the tagged path rebuilds that hold spans
+    from two pages. A block has a `Box` and no page range, where `doc.Section` carries `FirstPage`
+    and `LastPage` exactly because it can span a break, so the union produced a rectangle bounding
+    two spaces and locating nothing in either. It now bounds the first positioned span's page. No
+    output moves, because nothing reads `Block.Box`: `doc.Page.TextBounds` and `Coverage` are its
+    only consumers and both walk the extractor's per-page blocks. `TestABlocksBoxBoundsOnePage`
+    holds it, and kills all 3 mutants of the guard.
+  - **"MCID −1 means no geometry" is false.** The first version of the corpus invariant asserted it
+    and failed: PDF-Declarations draws its contents leaders outside marked content, and those 5
+    spans are real rectangles on a real page. The invariant is keyed on an empty `Box` instead, and
+    asserts both halves — 188140 spans, 188021 with a page, 119 fabricated at page 0 — plus that
+    the 7 cross-page pairs exist, so the guard cannot decay into dead code held up by fixtures
+    alone. 6 of 6 mutants of the guard and its three wiring sites die to named tests.
+
 - **`Block.MCIDs` is documented as a union and three of its four writers built something else, and
   the invariant now lives once beside the field it describes.** `doc/block.go` calls the field the
   identifiers a block was assembled from and states outright that it is a union; each write site

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -744,6 +745,132 @@ func nonSpaceLen(s string) int {
 		}
 	}
 	return n
+}
+
+// Every drawn span says which page its box is measured on, and page-crossing joins exist.
+//
+// Two assertions in one walk because they are two halves of one claim. The first is the
+// invariant: a span the extractor drew carries the number of the page its Box belongs to, and a
+// span with no geometry carries 0 — doc.Span states it, extract is the only producer that can
+// honour it, and TestEverySpanRecordsItsPage pins the threading on a two-page fixture. The
+// second is that the population sameLine's page guard exists for is not empty: a paragraph
+// continuing past a page break is one structure element whose references name two pages, so a
+// block sectionize rebuilds can hold spans from both.
+//
+// Both are needed. The invariant alone would hold on a corpus where nothing ever crosses a page,
+// and the guard would then be dead code held up by fixtures. The counts alone would not say the
+// numbers are right. Measured: 7 adjacent cross-page pairs across the 11 tagged documents, and
+// the smallest of their baseline steps is 107.7 times its own line threshold — which is why the
+// defect is a latent one rather than a rendering error on disk, and why the two fixtures in
+// sectionize draw the case the corpus does not have.
+//
+// The step ratios are logged rather than asserted as a floor. A file whose paragraph broke a
+// line earlier would step by less without anything being wrong, so a floor here would be a
+// constant about today's page breaks; what must not change is that the pairs are found at all.
+func TestEveryDrawnSpanRecordsItsPage(t *testing.T) {
+	files := corpusFiles()
+	if len(files) == 0 {
+		t.Skip("corpus absent")
+	}
+
+	var spans, drawn, fabricated, bad, crossPairs int
+	minRatio := math.Inf(1)
+	fail := func(format string, args ...any) {
+		bad++
+		if bad <= 5 {
+			t.Errorf(format, args...)
+		}
+	}
+	check := func(name, where string, bs []doc.Block, pg int) {
+		for i := range bs {
+			// The last span with a join key, not the previous index: this package's geometric
+			// rules skip MCID < 0, so a fabricated break between two drawn runs does not
+			// separate them and the pair sameLine sees is this one.
+			var prev *doc.Span
+			for j := range bs[i].Spans {
+				sp := &bs[i].Spans[j]
+				spans++
+				if pg > 0 {
+					// An extractor page block. Every span in it was drawn on that page,
+					// including one drawn outside marked content: a dotted leader is an
+					// artifact with no MCID and a perfectly good rectangle. So this is
+					// unconditional, and it is the only place the exact number can be
+					// checked — a rebuilt block holds spans from more than one page.
+					if sp.Page != pg {
+						fail("%s %s: span %q on page %d claims page %d", name, where, sp.Text, pg, sp.Page)
+					}
+				} else if sp.Box.IsZero() {
+					// Fabricated by this package to carry text with no position — a break,
+					// an inferred space — which Page 0 is the statement of.
+					//
+					// Keyed on the box rather than on MCID < 0, which is a different
+					// question: a drawn span can have no marked-content identifier, and 5
+					// of PDF-Declarations' contents leaders are exactly that. geom's
+					// IsZero is width-or-height, so a drawn span of zero advance would land
+					// here and fail as "no box but claims page n". That is the direction to
+					// fail in — it is a diagnosis of a span the model has no vocabulary
+					// for, not a false alarm — and the corpus has none today.
+					fabricated++
+					if sp.Page != 0 {
+						fail("%s %s: span %q has no box but claims page %d", name, where, sp.Text, sp.Page)
+					}
+				} else if sp.Page <= 0 {
+					fail("%s %s: span %q has a box and no page", name, where, sp.Text)
+				}
+				if sp.Page > 0 {
+					drawn++
+				}
+				if sp.MCID < 0 {
+					continue
+				}
+				if prev != nil && prev.Page != sp.Page {
+					crossPairs++
+					thr := 0.5 * math.Max(prev.Style.Size, sp.Style.Size)
+					if thr > 0 {
+						if r := math.Abs(prev.Box.Y0-sp.Box.Y0) / thr; r < minRatio {
+							minRatio = r
+						}
+					}
+				}
+				prev = sp
+			}
+		}
+	}
+	var walk func(name string, s *doc.Section)
+	walk = func(name string, s *doc.Section) {
+		// Page 0: a rebuilt section block is not on one page, which is the whole point.
+		check(name, "section", s.Blocks, 0)
+		for _, k := range s.Kids {
+			walk(name, k)
+		}
+	}
+	for _, name := range files {
+		d, out, _ := outlineOf(t, name)
+		for pi := range d.Pages {
+			check(name, "page", d.Pages[pi].Blocks, d.Pages[pi].Number)
+		}
+		check(name, "preamble", out.Preamble, 0)
+		for _, s := range out.Sections {
+			walk(name, s)
+		}
+		for i := range out.Unplaced {
+			check(name, "unplaced", out.Unplaced[i].Blocks, out.Unplaced[i].Number)
+		}
+	}
+	// Floors rather than equalities, for the same reason as the walk above: the identity is the
+	// assertion and these establish it was asked of a real population. Measured at 188140 spans,
+	// of which 188021 carry a page and 119 are this package's own fabrications, and 7 cross-page
+	// pairs. The fabricated floor is not decoration — it is what makes the Page 0 half of the
+	// invariant non-vacuous, and 119 is the same population gapSpace's comment counts.
+	if spans < 185000 || drawn < 180000 || fabricated < 100 {
+		t.Errorf("walked %d spans, %d with a page, %d fabricated; want a corpus-sized population",
+			spans, drawn, fabricated)
+	}
+	if crossPairs < 7 {
+		t.Errorf("cross-page adjacent pairs = %d, want at least 7: the guard has no population", crossPairs)
+	}
+	t.Logf("%d spans, %d with a page, %d fabricated, %d wrong, %d cross-page pairs, smallest step %.1fx its threshold",
+		spans, drawn, fabricated, bad, crossPairs, minRatio)
 }
 
 // Every block's MCIDs are the union of its spans', on the real corpus.

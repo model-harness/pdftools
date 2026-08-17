@@ -547,9 +547,37 @@ func gapSpace(prev, cur *doc.Span) bool {
 //
 // LineFrac of the larger of the two sizes, which is the extractor's own line test
 // (run.go's maxf(sy, prev.height)) rather than a second opinion about the same question; see
-// breakAtBaselines for why the larger size is also the conservative direction. Unsigned, since
-// a listing that continues onto the next page steps up rather than down.
+// breakAtBaselines for why the larger size is also the conservative direction.
+//
+// Unsigned, and the page guard below is why that is now a fixture's claim rather than a measured
+// one. The witness used to be the cross-page rise — a listing continuing onto the next page steps
+// *up* by most of a page — and that pair no longer reaches the arithmetic at all. Within a page
+// the corpus has 0 upward steps in 3357 adjacent same-page pairs, so a signed comparison would
+// pass every corpus assertion in this repo; TestCodeBreaksOnAnUpwardStep is what holds it, and a
+// signed reading would silently take a column break, or a table continued in a header band, for
+// one long line.
+//
+// Two pages are never the same line, whatever the arithmetic says, because a Y0 is only a
+// position within its own page's user space. This package is where that matters: it joins spans in
+// the order a structure element lists its content, and a paragraph continuing past a page break is
+// one element naming two pages, so the comparison below was reading page n+1's coordinates as if
+// they were page n's. Corpus-wide there are 7 such adjacent pairs across the 11 tagged documents,
+// and all 7 survive the arithmetic by a wide margin — the smallest step is 107.7× its threshold,
+// because a continuation starts at the top of the next page and the page before it ended at the
+// bottom, so the two baselines are most of a page apart. What makes this a guard rather than a fix
+// is that the margin is an artifact of where those paragraphs happen to break: a listing whose
+// last line on page n sits at the same height as its first line on page n+1 — a short page, a
+// two-line footnote, a table continued in a header band — steps by nothing at all and reads as one
+// line, and there is no threshold that can tell that case from a real one.
+//
+// A span this package fabricated has Page 0 and an empty box, so it is a different page from every
+// drawn span and is refused here too. That is the same answer the callers already give it on
+// MCID < 0, except for a recovered leading indent, which is fabricated *from* a drawn span and so
+// keeps its box and its page along with the MCID it is given; see leadingIndent.
 func sameLine(a, b *doc.Span) bool {
+	if a.Page != b.Page {
+		return false
+	}
 	tol := geom.DefaultTolerance
 	return math.Abs(a.Box.Y0-b.Box.Y0) <= tol.LineFrac*math.Max(a.Style.Size, b.Style.Size)
 }
@@ -578,11 +606,12 @@ func spaceAdvance(size float64) float64 { return 0.5 * size }
 // every line and put a second break after every first one. Skipping it also makes the two
 // rules compose, since prev is then the last span that was really drawn.
 //
-// Exactly the negation of sameLine and not a comparison of its own, so a listing cannot be
-// broken at a boundary gapSpace reads as one line. That shared rule is unsigned, which matters
-// here: a listing continuing onto the next page steps *up* by most of a page, and the corpus has
-// one (PDF-Declarations, a 681pt rise into "<!-- Optional entries"), where a signed comparison
-// would take the rise for one long line.
+// Exactly the negation of sameLine and not a comparison of its own, so a listing cannot be broken
+// at a boundary gapSpace reads as one line, and so both rules inherit that one's page guard. The
+// corpus's only listing that continues onto another page is PDF-Declarations', a 681pt rise into
+// "<!-- Optional entries", and it is now decided by the page rather than by the rise: the two are
+// the same answer there, and they are not the same answer where a continuation resumes at the
+// height it left off at. See sameLine.
 func newLine(prev, cur *doc.Span) bool {
 	if prev.MCID < 0 || cur.MCID < 0 {
 		return false
@@ -768,6 +797,16 @@ func inOrder(e *tag.Elem, content func([]tag.MCRef), kid func(*tag.Elem)) {
 // pointers into the document and the recovery pass reads the same ones — editing here
 // would rewrite the page text a caller asked to extract.
 //
+// The union stops at the first page, because a rectangle is only a position within one page's
+// user space and a union across two is not a rectangle anywhere. An element's marked content
+// can name two pages — 92 of the corpus's 4803 declaring elements list more than one
+// reference, though 0 of them cross a page today — and unioning across the break would produce
+// a box bounding two coordinate spaces at once while the span named a single page. Every rule
+// that reads a box then reads a fiction, and doc.Span.Page would be the thing asserting it.
+// Keeping the first page's spans and their box is the conservative answer: the text is the
+// declared value either way, so what is lost is a box that was never meaningful, and the span
+// still says which page the box it does carry belongs to.
+//
 // A value of "" is not a substitution. tag.Read leaves the field empty when the key is
 // absent, so an empty string cannot be distinguished from no declaration at all, and
 // treating it as one would delete the glyphs of every element that has none.
@@ -778,6 +817,9 @@ func substituted(e *tag.Elem, spans []*doc.Span) []*doc.Span {
 	sp := *spans[0]
 	sp.Text = inlineText(e.ActualText)
 	for _, s := range spans[1:] {
+		if s.Page != sp.Page {
+			continue
+		}
 		sp.Box = sp.Box.Union(s.Box)
 	}
 	return []*doc.Span{&sp}
@@ -988,10 +1030,31 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	if role == doc.RoleTableCell {
 		blk.Cell = cellAt(e, b.tableNum(e))
 	}
+	// The box bounds one page's spans, not every page's. A doc.Block has a Box and no page
+	// range, so its rectangle is a position in one page's user space by construction — where a
+	// doc.Section carries FirstPage and LastPage precisely because it can span a break. This
+	// block routinely does too: 7 of the 30301 blocks the tagged path rebuilds for the corpus
+	// hold spans from two pages, one paragraph or listing each continuing past a break, and
+	// unioning those gives a rectangle that bounds two coordinate spaces and locates nothing in
+	// either. Taking the first positioned span's page is the same answer substituted gives, for
+	// the same reason: what is dropped is a box that was never meaningful, and the spans keep
+	// their own Page so nothing that needs the later pages has lost them.
+	//
+	// Nothing on disk changes. No sink reads Block.Box — doc.Page.TextBounds and Coverage are
+	// its only consumers and both walk the extractor's own per-page blocks, which are the pg > 0
+	// case that cannot mix pages. So this corrects a field whose documented contract was false
+	// for 7 blocks rather than an output, which is why it is stated here instead of pinned by a
+	// corpus assertion on a number that would move with the corpus.
 	blk.Spans = make([]doc.Span, 0, len(spans))
+	box := 0
 	for _, s := range spans {
 		blk.Spans = append(blk.Spans, *s)
-		blk.Box = blk.Box.Union(s.Box)
+		if s.Page > 0 && box == 0 {
+			box = s.Page
+		}
+		if s.Page == box {
+			blk.Box = blk.Box.Union(s.Box)
+		}
 	}
 	// The union, not one entry per span: this loop used to append every span's identifier
 	// including the -1s, so an element listing four spans across two MCIDs recorded four

@@ -1976,11 +1976,14 @@ OKF-ified spec.
     *n+1* as though they were one space, and a listing whose next page resumes at nearly the same
     height as the previous page's last line would be a **missed** break: the exact defect this
     rule exists to fix, wearing the rule's own clothes. Measured: **1 of the 18 `Code` elements
-    crosses a page, and its step is 680.64pt against a threshold of 4.56pt** — a 149× margin, so
+    crosses a page, and its step is 681.22pt against a threshold of 6.00pt** — a 114× margin, so
     there is no instance on disk. Left as it is rather than threading a page through the span,
     because the honest fix is a page number on `doc.Span` and that is a wider change than this
     defect justifies; recorded here so the next listing that crosses a page is diagnosed rather
-    than re-derived.
+    than re-derived. **Fixed as its own unit of work below, and two of the three figures above
+    were wrong** — the step is 681.22pt against 6.00pt, not 680.64 against 4.56, and 149× was a
+    ratio of two different files' numbers; the widest margin on the corpus is ISO/TS 32004's
+    155.1×, and the narrowest — which is the one that matters — is 107.7×.
   - ~~Still open: PDF-Declarations encodes its listing indentation as **x-position only**, so the
     restored lines are flush-left. In a fence the leading spaces are content, so this is a wrong
     answer about the listing — but it is a pre-existing one, equally lost when the whole block was
@@ -2235,6 +2238,69 @@ OKF-ified spec.
     adoption off gives 34341, 23 fewer, which is the 23 adopted indents each carrying its
     successor's key by design. A figure inherited from a log entry is a figure about whatever walk
     produced it.
+- **A geometric rule was comparing two coordinate spaces, and the corpus could not tell.** A
+  `Box.Y0` is a position within *its own page's* user space, and `sectionize` joins spans in the
+  order a structure element lists its content — so a paragraph continuing past a page break is one
+  element naming two pages, and `sameLine` was measuring page *n+1*'s baseline against page *n*'s.
+  `doc.Span` now carries `Page`, stamped by the extractor, and `sameLine` refuses the comparison
+  outright. Both rules that ask — `newLine` and `gapSpace` — inherit it, because `sameLine` is the
+  one reading of "the same line" this package has.
+  - **The logged position was too pessimistic by an order of magnitude of effort.** The entry above
+    declined the fix because "the honest fix is a page number on `doc.Span` and that is a wider
+    change than this defect justifies". It is not wide at all: of the 12 non-test `doc.Span{…}`
+    construction sites in the repo, exactly **one** produces geometry (`extract/run.go:1105`) — every
+    other fabricates a span to carry text with no position — and the page number is already in
+    scope at that site's caller, since `Extractor.Page(n)` builds `doc.Page{Number: n}` before
+    calling `run.blocks`. Three lines of threading, one field, no consumer to migrate. What made it
+    look expensive was counting construction sites instead of *geometry-producing* construction
+    sites.
+  - **The two rules fail in opposite directions from the same cause, so both are pinned.**
+    `newLine` loses a break it should write (a listing welds into one line); `gapSpace` writes a
+    space it should not (page 1 ending at x=100 and page 2 starting at x=400 read as one line with
+    a 300pt hole, so "continuation" arrives as "continua tion"). Which one a file gets depends only
+    on where its text happens to sit.
+  - **Nothing on disk changes, and the measurement says why.** 7 adjacent cross-page pairs across
+    the 11 tagged documents, and the smallest baseline step is **107.7× its own threshold** —
+    because a paragraph that breaks does so at the bottom of one page and resumes at the top of the
+    next, so the two baselines are most of a page apart. All 7 already carry a space at the join
+    from `extract`'s wrapped-line rule. The 12 rendered documents are byte-identical. That margin is
+    a fact about where those particular paragraphs break, not a property of the comparison: a short
+    page, a two-line footnote, a table continued in a header band steps by nothing at all, and no
+    threshold can separate that from a real line.
+  - **The fix invalidated the rationale for a neighbouring choice, which is the part a diff review
+    would miss.** `sameLine` is unsigned, and its stated witness was the cross-page rise — the one
+    pair that no longer reaches the arithmetic. Measured over the corpus: **0 upward steps in 3357
+    adjacent same-page pairs**, so a signed comparison now passes every corpus assertion in the
+    repo, and `TestCodeBreaksOnAnUpwardStep` is the only thing holding it. Recorded on the rule, so
+    the next reader does not take a fixture's claim for a measured one.
+  - **Review found a second cross-page comparison the guard does not reach.** `substituted`
+    replaces an element's whole run with one span holding the declared `/ActualText`, and unioned
+    every span's box into the survivor — a union across a page break is a rectangle in no
+    coordinate space, and the survivor names one page, so `doc.Span.Page` would be the thing
+    asserting it. The union now stops at the first page: the text is the declared value either
+    way, so what is given up is a box that was never meaningful. Reachable but not on disk — 92
+    of 4803 declaring elements list more than one reference, 0 of them cross a page — which is
+    why the search was for the *shape* of the defect rather than an instance of it. `sameLine`
+    being the single reading of "the same line" is what made the first fix one line; it is not
+    what makes every page-mixing comparison route through it.
+  - **A third one, in the block builder, found by the review after that — the same shape a third
+    time.** `emitItem` unioned every span's box into `doc.Block.Box`, whose comment said "in the
+    page's coordinate space", singular. It is false for 7 of the 30301 blocks the tagged path
+    rebuilds for the corpus. A block has a box and no page range, where a `doc.Section` carries
+    `FirstPage` and `LastPage` precisely because it spans breaks — so the type cannot express what
+    the union produced. It now bounds the first positioned span's page, and nothing on disk moves
+    because nothing reads the field: `doc.Page.TextBounds` and `Coverage` are its only consumers
+    and both walk the extractor's own per-page blocks. Three separate sites, three separate
+    reviews, one question — "can these two boxes be on different pages" is not answerable by
+    grepping for the rule that was wrong, and each pass found the next one only because the
+    previous fix named the shape.
+  - **"MCID −1 means no geometry" is false, and the corpus test is what caught it.** The first
+    version of the invariant asserted that an unmarked span carries no page; PDF-Declarations draws
+    its contents leaders *outside* marked content, and those 5 spans are ordinary rectangles on a
+    real page. An empty `Box` is what says there is no position. The invariant is now keyed on the
+    box, and asserts both halves — 188140 spans, 188021 carrying a page, 119 fabricated at page 0 —
+    plus that 7 cross-page pairs exist at all, so the guard cannot become dead code held up only by
+    its fixtures.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

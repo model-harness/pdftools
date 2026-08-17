@@ -137,7 +137,7 @@ func (e *Extractor) Page(n int) (doc.Page, error) {
 	}
 
 	res, _ := objects.GetDict(e.s, page, "Resources")
-	run := &run{ex: e, tol: e.opt.Tol}
+	run := &run{ex: e, tol: e.opt.Tol, page: n}
 	// The initial CTM is the identity: extraction reports positions in the page's
 	// own user space, which is what the box and every downstream comparison are
 	// expressed in. Flipping to a top-left origin is the rasterizer's job, and

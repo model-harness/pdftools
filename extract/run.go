@@ -26,6 +26,13 @@ type run struct {
 	ex  *Extractor
 	tol geom.Tolerance
 
+	// page is the 1-based page being walked, stamped onto every span this run emits so
+	// that a consumer regrouping spans across pages can tell two page coordinate spaces
+	// apart. Held here rather than passed down because the position it qualifies is
+	// already held here: everything in this struct is measured in one page's user space,
+	// and a run that did not know which page that was could still emit a Box.
+	page int
+
 	// lines are closed lines in the order they were first drawn.
 	lines []line
 
@@ -741,7 +748,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 		} else {
 			shape.observe(ln)
 		}
-		appendLine(cur, ln, r.tol)
+		appendLine(cur, ln, r.tol, r.page)
 		prev = ln
 	}
 
@@ -1060,7 +1067,7 @@ func lineHeight(ln *line) float64 {
 
 // appendLine adds a line's fragments to a block as spans, joining to the previous
 // line with a space.
-func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
+func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 	for i := range ln.frags {
 		fr := &ln.frags[i]
 		txt := string(fr.text)
@@ -1106,6 +1113,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 				Text:  txt,
 				Style: fr.style,
 				Box:   box,
+				Page:  page,
 				MCID:  fr.mcid,
 			})
 		}

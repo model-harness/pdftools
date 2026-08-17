@@ -96,7 +96,15 @@ type Block struct {
 	// Spans are the block's styled runs in reading order.
 	Spans []Span
 
-	// Box is the block's bounding rectangle in the page's coordinate space.
+	// Box is the block's bounding rectangle in one page's coordinate space.
+	//
+	// One page's, because a block has a Box and no page range while a Section has FirstPage
+	// and LastPage — so a block that spans a break cannot say so, and sectionize does rebuild
+	// such blocks: a paragraph continuing past a page break is one structure element naming
+	// two pages. Unioning across it would give a rectangle bounding two coordinate spaces,
+	// which locates nothing in either. Its spans each carry their own Span.Page, so the page
+	// this rectangle belongs to is the Page of the first span that has one, and the later
+	// pages' text is still reachable through the spans.
 	Box geom.Rect
 
 	// Lang is a language override from the structure tree, when the block declares
@@ -274,6 +282,32 @@ type Span struct {
 
 	// Box is the run's bounding rectangle in page coordinates.
 	Box geom.Rect
+
+	// Page is the 1-based number of the page Box is measured on, or 0 when the span
+	// carries no geometry.
+	//
+	// Page coordinates are per page, so a Box alone is not a position: two spans on
+	// different pages can hold the same rectangle and be a page apart on paper. A
+	// consumer that regroups spans has to know that, and one does — sectionize joins
+	// spans in the order a structure element lists its content, and a paragraph
+	// continuing past a page break is one element whose references name two pages, so
+	// its geometric rules were comparing a Y0 from page n against one from page n+1.
+	// See sectionize's sameLine, which is where that comparison is refused.
+	//
+	// Only a span the extractor drew has one. Every other producer fabricates spans to
+	// carry text with no position — a declared label, an /ActualText substitution, an
+	// inferred break — and 0 is the statement of that, chosen as the zero value because
+	// "no geometry" is what a hand-built Span should mean. Page numbers are 1-based
+	// (Page.Number), so 0 cannot collide with a real page the way MCID 0 collides with a
+	// real identifier.
+	//
+	// Not the same question as MCID -1, which is the tempting shortcut and is wrong: a
+	// drawn span can have no marked-content identifier. PDF-Declarations draws its contents
+	// leaders outside any marked content, and those 5 spans are ordinary rectangles on a
+	// real page — a walk that read -1 as "no geometry" would call them page 0 and be wrong
+	// about five real positions. An empty Box is what says there is no position; this field
+	// says which page a non-empty one belongs to.
+	Page int
 
 	// MCID is the marked-content identifier this run was drawn inside, or -1 when it
 	// was drawn outside any marked-content sequence. Combined with the page number it

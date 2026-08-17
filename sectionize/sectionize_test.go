@@ -37,7 +37,7 @@ func docWith(runs ...sp) *doc.Document {
 			byPage[r.page] = p
 		}
 		blk := &p.Blocks[0]
-		blk.Spans = append(blk.Spans, doc.Span{Text: r.text, MCID: r.mcid})
+		blk.Spans = append(blk.Spans, doc.Span{Text: r.text, Page: r.page, MCID: r.mcid})
 		blk.MCIDs = append(blk.MCIDs, r.mcid)
 	}
 	return d
@@ -492,6 +492,33 @@ func TestSubstitutionKeepsTheWholeRunsBox(t *testing.T) {
 	}
 }
 
+// The run stops at the page break, because a union across two pages is not a rectangle.
+//
+// A box is a position within one page's user space, so bounding page 1's run together with
+// page 2's produces a rectangle that describes neither — and the surviving span names a single
+// page, so it would be asserting that the fiction belongs to page 1. Reachable but not present:
+// 92 of the corpus's 4803 declaring elements list more than one marked-content reference, and 0
+// of them cross a page, so this is the fixture and there is no corpus witness. Page 2's span is
+// higher on its own page and further right, which is what makes the wrong answer visible — the
+// union would run to y 700 and x 300, coordinates the first page's box never reaches.
+func TestSubstitutionStopsAtThePageBreak(t *testing.T) {
+	first := &doc.Span{Text: "before", Box: geom.NewRect(10, 100, 30, 112), Page: 1}
+	second := &doc.Span{Text: "after", Box: geom.NewRect(200, 690, 300, 700), Page: 2}
+	e := &tag.Elem{Role: tag.RoleSpan, ActualText: "declared"}
+
+	out := substituted(e, []*doc.Span{first, second})
+
+	if len(out) != 1 {
+		t.Fatalf("spans = %d, want 1", len(out))
+	}
+	if want := geom.NewRect(10, 100, 30, 112); out[0].Box != want {
+		t.Errorf("box = %+v, want %+v: a box may not bound two pages", out[0].Box, want)
+	}
+	if out[0].Page != 1 {
+		t.Errorf("page = %d, want 1: the surviving box is page 1's", out[0].Page)
+	}
+}
+
 // TestSubstitutionDoesNotEditTheDocument: index hands out pointers into the doc.Document, and
 // the recovery pass reads the same ones. A substitution that edited a span in place would
 // rewrite the page text of a document the caller also asked to extract — and would corrupt
@@ -693,6 +720,46 @@ func TestContentSpanningPagesUsesPerReferencePages(t *testing.T) {
 	}
 	if st.UnplacedChars != 0 {
 		t.Errorf("unplaced = %d chars, want 0", st.UnplacedChars)
+	}
+}
+
+// A rebuilt block's box bounds one page, not the union of two.
+//
+// The sibling of the test above: that one is about the text surviving a page break, this one is
+// about what the block then claims its position is. A doc.Block has a Box and no page range —
+// doc.Section carries FirstPage and LastPage exactly because it can span a break — so unioning
+// page 1's rectangle with page 2's gives a rectangle in neither page's user space. 7 of the
+// 30301 blocks the tagged path rebuilds for the corpus are in this state, so the union was
+// reachable on disk; nothing reads Block.Box today, which is why the corpus shows no output
+// difference and why this fixture is what holds the field's contract.
+func TestABlocksBoxBoundsOnePage(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "A sentence that begins here "},
+		sp{2, 0, "and finishes on the next page."},
+	)
+	// Page 1's continuation sits at the foot of the page and page 2's at the head, which is the
+	// shape a break has and the reason the union is wrong rather than merely wide: it would
+	// report a block 600 points tall spanning a whole page of text it does not contain.
+	first := geom.NewRect(72, 96, 300, 108)
+	second := geom.NewRect(72, 690, 400, 702)
+	d.Pages[0].Blocks[0].Spans[1].Box = first
+	d.Pages[1].Blocks[0].Spans[0].Box = second
+
+	out, _ := Tagged(d, tree(el(tag.RoleH1, 1, 0), func() *tag.Elem {
+		p := el(tag.RoleP, 1, 1)
+		p.Content = append(p.Content, tag.MCRef{MCID: 0, Page: 2})
+		return p
+	}()), DefaultOptions)
+
+	blk := out.Sections[0].Blocks[0]
+	if blk.Box != first {
+		t.Errorf("box = %+v, want %+v: a block's box may not bound two pages", blk.Box, first)
+	}
+	// And the second page's span is still there with its own box, so what the box stops at is
+	// the rectangle and not the content.
+	if got := blk.Spans[len(blk.Spans)-1]; got.Page != 2 || got.Box != second {
+		t.Errorf("last span = page %d %+v, want page 2 %+v", got.Page, got.Box, second)
 	}
 }
 
@@ -1154,6 +1221,55 @@ func TestCodeBreaksOnAnUpwardStep(t *testing.T) {
 
 	if got, want := out.Sections[0].Blocks[0].Text(), "endobj\n11 0 obj"; got != want {
 		t.Errorf("listing = %q, want %q: a 610pt rise is a page break, not one line", got, want)
+	}
+}
+
+// A listing continuing onto the next page breaks, even where the two baselines coincide.
+//
+// Both baselines are 700, so every threshold in the package says one line and the arithmetic
+// cannot say otherwise: a Y0 is a position in its own page's user space, and two pages have
+// two. Nothing on disk looks like this — the corpus's 7 cross-page pairs all step by most of a
+// page, the smallest by 107.7× its threshold, because a paragraph that breaks does so at the
+// bottom of one page and resumes at the top of the next. That margin is where those paragraphs
+// happen to break, not a property of the comparison, and this fixture is the case it does not
+// cover: a listing whose last line on page 1 sits at the same height as its first line on
+// page 2. Without the page guard in sameLine the two lines are welded into "endobj11 0 obj".
+func TestALineDoesNotContinueOntoTheNextPage(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "endobj"}, sp{2, 1, "11 0 obj"})
+	atLines(d, 10, 700, 700)
+	code := el(tag.RoleCode, 1, 1)
+	code.Content = append(code.Content, tag.MCRef{MCID: 1, Page: 2})
+	tr := tree(el(tag.RoleH2, 1, 0), code)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "endobj\n11 0 obj"; got != want {
+		t.Errorf("listing = %q, want %q: two pages are not one line", got, want)
+	}
+}
+
+// The same guard on the other rule that asks: no space is inferred across a page boundary.
+//
+// A gap is evidence only between two runs on one line, and this pair is not one — page 1's run
+// ends at X1 100 and page 2's begins at X0 400, which read as one line is a 300pt hole and
+// three hundred times the space test. So the two rules fail in opposite directions from the
+// same cause: newLine loses a break it should write, gapSpace writes a space it should not, and
+// "continuation" arrives as "continua tion". Which of the two a given file gets depends only on
+// where its text happens to sit, so both are pinned. The corpus does not distinguish them
+// either — all 7 of its cross-page joins already carry a space from extract's own wrapped-line
+// rule, so nothing there is welded today and nothing there gains a space.
+func TestNoSpaceIsInferredAcrossAPageBoundary(t *testing.T) {
+	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "continua"}, sp{2, 1, "tion"})
+	atLines(d, 10, 700, 700)
+	atX(d, 72, 100, 400, 420)
+	p := el(tag.RoleP, 1, 1)
+	p.Content = append(p.Content, tag.MCRef{MCID: 1, Page: 2})
+	tr := tree(el(tag.RoleH2, 1, 0), p)
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if got, want := out.Sections[0].Blocks[0].Text(), "continuation"; got != want {
+		t.Errorf("paragraph = %q, want %q: a gap across a page boundary is not a space", got, want)
 	}
 }
 

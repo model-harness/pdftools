@@ -1206,6 +1206,48 @@ func TestFailedPageIsEmptyNotFatal(t *testing.T) {
 	}
 }
 
+// Every span says which page its box is measured on.
+//
+// A Box is only a position within its own page's user space, so a consumer that regroups spans
+// across pages — sectionize joins them in the order a structure element lists its content, and a
+// paragraph crossing a page break is one element naming two pages — has to be able to tell two
+// coordinate spaces apart. The extractor is the only producer that can say: it is the one place
+// that knows both the geometry and the page, and every other doc.Span in the repo is fabricated
+// to carry text with no position and leaves Page 0 to say so.
+//
+// Two pages rather than one, and asserted per page rather than as "not zero": the value is
+// threaded from Extractor.Page through the run to appendLine, and a stamp that hardcoded page 1
+// — or dropped the argument and passed the zero value — would satisfy any weaker assertion on a
+// single-page fixture. Both pages draw at the same 700 baseline, which is exactly the case the
+// number exists to disambiguate.
+func TestEverySpanRecordsItsPage(t *testing.T) {
+	s := onePage(`BT /F1 12 Tf 10 700 Td (page one) Tj ET`)
+	s.pages = append(s.pages, s.pages[0])
+	s.content = append(s.content, []byte(`BT /F1 12 Tf 10 700 Td (page two) Tj ET`))
+
+	d, err := New(s, DefaultOptions).Document()
+	if err != nil {
+		t.Fatalf("Document: %v", err)
+	}
+	if len(d.Pages) != 2 {
+		t.Fatalf("pages = %d, want 2", len(d.Pages))
+	}
+	for pi := range d.Pages {
+		p := &d.Pages[pi]
+		if len(p.Blocks) == 0 {
+			t.Fatalf("page %d drew nothing", p.Number)
+		}
+		for bi := range p.Blocks {
+			for si := range p.Blocks[bi].Spans {
+				sp := &p.Blocks[bi].Spans[si]
+				if sp.Page != p.Number {
+					t.Errorf("span %q on page %d says page %d", sp.Text, p.Number, sp.Page)
+				}
+			}
+		}
+	}
+}
+
 // TestBlankPageIsNotAnError: no content stream is a legitimately blank page, and
 // also what a damaged one looks like. Either way the page exists.
 func TestBlankPageIsNotAnError(t *testing.T) {
