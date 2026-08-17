@@ -1,6 +1,7 @@
 package sectionize
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -2558,4 +2559,67 @@ func missingRunes(want, got string) string {
 		have[r]--
 	}
 	return string(missing)
+}
+
+// An element's block records each identifier once, not once per span.
+//
+// The union is what doc.Block.MCIDs is documented to be, and this site built something
+// else: it appended every span's identifier as it copied the span, so an element whose
+// marked content arrives as several spans per sequence — which is every element the
+// extractor split at a style change — recorded a repeat for each. Nothing downstream
+// reads the field, so the wrong set never reached a rendered document; it reached the
+// diagnostic that exists to answer which MCIDs went where, which is worse than no
+// answer. 34141 of the corpus's duplicate entries were on section blocks, against 0 on the
+// extractor's own — the invariant held wherever it was written and nowhere else.
+func TestAnEmittedBlockRecordsEachMCIDOnce(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "A sentence in "},
+		sp{1, 1, "two styles"},
+		sp{1, 2, " and a second sequence "},
+		sp{1, 2, "in two more."},
+	)
+	tr := tree(el(tag.RoleH1, 1, 0), el(tag.RoleP, 1, 1, 2))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	blks := out.Sections[0].Blocks
+	if len(blks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(blks))
+	}
+	if want := []int{1, 2}; !slices.Equal(blks[0].MCIDs, want) {
+		t.Errorf("MCIDs = %v, want %v: four spans across two sequences is a set of two", blks[0].MCIDs, want)
+	}
+}
+
+// A recovered block's set is the union of the spans it kept, and only those.
+//
+// This site filtered the absent value and never deduplicated, so a page whose unclaimed
+// text arrives as several spans of one sequence recorded that sequence once per span. The
+// -1 in the fixture is the other half: it is drawn outside marked content, so it was
+// assembled from no identifier at all and contributes nothing to the set — while still
+// being kept as text, which is the whole reason Unplaced exists.
+func TestAnUnplacedBlockRecordsTheUnionOfWhatItKept(t *testing.T) {
+	d := docWith(
+		sp{1, 0, "1 Scope"},
+		sp{1, 1, "Claimed body."},
+		sp{2, 7, "Text no element references, "},
+		sp{2, 7, "continued in another style."},
+		sp{2, -1, "Drawn outside any marked content."},
+	)
+	tr := tree(el(tag.RoleH1, 1, 0), el(tag.RoleP, 1, 1))
+
+	out, _ := Tagged(d, tr, DefaultOptions)
+
+	if len(out.Unplaced) != 1 || len(out.Unplaced[0].Blocks) != 1 {
+		t.Fatalf("unplaced = %d pages, want 1 page of 1 block", len(out.Unplaced))
+	}
+	keep := out.Unplaced[0].Blocks[0]
+	if want := []int{7}; !slices.Equal(keep.MCIDs, want) {
+		t.Errorf("MCIDs = %v, want %v", keep.MCIDs, want)
+	}
+	// The untagged span is text the block keeps even though it is in no set.
+	if !strings.Contains(keep.Text(), "outside any marked content") {
+		t.Errorf("unplaced text = %q: the untagged span was dropped", keep.Text())
+	}
 }

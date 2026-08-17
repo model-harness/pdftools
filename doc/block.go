@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/model-harness/pdftools/geom"
@@ -209,6 +210,42 @@ func (b Block) writeText(sb *strings.Builder) {
 	for i := range b.Spans {
 		sb.WriteString(b.Spans[i].Text)
 	}
+}
+
+// SetMCIDs rebuilds b.MCIDs as the union of its spans' identifiers, which is what the
+// field is documented to be.
+//
+// It lives here, beside the field, because the invariant was stated on the field and
+// implemented separately at each of four write sites — and two of the four built something else.
+// The extractor deduplicated and skipped -1; layout's mcidsOf did both; sectionize's emitItem did
+// neither, and its unplaced filtered -1 without deduplicating, so an adopted listing indent
+// emitted [1 1 2 2] where the union is [1 2]. Measured over every block the tagged pipeline
+// produces for the 12-file corpus — page blocks, preamble, sections and unplaced — 34364 of the
+// entries on 7406 of 46722 blocks were duplicates and 88 were the absent value, and nothing
+// downstream reads a single one: the field is carried for diagnosis, so the cost was a
+// diagnostic that lies rather than wrong output. A contract asserted in a comment and
+// re-implemented per caller is a contract that holds wherever someone remembered it.
+//
+// -1 is excluded because it is the absent value, not an identifier: a span drawn outside
+// marked content was assembled from no MCID at all. Order is first appearance, which is
+// reading order for every writer here and is what makes the field answer "which MCIDs
+// went where". Linear scan rather than a map: the largest block in the corpus holds 106
+// spans (ISO/TS 32005), so the set is small enough that a map's allocation costs more
+// than the scan it saves, and this runs once per block.
+//
+// A fresh slice rather than a truncated reuse of the old one. A struct copy of a Block
+// shares the array behind MCIDs — which is the whole reason sectionize.detach exists — so
+// writing into b.MCIDs[:0] would edit a sibling copy's set through storage they share,
+// and the sibling would keep its own length and read the values written for this block.
+func (b *Block) SetMCIDs() {
+	var out []int
+	for i := range b.Spans {
+		id := b.Spans[i].MCID
+		if id >= 0 && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	b.MCIDs = out
 }
 
 // IsEmpty reports whether the block would emit nothing. A block with no text, no

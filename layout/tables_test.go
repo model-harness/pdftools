@@ -603,3 +603,43 @@ func TestTablesOnNilDocument(t *testing.T) {
 		t.Fatalf("stats = %+v, want zero", st)
 	}
 }
+
+// A cell's MCIDs are the union of its own spans', not the row's.
+//
+// The block a cell is cut from is a struct copy of the row block, so it arrives holding the
+// row's whole set — every cell would claim every identifier, and the field exists to answer
+// which MCIDs went where. Nothing downstream reads it, so the wrong answer is a diagnostic
+// that lies rather than wrong output, which is exactly why no other test here can catch it:
+// every fixture above draws its spans at MCID -1, where a union and a row's set are both
+// empty and the call is unobservable.
+func TestCellMCIDsAreTheCellsOwn(t *testing.T) {
+	d := tableDoc(
+		[]string{"Header A", "Header B"},
+		[]string{"Cell A1", "Cell B1"},
+	)
+	p := &d.Pages[0]
+	// One identifier per cell, in reading order, and a repeat within the last cell so a
+	// missing dedup is visible as well as a missing filter.
+	for i := range p.Blocks[0].Spans {
+		p.Blocks[0].Spans[i].MCID = i
+	}
+	p.Blocks[0].Spans = append(p.Blocks[0].Spans,
+		cellSpan(" (again)", 150, 190, 680, 690))
+	p.Blocks[0].Spans[len(p.Blocks[0].Spans)-1].MCID = 3
+	p.Blocks[0].SetMCIDs()
+
+	if st := Tables(d, DefaultOptions); st.Cells != 4 {
+		t.Fatalf("stats = %+v, want 4 cells", st)
+	}
+	var got []string
+	for _, b := range p.Blocks {
+		if b.Cell == nil {
+			continue
+		}
+		got = append(got, fmt.Sprintf("%d,%d:%v", b.Cell.Row, b.Cell.Col, b.MCIDs))
+	}
+	want := "0,0:[0] 0,1:[1] 1,0:[2] 1,1:[3]"
+	if strings.Join(got, " ") != want {
+		t.Errorf("cell MCIDs = %q, want %q", strings.Join(got, " "), want)
+	}
+}

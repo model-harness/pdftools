@@ -2048,21 +2048,20 @@ OKF-ified spec.
       characters at all, and the mutant that drops the `== ""` half adopts a span that draws
       nothing. It survived a full 41-mutant run on an equivalence argument that a five-line
       program disproved.
-    - **`Block.MCIDs` is documented as a union and two of its three writers do not build one, which
-      this change makes 23 entries worse against a pre-existing 34104.** `doc/block.go:247` calls
-      the field a union, and `extract` (`run.go:1113`, `hasMCID` + `mcid >= 0`) and
-      `layout/tables.go`'s `mcidsOf` both honour that. `sectionize.go:995` appends one entry per
-      span with neither the dedup nor the `>= 0` filter, and `:1445` filters but does not dedup. A
-      two-line adopted listing emits `MCIDs=[1 1 2 2]` where the union is `[1 2]`, and the second
-      copy of each is the adopted indent carrying its successor's key — which is the whole point of
-      the copy, so the duplicate is a consequence of the fix and not a mistake in it. Measured by
-      switching adoption off: 34104 duplicate entries across 7411 blocks become 34127, exactly the
-      23 adopted runs, with no block changing category (ISO 32000-2 33078 both ways, WTPDF
-      968→969, PDF-Declarations 61→83). **Not fixed here and not a wrong answer today, because
-      nothing reads the field for logic** — a repo-wide grep finds writers, a probe counter, and no
-      consumer, which is also why the corpus render is byte-identical. Logged rather than bundled:
-      the fix is one `mcidsOf` call shared by all three writers, it touches `layout` and
-      `sectionize` together, and 34104 of the 34127 entries have nothing to do with listings.
+    - **`Block.MCIDs` is documented as a union and three of its four writers do not build one, which
+      this change makes 23 entries worse against a pre-existing 34341.** `doc/block.go:247` calls
+      the field a union; `extract` (`run.go:1113`, `hasMCID` + `mcid >= 0`) and `layout/tables.go`'s
+      `mcidsOf` honour that, `sectionize.go:995` appends one entry per span with neither the dedup
+      nor the `>= 0` filter, and `:1445` filters but does not dedup. A two-line adopted listing
+      emits `MCIDs=[1 1 2 2]` where the union is `[1 2]`, and the second copy of each is the
+      adopted indent carrying its successor's key — which is the whole point of the copy, so the
+      duplicate is a consequence of the fix and not a mistake in it. Measured by switching adoption
+      off: 34341 duplicate entries become 34364, exactly the 23 adopted runs, with no block changing
+      category. **Not fixed here and not a wrong answer today, because nothing reads the field for
+      logic** — a repo-wide grep finds writers, a probe counter, and no consumer, which is also why
+      the corpus render is byte-identical. Logged rather than bundled: the fix is one call shared by
+      all four writers, it touches `layout` and `sectionize` together, and 34341 of the 34364
+      entries have nothing to do with listings. **Fixed as its own unit of work below.**
 - **A dropped artifact welded two words together, in 3 of PDF-Declarations' 13 contents entries.**
   The entry reads `2 Scope1` where the page draws `2 Scope` … `1`. Nothing geometric is wrong:
   `extract` puts the dotted leader in a run of its own whose text *ends in a space*, and infers one
@@ -2188,6 +2187,54 @@ OKF-ified spec.
     with the drawn text, which is how the leading-space defect above was found. Where the two
     disagree the `/Alt` is a gold answer already on disk, and it confirmed all three entries
     independently of the geometry.
+- **A field's contract was stated once and implemented four times, and three of the four built
+  something else.** `doc.Block.MCIDs` is documented on the field as the identifiers a block was
+  assembled from, and at `doc/block.go:247` explicitly as a **union**. Each writer then implemented
+  that separately: `extract` deduplicated and skipped −1, `layout`'s `mcidsOf` did both,
+  `sectionize`'s `emitItem` did neither, and its `unplaced` filtered −1 without deduplicating. A
+  four-span element across two sequences recorded `[1 1 2 2]`. `doc.Block.SetMCIDs` is now the only
+  implementation and both helpers are deleted.
+  - **Layer the measurement, because the aggregate hid where the defect was.** Over every block the
+    tagged pipeline produces for the corpus, 34364 entries on 7406 of 46722 blocks were duplicates
+    and 88 were −1 — and the split is total: page blocks 0 and 0, section blocks 34141 and all 88,
+    preamble 211, unplaced 12. The contract held exactly where someone had implemented it, so a
+    single corpus-wide number would have read as a pipeline-wide problem when it was a per-writer
+    one.
+  - **Nothing reads the field, which is why the violation was invisible and why it still mattered.**
+    A repo-wide grep finds four writers, a `probe` counter of an unrelated quantity, and no logic
+    consumer; nothing serializes it. The 12 rendered documents are byte-identical across the fix. So
+    the cost was not wrong output — it was a diagnostic that lies, and the field exists to answer
+    "which MCIDs went where" during exactly the investigations a wrong answer would misdirect.
+  - **A fresh slice, not a truncated reuse, because a struct copy of a `Block` shares the array
+    behind `MCIDs`.** That is the whole reason `sectionize.detach` exists, and `layout`'s
+    `spanBlock` starts from `b := *src` before rebuilding — so writing into `b.MCIDs[:0]` would edit
+    a sibling's set through shared storage while the sibling kept its own length and read values
+    computed for another block. No render can show it, so it is pinned by a fixture. Linear scan
+    rather than a map: the largest block on disk holds 106 spans (ISO/TS 32005), so a map's
+    allocation costs more than the scan it saves.
+  - **The helper was fully covered while three of the four sites it exists for were pinned by
+    nothing.** 6 of 6 mutants of `SetMCIDs` die to a named test; deleting the call in `layout`'s
+    `spanBlock`, `sectionize`'s `emitItem` and its `unplaced` each left the whole suite green. The
+    arithmetic was tested and the wiring was not, which is the same failure class as a vocabulary
+    that is written, unit-tested and never reached. `layout` could not observe it at all: every
+    fixture in that package builds spans at `MCID: -1`, where a union and a whole row's set are
+    both empty. Each site now has a test that fails when the call is removed.
+  - **The corpus assertion is an identity, not a defect count.** `TestBlockMCIDsAreTheUnionOfTheirSpans`
+    recomputes the union for every block and requires equality, with block floors as the vacuity
+    guard — 0 disagreements means nothing if the walk found no blocks. A count of duplicates would
+    need re-deriving whenever the corpus or the extractor moved; the identity is what the field
+    means and does not drift. **A walk is only as wide as the pipeline it runs**: the first version
+    reached 46722 blocks and three of the four write sites, because `outlineOf` stops at
+    `sectionize` and never runs the layout passes — so the one site that had neither a corpus
+    population nor a fixture stayed uncovered by the test written to cover it. Calling `inferRoles`
+    and re-walking the pages brings it to 72218.
+  - **Two figures carried from the log entry were wrong, and only re-measuring caught it.** The log
+    said 34127 duplicates on 7411 blocks, which came from a narrower walk; over the whole pipeline
+    it is 34364 on 7406. A remembered 3308 blocks carrying −1 was out by more than an order of
+    magnitude — the real population is 88 entries on 6 blocks. The delta did reproduce exactly:
+    adoption off gives 34341, 23 fewer, which is the 23 adopted indents each carrying its
+    successor's key by design. A figure inherited from a log entry is a figure about whatever walk
+    produced it.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

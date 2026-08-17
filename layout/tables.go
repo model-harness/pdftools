@@ -531,7 +531,7 @@ func spanBlock(src *doc.Block, spans []doc.Span) doc.Block {
 	b.Spans = append([]doc.Span(nil), spans...)
 	b.Cell = nil
 	b.Box = spansBox(spans)
-	b.MCIDs = mcidsOf(spans)
+	b.SetMCIDs()
 	return b
 }
 
@@ -563,24 +563,4 @@ func spansBox(spans []doc.Span) (r geom.Rect) {
 		r = r.Union(spans[i].Box)
 	}
 	return r
-}
-
-func mcidsOf(spans []doc.Span) []int {
-	var out []int
-	for _, sp := range spans {
-		if sp.MCID < 0 {
-			continue
-		}
-		found := false
-		for _, id := range out {
-			if id == sp.MCID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			out = append(out, sp.MCID)
-		}
-	}
-	return out
 }

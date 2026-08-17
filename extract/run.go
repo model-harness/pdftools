@@ -1110,10 +1110,19 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance) {
 			})
 		}
 		b.Box = b.Box.Union(box)
-		if fr.mcid >= 0 && !hasMCID(b.MCIDs, fr.mcid) {
-			b.MCIDs = append(b.MCIDs, fr.mcid)
-		}
 	}
+	// The union of the spans' identifiers, read from the spans rather than accumulated here
+	// from the fragments.
+	//
+	// The same set either way, and that is not an accident to be relied on quietly: an empty
+	// fragment is skipped above so it contributes no span and had no text to attribute, and the
+	// merge branch folds a fragment only into a span whose MCID already equals its own. So this
+	// site was one of the two that already honoured the invariant, and the corpus agrees — 0
+	// duplicate and 0 negative entries on page blocks before the change, against 34141 duplicates
+	// on the blocks sectionize rebuilds from them. It reads from the spans anyway, because the
+	// field describes the spans and an accumulator that happens to agree is still a second
+	// implementation of a contract stated on the field. See doc.Block.SetMCIDs.
+	b.SetMCIDs()
 }
 
 // endsWithSpace and startsWithSpace report whether a word boundary is already written at
@@ -1294,15 +1303,6 @@ func spaceless(r rune) bool {
 	// spaces by being set at half width.
 	case r >= 0xFF00 && r <= 0xFF9F:
 		return true
-	}
-	return false
-}
-
-func hasMCID(ids []int, id int) bool {
-	for _, v := range ids {
-		if v == id {
-			return true
-		}
 	}
 	return false
 }

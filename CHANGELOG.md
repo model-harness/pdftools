@@ -5,6 +5,55 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-08-17
+
+- **`Block.MCIDs` is documented as a union and three of its four writers built something else, and
+  the invariant now lives once beside the field it describes.** `doc/block.go` calls the field the
+  identifiers a block was assembled from and states outright that it is a union; each write site
+  then implemented that separately. `extract` deduplicated and skipped −1; `layout`'s `mcidsOf` did
+  both; `sectionize`'s `emitItem` did neither, and its `unplaced` filtered −1 without deduplicating.
+  A four-span element across two sequences therefore recorded `[1 1 2 2]` where the union is
+  `[1 2]`. `doc.Block.SetMCIDs` is now the only implementation, and `hasMCID` and `mcidsOf` are
+  deleted.
+  - **34364 duplicate entries on 7406 of 46722 blocks, and 0 of them the extractor's.** Measured
+    over every block the tagged pipeline produces for the 12-file corpus: page blocks hold 0
+    duplicates and 0 negatives, because that writer had both rules. All 88 negative entries and
+    34141 of the duplicates are section blocks, 211 the preamble and 12 unplaced. The contract held
+    exactly where someone had remembered to implement it.
+  - **No output changes, and that is the finding rather than a caveat.** A repo-wide grep finds four
+    writers, a `probe` counter of an unrelated quantity, and no logic consumer; nothing serializes
+    the field. The 12 rendered documents are byte-identical to `9235dfa`. What was wrong was the
+    diagnostic that exists to answer which MCIDs went where — a wrong answer there is worse than no
+    answer, because it is trusted during exactly the investigations it would mislead.
+  - **A fresh slice, not a truncated reuse, because a struct copy of a `Block` shares the array.**
+    That is the whole reason `sectionize.detach` exists, and `layout`'s `spanBlock` starts from
+    `b := *src` before rebuilding — so writing into `b.MCIDs[:0]` would edit a sibling's set through
+    shared storage while the sibling kept its own length and read values computed for another block.
+    Invisible in any render, so it is pinned by `TestSetMCIDsDoesNotWriteThroughASharedArray`
+    rather than by a comment. A linear scan rather than a map: the largest block in the corpus holds
+    106 spans (ISO/TS 32005), so a map's allocation costs more than the scan it saves.
+  - **The helper was fully covered and three of the four sites it exists for were pinned by
+    nothing.** 6 of 6 mutants of `SetMCIDs` die to a named test, while deleting the call in
+    `layout`'s `spanBlock`, `sectionize`'s `emitItem` and its `unplaced` all left the suite green —
+    the arithmetic tested, the wiring not. `layout` could not observe it at all: every fixture there
+    builds spans at `MCID: -1`, where a union and a whole row's set are both empty. Each site now
+    has a test that fails when the call is removed, and all four are killed with a named killer.
+  - **Asserted on the corpus as an identity, not as a defect count.** `TestBlockMCIDsAreTheUnionOfTheirSpans`
+    recomputes the union for every block the pipeline produces and requires equality, with block
+    floors as the vacuity guard — 0 disagreements over 72218 blocks means nothing if the walk found
+    no blocks. A count would need re-deriving whenever the corpus or the extractor moved; the
+    identity is what the field means. Review found the first version reaching only three of the four
+    sites: `outlineOf` does not run the layout passes, so `spanBlock`'s 25496 blocks were outside
+    the walk entirely — the site with no corpus population *and* no fixture before this change. It
+    now calls `inferRoles` and checks the pages again afterwards.
+  - **Two of the figures carried over from the log entry were wrong, and re-measuring is what
+    caught them.** The previous entry cited 34127 duplicates on 7411 blocks; that came from a
+    narrower walk, and over the whole pipeline the number is 34364 on 7406. A remembered claim of
+    3308 blocks carrying −1 was off by more than an order of magnitude — the real population is 88
+    entries across 6 blocks. The one figure that did reproduce is the delta: switching listing-indent
+    adoption off gives 34341, exactly 23 fewer, which is the 23 adopted indents each carrying its
+    successor's key by design.
+
 ### Fixed — 2026-08-15
 
 - **Three contents entries read `2 Scope1`, because the span holding the space was one the
@@ -128,15 +177,6 @@ All notable changes to this project are documented here, following
     type size — so each now has a fixture. The empty case is the guard that looks redundant and is
     not: `TrimFunc("")` is `""`, so "no non-space characters remain" holds of a span with no
     characters, and the mutant dropping the `== ""` half adopts a span that draws nothing.
-
-- **Logged, not fixed: `Block.MCIDs` is documented as a union and two of its three writers do not
-  build one.** `sectionize.go:995` appends one entry per span with neither dedup nor the `MCID >= 0`
-  filter that `extract` and `layout`'s `mcidsOf` both apply, so an adopted two-line listing emits
-  `[1 1 2 2]` where the union is `[1 2]`. Measured with adoption switched off: 34104 duplicate
-  entries across 7411 blocks corpus-wide become 34127 — exactly the 23 adopted indents, each
-  carrying its successor's key by design. No wrong answer today, because nothing reads the field for
-  logic and the corpus render is byte-identical; the fix is one shared helper across `layout` and
-  `sectionize`, and 34104 of the entries predate listings entirely.
 
 - **Two corpus tests failed instead of skipping on a clone without the sponsored PDFs, and the
   suite is green there again.** A test that asserts a corpus-wide total reads 0 when the corpus is

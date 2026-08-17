@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -743,4 +744,88 @@ func nonSpaceLen(s string) int {
 		}
 	}
 	return n
+}
+
+// Every block's MCIDs are the union of its spans', on the real corpus.
+//
+// doc/block.go states that invariant on the field, and until doc.Block.SetMCIDs existed it was
+// implemented separately at each of four write sites — two of which built something else. What
+// that cost was measurable and large, and located: over this same walk at 9235dfa, 34364 of the
+// entries on 7406 of 46722 blocks were duplicates and 88 were the absent value -1 — but 0 of
+// either were on the extractor's page blocks, which had the dedup and the filter. 34141 duplicates
+// and all 88 negatives were on section blocks, 211 on the preamble and 12 on unplaced. Nothing
+// downstream reads the field, so none of it reached a rendered document; all of it reached the
+// diagnostic whose only job is to answer which MCIDs went where.
+//
+// Asserted as an identity against a recomputation rather than as a count of defects, because a
+// count would have to be re-derived every time the corpus or the extractor moves, while the
+// identity is what the field means. The block totals below are the vacuity guard: a walk that
+// found nothing to check would satisfy the identity trivially, and 0 duplicates is the same
+// output as 0 blocks.
+func TestBlockMCIDsAreTheUnionOfTheirSpans(t *testing.T) {
+	files := corpusFiles()
+	if len(files) == 0 {
+		t.Skip("corpus absent")
+	}
+
+	var blocks, withSet, bad int
+	check := func(name, where string, bs []doc.Block) {
+		for i := range bs {
+			blocks++
+			want := bs[i]
+			want.SetMCIDs()
+			if len(want.MCIDs) > 0 {
+				withSet++
+			}
+			if slices.Equal(bs[i].MCIDs, want.MCIDs) {
+				continue
+			}
+			bad++
+			if bad <= 5 {
+				t.Errorf("%s %s block %d: MCIDs = %v, want the union %v",
+					name, where, i, bs[i].MCIDs, want.MCIDs)
+			}
+		}
+	}
+	var walk func(name string, s *doc.Section)
+	walk = func(name string, s *doc.Section) {
+		check(name, "section", s.Blocks)
+		for _, k := range s.Kids {
+			walk(name, k)
+		}
+	}
+	for _, name := range files {
+		d, out, _ := outlineOf(t, name)
+		for pi := range d.Pages {
+			check(name, "page", d.Pages[pi].Blocks)
+		}
+		// The layout passes, because outlineOf does not run them and layout's spanBlock is one
+		// of the four write sites. Run after the page walk above rather than instead of it: the
+		// pass rewrites the blocks in place, so checking only the result would leave the
+		// extractor's own sets unmeasured, and it is exactly the copy-then-cut in spanBlock
+		// (b := *src, then re-derive) that the shared-array rule exists for.
+		inferRoles(d)
+		for pi := range d.Pages {
+			check(name, "layout", d.Pages[pi].Blocks)
+		}
+		check(name, "preamble", out.Preamble)
+		for _, s := range out.Sections {
+			walk(name, s)
+		}
+		for i := range out.Unplaced {
+			check(name, "unplaced", out.Unplaced[i].Blocks)
+		}
+	}
+	if bad > 5 {
+		t.Errorf("%d blocks in total disagree with the union", bad)
+	}
+	// A floor rather than an equality: the identity is the assertion, and these only have to
+	// establish that it was asked of a real population. Measured at 72218 blocks of which 71299
+	// carry a set — the extractor's page blocks, the same pages after the layout passes, and the
+	// rebuilt section copies, which is deliberate: all three are separate slices written by
+	// separate code, and each of the four write sites touches only one of them.
+	if blocks < 72000 || withSet < 71000 {
+		t.Errorf("walked %d blocks, %d with a set; want a corpus-sized population", blocks, withSet)
+	}
+	t.Logf("%d blocks, %d with a set, %d disagreeing", blocks, withSet, bad)
 }

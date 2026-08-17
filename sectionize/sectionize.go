@@ -992,8 +992,12 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	for _, s := range spans {
 		blk.Spans = append(blk.Spans, *s)
 		blk.Box = blk.Box.Union(s.Box)
-		blk.MCIDs = append(blk.MCIDs, s.MCID)
 	}
+	// The union, not one entry per span: this loop used to append every span's identifier
+	// including the -1s, so an element listing four spans across two MCIDs recorded four
+	// entries. The spans the two calls below insert carry -1 and so cannot change the set,
+	// which is why this reads correctly here rather than after them.
+	blk.SetMCIDs()
 	spaceAtGaps(&blk)
 	if linesText(role) {
 		breakAtBaselines(&blk)
@@ -1441,10 +1445,11 @@ func (ix *index) unplaced(d *doc.Document) []doc.Page {
 				}
 				keep.Spans = append(keep.Spans, *sp)
 				keep.Box = keep.Box.Union(sp.Box)
-				if sp.MCID >= 0 {
-					keep.MCIDs = append(keep.MCIDs, sp.MCID)
-				}
 			}
+			// Filtered the -1s but never deduplicated, so a block keeping several
+			// unclaimed spans from one marked-content sequence recorded it once per
+			// span.
+			keep.SetMCIDs()
 			if keep.IsEmpty() {
 				continue
 			}
