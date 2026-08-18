@@ -114,7 +114,7 @@ func TestTablesReadsTheDrawnGrid(t *testing.T) {
 // Without this the gate could be a gap threshold and every test above would still pass.
 // The gaps here are 10 units against a 10-point size, which is where a threshold would
 // fire; the measurement in Tables' comment is that no threshold can, since the ratio of
-// gap to space width is continuous over the 119246 inferred spaces on disk.
+// gap to space width is continuous over the 117499 inferred spaces on disk.
 func TestTablesNeedsARule(t *testing.T) {
 	d := tableDoc(
 		[]string{"Header A", "Header B", "Header C"},

@@ -1397,17 +1397,17 @@ func TestARecoveredIndentDoesNotSuppressTheLineBreak(t *testing.T) {
 //
 // This is the condition that separates the 23 indents from the 43 other untagged whitespace
 // spans on disk — a dotted leader's trailing space, the space beside a bullet glyph, a TOC
-// entry's padding. The band is empty for 8.2×: every indent meets its text within 0.243pt and
-// every other run with a same-line successor stands at least 2.000pt off. Expressed as the
-// negation of gapSpace's own space test, so what this calls attached is what that rule would
-// refuse to put a space into.
+// entry's padding. Measured in space advances, which is the unit the threshold is denominated
+// in, the band is empty for 6.8×: every indent meets its text within 0.0532 of one and every
+// other run with a same-line successor stands at least 0.364 off. See geom.IndentAttachFrac
+// for why the same population read in points said 8.2× and could not be used.
 //
-// The gap is 1.6pt against a threshold of 1.5, which is 1.07× and deliberately that tight. The
-// first version of this fixture stood a full 14pt clear — 9× the threshold — and three mutants
-// of the threshold itself survived it while adopting 8 more corpus runs each: LineFrac for
-// SpaceFrac, WideSpaceFrac for SpaceFrac, and the em in place of the space advance are all
-// wider, and nothing between 1.5 and 14 could tell them apart. A fixture that clears a
-// threshold by an order of magnitude tests the sign of the comparison, not its constant.
+// The gap is 0.775pt against a threshold of 0.75, which is 1.03× and deliberately that tight.
+// The first version of this fixture stood a full 14pt clear — 9× the threshold — and three
+// mutants of the threshold itself survived it while adopting 8 more corpus runs each:
+// LineFrac, WideSpaceFrac, and the em in place of the space advance are all wider, and
+// nothing between 1.5 and 14 could tell them apart. A fixture that clears a threshold by an
+// order of magnitude tests the sign of the comparison, not its constant.
 func TestADetachedWhitespaceRunIsNotAnIndent(t *testing.T) {
 	d := indented(10, [2]string{"", "1 Scope"})
 	blk := &d.Pages[0].Blocks[0]
@@ -1415,7 +1415,7 @@ func TestADetachedWhitespaceRunIsNotAnIndent(t *testing.T) {
 	pad := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
 		Box: geom.Rect{X0: 72, Y0: 680, X1: 82, Y1: 690}}
 	num := doc.Span{Text: "7", MCID: 2, Style: doc.Style{Size: 10},
-		Box: geom.Rect{X0: 83.6, Y0: 680, X1: 88.6, Y1: 690}}
+		Box: geom.Rect{X0: 82.775, Y0: 680, X1: 87.775, Y1: 690}}
 	blk.Spans = append(blk.Spans, pad, num)
 	blk.MCIDs = append(blk.MCIDs, -1, 2)
 	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleCode, 1, 1, 2))
@@ -1423,14 +1423,47 @@ func TestADetachedWhitespaceRunIsNotAnIndent(t *testing.T) {
 	out, _ := Tagged(d, tr, DefaultOptions)
 
 	if got, want := out.Sections[0].Blocks[0].Text(), "1 Scope\n7"; got != want {
-		t.Errorf("listing = %q, want %q: 1.6pt on a 1.5pt threshold is positioning", got, want)
+		t.Errorf("listing = %q, want %q: 0.775pt on a 0.75pt threshold is positioning", got, want)
+	}
+}
+
+// The space beside a bullet glyph is positioning, and it is what separates this rule's
+// threshold from gapSpace's.
+//
+// The one fixture here that can tell IndentAttachFrac from SpaceFrac, and it exists because
+// nothing could: the two were the same constant, and raising SpaceFrac to 0.40 on its own
+// measurement adopted 8 of these runs in PDF-Declarations while every fixture in this package
+// and every threshold assertion in the corpus test stayed green. The corpus test could not see
+// it either — its band is denominated in points, and these runs are set in 12pt where the 23
+// real indents are set in 9.12pt, so the threshold crossed a run without either edge moving.
+//
+// The geometry is the corpus's, not invented: a single space 2.184pt clear of 12pt list text,
+// which is 0.364 of a space advance. That is under SpaceFrac's 0.40 and over this rule's 0.15,
+// so substituting SpaceFrac back — or LineFrac, or WideSpaceFrac, all wider still — adopts it
+// and fails here. What made the defect latent on disk is that the list writer emits its own
+// "- " and discards the leading whitespace, so the misclassification never reached the .md:
+// asserted on leadingIndent directly for that reason, since the sink masks it.
+func TestABulletsSpaceIsNotAnIndent(t *testing.T) {
+	d := indented(12, [2]string{"", "1 Scope"})
+	blk := &d.Pages[0].Blocks[0]
+	pad := doc.Span{Text: " ", MCID: -1, Style: doc.Style{Size: 12},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 75.336, Y1: 690}}
+	txt := doc.Span{Text: "Mandate properties", MCID: 2, Style: doc.Style{Size: 12},
+		Box: geom.Rect{X0: 77.52, Y0: 680, X1: 200, Y1: 690}}
+	blk.Spans = append(blk.Spans, pad, txt)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if nx, ok := leadingIndent(blk, 2); ok {
+		t.Errorf("leadingIndent = %q, want rejected: 2.184pt is 0.364 of a 12pt space advance, "+
+			"which is positioning beside a bullet and not an indent", nx.Text)
 	}
 }
 
 // Whitespace in the middle of a line is not a leading indent.
 //
 // "Leading" is a position, not a character class, and 31 of the 43 non-indent runs on disk are
-// mid-line, and the narrowest of them is what sets the lower edge of the 8.2× band: 2.000pt.
+// mid-line, and the narrowest of them is what sets the lower edge of the 6.8× band: 0.364 of a
+// space advance.
 // Asserted on leadingIndent directly rather than through the output, because what an
 // artifact run leaves behind when it is correctly rejected is a gap, and spaceAtGaps then puts
 // a space there on its own — so the rendered text is the same either way and cannot tell the
@@ -1568,8 +1601,8 @@ func TestAnIndentWithNoTaggedSuccessorIsRejected(t *testing.T) {
 // Attachment is measured in x alone, so without the same-line test a run at the end of one line
 // and the first span of the line below it read as attached whenever their x-coordinates happen to
 // meet — which is exactly what a listing's line ends look like, since every line starts at the
-// same left margin. The corpus has no instance because its indents sit 0.243pt from their text at
-// most, but the failure mode is a whole line's indent taken from the line above it.
+// same left margin. The corpus has no instance because its indents sit 0.0532 of a space advance
+// from their text at most, but the failure mode is a whole line's indent taken from the line above.
 //
 // The run is alone on its baseline, and that detail is what makes the fixture reach the rule it is
 // named for. A first version put it at the end of a line that already held text, and dropping the
@@ -1602,9 +1635,10 @@ func TestAnIndentDoesNotReachTheLineBelow(t *testing.T) {
 //
 // Attachment is |X0 - X1| and not X0 - X1, because the quantity that matters is how far apart the
 // two runs are and a producer can draw them overlapping: 4 of the 23 indents on disk do, up to
-// 0.243pt, which is where the band's upper edge comes from. A signed test reads every one of those
-// as attached-by-a-mile and would pass here by accident, so the fixture overlaps by more than a
-// space instead — 3pt on a 1.5pt threshold, which a signed comparison accepts and this rejects.
+// 0.0532 of a space advance, which is where the band's upper edge comes from. A signed test reads every one of those
+// as attached-by-a-mile and would pass here by accident, so the fixture overlaps by more than the
+// threshold instead — 3pt on a 0.75pt threshold, which a signed comparison accepts and this
+// rejects.
 func TestAnOverlappingRunIsMeasuredByDistance(t *testing.T) {
 	d := indented(10, [2]string{"", "<a>"})
 	blk := &d.Pages[0].Blocks[0]
@@ -1629,8 +1663,8 @@ func TestAnOverlappingRunIsMeasuredByDistance(t *testing.T) {
 // is the wrong instrument besides: a run of spaces set in a display size would license a gap wide
 // enough to swallow a word.
 //
-// 6pt spaces ahead of 20pt text: 1.5pt of gap is under the following span's threshold of 3.0 and
-// over its own of 0.9, so the two readings disagree and the fixture picks one.
+// 6pt spaces ahead of 20pt text: 1.0pt of gap is under the following span's threshold of 1.5 and
+// over its own of 0.45, so the two readings disagree and the fixture picks one.
 func TestTheGapIsMeasuredAgainstTheIndentedText(t *testing.T) {
 	d := &doc.Document{Meta: doc.Metadata{Path: "test.pdf", Tagged: true},
 		Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{{
@@ -1643,7 +1677,7 @@ func TestTheGapIsMeasuredAgainstTheIndentedText(t *testing.T) {
 				{Text: "  ", MCID: -1, Style: doc.Style{Size: 6},
 					Box: geom.Rect{X0: 72, Y0: 690, X1: 78, Y1: 696}},
 				{Text: "<a>", MCID: 1, Style: doc.Style{Size: 20},
-					Box: geom.Rect{X0: 79.5, Y0: 690, X1: 130, Y1: 710}},
+					Box: geom.Rect{X0: 79, Y0: 690, X1: 130, Y1: 710}},
 			},
 		}}}}}
 	blk := &d.Pages[0].Blocks[0]
@@ -1653,25 +1687,54 @@ func TestTheGapIsMeasuredAgainstTheIndentedText(t *testing.T) {
 	}
 }
 
+// A gap exactly equal to the threshold is still attached.
+//
+// The comparison rejects on strictly greater, so equality attaches, and the boundary is
+// representable at this size: 0.15 of a 10pt span's 5pt space advance is exactly 0.75pt, which
+// is why the fixture is stated at 10pt. That is the opposite convention to gapSpace, which
+// rejects on equality (see TestGapExactlyAtTheThresholdIsNotASpace), and the two are opposite
+// for a reason worth pinning rather than reading off the operator: a space is inferred only on
+// evidence, so the ambiguous case declines to add a character, while an indent is already drawn
+// on the page and the ambiguous case keeps what the producer put there. Nothing on disk lands on
+// the boundary — the 23 indents run to 0.0532 of a space advance — so this is the only thing
+// that can hold the strictness.
+func TestAGapExactlyAtTheAttachmentThresholdIsAttached(t *testing.T) {
+	d := indented(10, [2]string{"", "<a>"})
+	blk := &d.Pages[0].Blocks[0]
+	ind := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 72, Y0: 680, X1: 82, Y1: 690}}
+	txt := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
+		Box: geom.Rect{X0: 82.75, Y0: 680, X1: 105.75, Y1: 690}}
+	blk.Spans = append(blk.Spans, ind, txt)
+	blk.MCIDs = append(blk.MCIDs, -1, 2)
+
+	if _, ok := leadingIndent(blk, 2); !ok {
+		t.Error("leadingIndent rejected a gap of exactly 0.75pt: the test is strictly greater, so the boundary attaches")
+	}
+}
+
 // A gap narrower than a space is attached, and zero is not the threshold.
 //
 // 18 of the 23 indents on disk stop short of their text rather than meeting it, by up to 0.028pt,
 // which is rounding in the producer's advance arithmetic and not a space; 4 overlap it and exactly
 // 1 meets it. So an exact test — the whole tolerance replaced by zero — would keep that one and
 // drop the 18, which is most of what this rule exists for. The fixture leaves a gap that is real
-// but sub-space: 1pt against a 1.5pt threshold.
+// but under the threshold: 0.725pt against 0.75pt, which is 0.967× — 0.145 of a space advance
+// against a constant of 0.15, so shrinking the constant by 4% fails here. Deliberately that
+// tight, because the fixture's job is the constant and not the sign: at the 0.6pt an earlier
+// version used, 0.14 and 0.12 both passed.
 func TestASubSpaceGapIsStillAttached(t *testing.T) {
 	d := indented(10, [2]string{"", "<a>"})
 	blk := &d.Pages[0].Blocks[0]
 	ind := doc.Span{Text: "  ", MCID: -1, Style: doc.Style{Size: 10},
 		Box: geom.Rect{X0: 72, Y0: 680, X1: 82, Y1: 690}}
 	txt := doc.Span{Text: "<b>", MCID: 2, Style: doc.Style{Size: 10},
-		Box: geom.Rect{X0: 83, Y0: 680, X1: 106, Y1: 690}}
+		Box: geom.Rect{X0: 82.725, Y0: 680, X1: 105.725, Y1: 690}}
 	blk.Spans = append(blk.Spans, ind, txt)
 	blk.MCIDs = append(blk.MCIDs, -1, 2)
 
 	if _, ok := leadingIndent(blk, 2); !ok {
-		t.Error("leadingIndent rejected a 1pt gap on a 1.5pt threshold: 19 of 23 indents are this shape")
+		t.Error("leadingIndent rejected a 0.725pt gap on a 0.75pt threshold: 19 of 23 indents are this shape")
 	}
 }
 
@@ -2081,8 +2144,8 @@ func TestListingGetsABreakAndNoSpace(t *testing.T) {
 // A gap exactly equal to the threshold is not a space.
 //
 // Strictly greater, matching needSpace (run.go:474), and the boundary is where the two could
-// silently disagree: the threshold is SpaceFrac of the space advance, and at 0.30 of half a
-// 20pt em that is exactly 3pt, which is representable, so a `>=` here would space a pair the
+// silently disagree: the threshold is SpaceFrac of the space advance, and at 0.40 of half a
+// 20pt em that is exactly 4pt, which is representable, so a `>=` here would space a pair the
 // extractor joins. Stated as 20pt rather than 10pt for that reason — the em is not the unit
 // the rule measures in, and a fixture written in ems is what hid the 4× error this boundary
 // now pins. Asserted through gapSpace rather than Tagged because the equality has to be
@@ -2092,17 +2155,17 @@ func TestGapExactlyAtTheThresholdIsNotASpace(t *testing.T) {
 		Box:   geom.Rect{X0: 90, Y0: 100, X1: 100, Y1: 110},
 		Style: doc.Style{Size: 20}}
 	cur := doc.Span{Text: "b", MCID: 2,
-		Box:   geom.Rect{X0: 103, Y0: 100, X1: 113, Y1: 110},
+		Box:   geom.Rect{X0: 104, Y0: 100, X1: 114, Y1: 110},
 		Style: doc.Style{Size: 20}}
 
 	if gapSpace(&prev, &cur) {
-		t.Error("a 3pt gap is exactly 0.30 of a 20pt span's 10pt space, and the test is strictly greater")
+		t.Error("a 4pt gap is exactly 0.40 of a 20pt span's 10pt space, and the test is strictly greater")
 	}
 	// A hair over is, so the boundary is the boundary and not an off-by-one in the fixture.
 	over := cur
-	over.Box.X0 = 103.01
+	over.Box.X0 = 104.01
 	if !gapSpace(&prev, &over) {
-		t.Error("3.01pt is over the threshold and should space")
+		t.Error("4.01pt is over the threshold and should space")
 	}
 }
 
@@ -2202,8 +2265,8 @@ func TestListingSpacesAGapAndBreaksALine(t *testing.T) {
 //
 // The four readings of "the type size" — cur, prev, the larger, the smaller — put the threshold
 // in four places, so one gap between two differently-sized spans settles all four. A 24pt run
-// followed by a 6pt one, with a 2.5pt gap: SpaceFrac is 0.30, so cur wants 1.8 and spaces it,
-// while prev and max want 7.2 and join it. The corpus cannot make this call — its three real
+// followed by a 6pt one, with a 2.5pt gap: SpaceFrac is 0.40, so cur wants 1.2 and spaces it,
+// while prev and max want 4.8 and join it. The corpus cannot make this call — its three real
 // cases are all 10.94pt on both sides — so this fixture is the only thing holding it.
 func TestGapIsMeasuredAgainstTheFollowingSpan(t *testing.T) {
 	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "Note"}, sp{1, 2, "1"})
@@ -2219,12 +2282,12 @@ func TestGapIsMeasuredAgainstTheFollowingSpan(t *testing.T) {
 	out, _ := Tagged(d, tr, DefaultOptions)
 
 	if got, want := out.Sections[0].Blocks[0].Text(), "Note 1"; got != want {
-		t.Errorf("pair = %q, want %q: 2.5pt clears 0.30 of 6pt, not of 24pt", got, want)
+		t.Errorf("pair = %q, want %q: 2.5pt clears 0.40 of 6pt, not of 24pt", got, want)
 	}
 }
 
 // The same gap under the same sizes reversed stays joined, which is what makes the reading a
-// choice rather than a coincidence: 6pt then 24pt wants 7.2 and 2.5pt does not reach it. Without
+// choice rather than a coincidence: 6pt then 24pt wants 4.8 and 2.5pt does not reach it. Without
 // this half, "use the smaller size" would pass the test above.
 func TestGapAgainstALargeFollowingSpanStaysJoined(t *testing.T) {
 	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "H"}, sp{1, 2, "2"})
@@ -2240,26 +2303,39 @@ func TestGapAgainstALargeFollowingSpanStaysJoined(t *testing.T) {
 	out, _ := Tagged(d, tr, DefaultOptions)
 
 	if got, want := out.Sections[0].Blocks[0].Text(), "H2"; got != want {
-		t.Errorf("pair = %q, want %q: 2.5pt is inside 0.30 of 24pt", got, want)
+		t.Errorf("pair = %q, want %q: 2.5pt is inside 0.40 of 24pt", got, want)
 	}
 }
 
-// The threshold is SpaceFrac, not one of the other three fractions in the same struct.
+// The threshold is SpaceFrac, not one of the other four fractions in the same struct.
 //
-// A gap of 0.40 of the type size is a space — it clears SpaceFrac's 0.30 — and is under
-// LineFrac's 0.50 and far under WideSpaceFrac's 2.50, so it fails under any of those
-// substitutions. That band is what the corpus cannot supply: its three cases are at 49.94, 76.35
-// and 109.88 space widths, which clear every candidate at once.
+// The gap has to land in the band between the candidates to separate them, and the band is
+// narrow: SpaceFrac is 0.40 of the space advance and LineFrac is 0.50 of it, so a gap must sit
+// inside those ten percent. 2.2pt on a 10pt span's 5pt advance is 0.44 — over SpaceFrac's 2.0pt,
+// under LineFrac's 2.5pt, and far under WideSpaceFrac's 12.5pt and ParaFrac's 7.5pt, so it fails
+// under each of those three substitutions. It cannot reach IndentAttachFrac, whose 0.75pt is
+// *below* SpaceFrac's threshold: a gap wide enough to be a space clears a narrower candidate
+// too, so that one is killed from the other side of the boundary — by
+// TestGapExactlyAtTheThresholdIsNotASpace and TestGapAgainstALargeFollowingSpanStaysJoined,
+// which assert a gap that must *not* space.
+//
+// It was 4pt while SpaceFrac was 0.30, which was 0.80 of the advance and cleared LineFrac's
+// threshold as well; raising SpaceFrac to 0.40 moved the two thresholds to within 1.25× of each
+// other and the LineFrac substitution started surviving this fixture. A fixture stated as a
+// multiple of one threshold silently stops discriminating when another threshold moves toward
+// it, which is why the arithmetic here is written against every candidate rather than the one
+// the test is named for. That band is what the corpus cannot supply: its three cases are at
+// 49.94, 76.35 and 109.88 space widths, which clear every candidate at once.
 func TestGapJustOverTheSpaceThresholdIsASpace(t *testing.T) {
 	d := docWith(sp{1, 0, "7.4 Filters"}, sp{1, 1, "shall"}, sp{1, 2, "be"})
 	atLines(d, 10, 700, 700)
-	atX(d, 72, 100, 104, 120)
+	atX(d, 72, 100, 102.2, 120)
 	tr := tree(el(tag.RoleH2, 1, 0), el(tag.RoleP, 1, 1, 2))
 
 	out, _ := Tagged(d, tr, DefaultOptions)
 
 	if got, want := out.Sections[0].Blocks[0].Text(), "shall be"; got != want {
-		t.Errorf("pair = %q, want %q: 4pt is 0.40 of 10pt, over SpaceFrac and under LineFrac", got, want)
+		t.Errorf("pair = %q, want %q: 2.2pt is 0.44 of a 10pt span's space advance, over SpaceFrac and under LineFrac", got, want)
 	}
 }
 

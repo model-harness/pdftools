@@ -876,23 +876,38 @@ OKF-ified spec.
   **Untagged table detection is closed too, and it was not the research problem this said
   it was.** What made it look like one was measuring the wrong quantity. The question was
   taken to be "how wide must a gap be to be a column boundary", which has no answer: over
-  all **119246 inferred spaces on disk** the ratio of gap to nominal space width is
-  continuous from the **0.30 the `SpaceFrac` threshold itself imposes out to 1303, with no
-  quarter-width band empty below 5** and the first gap of any size at 182 — 6287 ratios below
-  0.50, 14530 between 1.75 and 2.00, then a thin tail of 11 past 200 — so no threshold
+  all **117499 inferred spaces on disk** the ratio of gap to nominal space width is
+  continuous from the **0.40 the `SpaceFrac` threshold itself imposes out to 1303, with no
+  quarter-width band empty below 5** and the largest jump anywhere below 200 — 4529 ratios
+  below 0.50, 14530 between 1.75 and 2.00, then a thin tail of 11 past 200 — so no threshold
   separates a cell boundary from wide word spacing at any value. That is the measurement that
   rules out the percentile gap clustering pdfplumber and markitdown use, and it is the reason
   this was deferred rather than attempted with one.
 
-  Two things about that sentence were wrong when first written and are worth keeping, because
-  both are the ordinary way a measured figure rots. It said **0.25**, which the threshold makes
-  unreachable: `needSpace` requires `gap > 0.30*space`, so nothing below 0.30 is ever counted
-  and `[0.25,0.50)` and `[0.30,0.50)` hold the same 4351 — a bucket label read back as a
-  minimum. And it said **48757 on disk** while its sub-counts were the twelve specification
-  documents alone, which today give **48530**; the 227 went to two intervening extraction
-  fixes, chiefly `1d0a536`'s rune word-boundary rule, which stopped inferring spaces that the
-  page had already drawn. Fewer inferred spaces after a fix that removes doubled ones is the
-  right direction, which is the check that distinguishes drift from a regression.
+  Three things about that sentence were wrong at one time or another, and all three are the
+  ordinary ways a measured figure rots. It said **0.25**, which the threshold makes
+  unreachable: `needSpace` requires `gap > SpaceFrac*space`, so nothing below the threshold is
+  ever counted and `[0.25,0.50)` and `[0.30,0.50)` held the same 4351 — a bucket label read
+  back as a minimum. It said **48757 on disk** while its sub-counts were the twelve
+  specification documents alone, which at `SpaceFrac` 0.30 gave **48530**; the 227 went to two
+  intervening extraction fixes, chiefly `1d0a536`'s rune word-boundary rule, which stopped
+  inferring spaces that the page had already drawn. And every figure in it is denominated in
+  the threshold, so raising `SpaceFrac` to 0.40 moved all of them: the 12-document count is
+  now 46917 with 2738 below 0.50, and the `[1.75,2.00)` bucket is unmoved at 14337 because the
+  change is entirely at the bottom of the distribution. Fewer inferred spaces after a fix that
+  removes doubled ones is the right direction, which is the check that distinguishes drift from
+  a regression.
+
+  The disk-wide count is the one figure that did not reconcile, and it is recorded rather than
+  replaced. Re-measured at 0.30 the twelve documents reproduce **exactly** — 48530, 4351 below
+  0.50, 14337 in `[1.75,2.00)` — which is what validates the harness, but the disk-wide total
+  comes back **119264** against the 119246 recorded here, and the 18 is unattributed: no PDF
+  on disk has been added or changed since the measurement, nothing in the gap path changed
+  across the two intervening commits, and counting `gap/space > 0.30` instead of
+  `gap > 0.30*space` gives the same 119264, so it is not a rounding artifact either. An
+  18-in-119246 discrepancy with a validated harness beside it is worth stating as unexplained;
+  quietly overwriting the number would have hidden that the two populations disagree by
+  something.
 
   The answer is that the producer already states it. A stroke drawn between two glyphs is
   the page's own claim that they are in different cells, where a gap is a statistic about
@@ -965,16 +980,81 @@ OKF-ified spec.
   definitions differ by a rounding error's worth of runs while looking like the same
   measurement, and a re-measurement that picks the other one reads as drift.
 
-  **The threshold itself is still wrong in 12 places and was left alone deliberately.** ISO/TS
-  32004 splits `PdfMacIntegrityInfo` into `Pdf MacIntegrityInfo` twelve times against four
-  joined occurrences, at gap ratios of 0.3023 and 0.3105 — over `SpaceFrac`'s 0.30 but below
-  the distribution's 1st percentile of **0.327**, inside a band holding **1613 inferred spaces
-  that are all correct**. Raising the threshold past 0.31 would fix twelve and break some
-  fraction of those. A discriminator requiring both sides of the gap to read as identifiers was
-  measured instead: it finds **176 such gaps corpus-wide and all 176 are real spaces**
-  (`LBody TH` ×18, `FENote LBody` ×17, `ToUnicode CMap` ×8), and it does not match this case
-  anyway, because `"Pdf"` has no digit, hyphen, or internal capital. Neither instrument
-  separates the twelve, so the defect stays logged rather than papered over.
+  **The threshold itself was wrong in 12 places, and the fix was two constants — one raised on
+  its own measurement, and one that had to be split off from it.** This entry previously
+  concluded that no instrument separated the twelve and logged the defect. The instrument was
+  the population. Raising `SpaceFrac` then moved a second rule that shared it: see the
+  leading-indent item in §11, where 8 spaces beside a bullet glyph crossed from positioning to
+  indentation and `geom.IndentAttachFrac` was separated out. A threshold read by two rules is
+  a threshold two rules have to agree about, and these two did not.
+
+  The defect: ISO/TS 32004 splits `PdfMacIntegrityInfo` into `Pdf MacIntegrityInfo` twelve
+  times against four joined occurrences, at gap ratios of 0.3023 and 0.3105 — just over
+  `SpaceFrac`'s 0.30. The reason it looked unfixable was a figure counted on the wrong side of
+  the rule. `needSpace` is where the threshold fires; `writeSpace` is where a character is
+  actually appended, and it is narrower, because a producer setting justified text draws a
+  space glyph and then stretches the gap around it, so the rule fires a second time on a
+  boundary that is already spaced and the extra space is suppressed. Over the eleven
+  specification documents those are **41164 gaps against 3627 insertions, an eleven-fold
+  difference** — and the two populations disagree about this threshold. The "1613 inferred
+  spaces that are all correct" in the band was a `needSpace` count. Keyed on `writeSpace`, the
+  band from 0.30 to 0.40 holds **243**.
+
+  **241 of the 243 are defects, and every one is nameable.** `STANDAR|D`, `Ver|s`, `ht t|p`,
+  `SH A|5`, `Ta b|s`, `(GCM|)`, `(se|e`, `sec ur it y ha|n`, `Ty p|e`, `h t t p s :|/`, and
+  `Pdf|M` twelve times. The remaining two are a table of contents' dot leader meeting its page
+  number (`"............"|"1"` at 0.3295 and `"............"|"i"` at 0.3615, ISO/TS 32004 p4),
+  where a space is defensible either way.
+
+  **The mechanism is in the content stream, and reading it is what ended the guessing.** Two
+  aggregate discriminators were measured and killed first — italic overhang finds only 14 of
+  the 243 (`below0.40=14 above0.40=19` italic against `229` and `3608` upright), and
+  "a drawn space appears elsewhere on the line" splits them `148/95`. Neither separates.
+  Dumping the raw ops did, in one step: ISO/TS 32004 emits `["I" -28.4 "S" -25.8 "O" 50.2 …]`
+  and draws its word spaces as glyph code `\x00\x03` *inside* the `TJ` strings. So these
+  producers letter-space with `TJ` adjustments, which `showArray` deliberately does not add to
+  the pen — that is how a wide adjustment reaches the gap test as the space it stands in for —
+  and the consequence is that ordinary tracking arrives there as unexplained displacement too.
+  At 0.30 of a 0.2200 em Cambria space the threshold is **0.066 em**, below ordinary letter
+  tracking; the twelve splits sit at 0.0665 and 0.0683 em. The space advances themselves are
+  all sane — Cambria and CambriaMath 0.2200 em, SourceSansPro 0.2000, TimesNewRomanPSMT 0.2500,
+  ArialMT 0.2780, Consolas 0.5500 — so the denominator was never the fault; the fraction was
+  too small in absolute terms.
+
+  **0.40 rather than 0.35 or 0.45 because the ceiling is where real spaces start.** The first
+  insertion in the corpus that can be defended is at **0.479** (the dot leaders at 0.4843, `■`
+  bullets at 0.4924, 0.7525, 0.8600), so 0.40 leaves a margin rather than sitting against an
+  edge. What the raise costs is **1605 recorded cuts**, which are cell-boundary *candidates*
+  rather than characters — `splitAtRules` divides a fragment only at a cut a rule runs through,
+  so a cut dropped here is one no rule was crossing.
+
+  **Reconciled on the rendered output.** `Pdf MacIntegrityInfo` 12 → **0**, with
+  `PdfMacIntegrityInfo` on 13 lines. Four of the eleven documents are byte-identical; the other
+  seven change 130 · 58 · 24 · 22 · 16 · 10 · 4 lines. **No line in any file grew and no file's
+  line count moved** — every diff is characters removed, which is the shape a join has and a
+  regression does not — and the **2872** interior whitespace runs over these eleven documents are
+  unchanged (2000 of exactly two, 872 of three or more; 2874 is the same count with LightOnOCR's
+  file, which is why the population goes with the figure), so the raise touched word joins and
+  nothing else. Every changed line read in the largest file is a repair:
+  `Ta b s`→`Tabs`, `Ver sion`→`Version`, `r e ader s`→`readers`, `STANDAR D`→`STANDARD`,
+  `𝑥 ′`→`𝑥′`, `𝑐𝑠 )`→`𝑐𝑠)`, `𝑉𝑖+1,𝑗 ,`→`𝑉𝑖+1,𝑗,`. The separately logged math-layout limit that
+  renders 6/29 as `6 29` is correctly untouched.
+
+  **Nothing in `extract` could see the constant's value before this, only its sign.** Mutating
+  0.40 to 0.34 or 0.38 left every test in the package passing while changing the output of five
+  of eleven corpus documents, because every fixture there sits orders of magnitude from the
+  threshold. `TestTheSpaceThresholdIsExactlyFourTenthsOfASpaceAdvance` brackets it two-sidedly
+  instead: Helvetica's space is 278/1000 em, so at 12pt the threshold is exactly 1.3344pt, and a
+  `TJ` adjustment of -111.2 thousandths must not space while -111.3 must — 0.09% wide, and it
+  also pins that the comparison is strict. Seven mutants of the constant, including ±0.01, die
+  to that one test with the corpus absent.
+
+  The discriminator that was measured instead of this is kept because the figure is still true
+  and still a useful negative: requiring both sides of the gap to read as identifiers finds
+  **176 such gaps corpus-wide and all 176 are real spaces** (`LBody TH` ×18, `FENote LBody`
+  ×17, `ToUnicode CMap` ×8), and it does not match this case anyway, because `"Pdf"` has no
+  digit, hyphen, or internal capital. A discriminator that is perfectly precise on a population
+  that excludes the defect is not evidence about the defect.
 
   **Columns come from cell x-overlap with no tolerance, and the alternative is worth
   recording because it shipped first and was wrong twice.** Keying a row by the positions of
@@ -1998,14 +2078,47 @@ OKF-ified spec.
     WTPDF listing line missing its leading indent" logged separately is the single WTPDF run of the
     23; the other 22 are PDF-Declarations' whole sample, which is why one file lost one line's
     indent and the other lost all of them.
-    - **Contiguity is the discriminator, and the band is empty for 8.2×.** The corpus holds 66
+    - **Contiguity is the discriminator, and the band is empty for 6.8×.** The corpus holds 66
       untagged whitespace-only spans: 23 indents and 43 that are not — a dotted leader's trailing
       space, the space beside a bullet glyph, a TOC entry's padding. Three conditions separate them
       with no overlap: whitespace by rune, first on its baseline, and *attached* to the following
-      span. Measured, every indent meets its text within **0.243pt** and every other run with a
-      same-line successor stands at least **2.000pt** clear, so the threshold — `SpaceFrac` of half
-      the type size, 1.37pt at the listing's 9.12pt — sits in an empty gap. Expressed as the
-      negation of `gapSpace`'s own space test, so the two rules cannot disagree about the same gap.
+      span. Measured in space advances, every indent meets its text within **0.0532** of one and
+      every other run with a same-line successor stands at least **0.364** clear, so the threshold
+      sits in an empty gap. The band is what the corpus test asserts rather than the threshold.
+    - **A band in the wrong unit did not guard the threshold, and that is how the shared constant
+      broke.** The band above was first measured in points — 0.243pt to 2.000pt, an
+      emptier-looking 8.2× — and attachment was expressed as the negation of `gapSpace`'s own space
+      test, sharing `SpaceFrac` so that no gap could be a space and an indent at once. The
+      composition was sound and the constant was a coincidence. When `SpaceFrac` was raised from
+      0.30 to 0.40 on its own measurement, **8 spaces beside a bullet glyph** in PDF-Declarations —
+      6 on p5, 2 on p9, all at 2.184pt against 12pt text, which is 0.364 of a space advance —
+      crossed from positioning to indentation, taking the split to 31/35. Points cannot bound a
+      threshold that scales with the type size: those runs are set in 12pt and the 23 real indents
+      in 9.12pt, so the threshold walked across one population while **both edges of the
+      point-denominated band stood still** and the assertion still read (0.243, 2.000). Two figures
+      moved and the figure guarding them did not.
+
+      The defect was fully latent — all 11 documents render byte-identically either way, because the
+      list writer emits its own `- ` and discards a line's leading whitespace. A misclassification
+      masked by a downstream sink is worth fixing anyway: the mask is the sink's current behaviour,
+      not a property of the rule. Attachment now has its own constant, `geom.IndentAttachFrac` =
+      **0.15**, centred on a log scale in the 6.8× band, and the corpus test asserts the band in
+      the fraction the rule compares against — substituting `SpaceFrac` back now collapses it to
+      1.1× and fires the guard alongside the counts. 8 mutants die where 3 previously survived:
+      the four other `Tolerance` fields, the em for the space advance, the indent's own size for
+      the text's, an unsigned comparison, and `>=` for `>`.
+
+      Splitting the constant also removed the reason the two rules could not contradict each other,
+      so what actually holds them apart had to be found rather than assumed. It is not the MCID
+      guard, which is what `gapSpace`'s own comment credits: the adopted indent is indexed as a
+      *copy carrying the following span's MCID*, so it arrives at `gapSpace` non-negative and its
+      geometry is read. It is the whitespace-rune test one line further down, which declines because
+      `leadingIndent` adopts nothing but whitespace — verified load-bearing by disabling it, which
+      fails three fixtures. At today's values the two thresholds leave a band from 0.15 to 0.40
+      where a gap is neither attached nor a space, and nothing structural keeps them in that order;
+      the whitespace test is what makes any two values safe. Named in both comments, because a
+      guard that holds by construction and is credited to the wrong line is a guard the next
+      change will move.
     - **The indexed span is a copy carrying the key's MCID, and that is not cosmetic.** `newLine`
       skips `MCID < 0`, so an indent left at −1 answers false on *both* sides of itself: the first
       version of this fix restored every indent and collapsed the 25-line listing back into one

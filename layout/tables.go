@@ -13,13 +13,17 @@ import (
 // # Why the strokes and nothing else
 //
 // The gap between two cells and the gap between two words are the same measurement. Over
-// all 119246 inferred spaces on disk the ratio of gap to nominal space width is continuous
-// from the 0.30 the SpaceFrac threshold itself imposes out to 1303, with no quarter-width
-// band empty below 5 and the first gap of any size at 182 — 6287 ratios below 0.50, 14530
-// between 1.75 and 2.00, then a long thin tail of 11 past 200 — so no threshold on the gap
-// separates a column boundary from wide word spacing. Over the 12 specification documents
-// alone the shape is the same: 48530 spaces, 4351 below 0.50, 14337 between 1.75 and 2.00. That is the measurement that rules
-// out the gap clustering pdfplumber and markitdown use, and it is why extract carries
+// all 117499 inferred spaces on disk the ratio of gap to nominal space width is continuous
+// from the 0.40 the SpaceFrac threshold itself imposes out to 1303, with no quarter-width
+// band empty below 5 and the largest jump anywhere below 200 — 4529 ratios below 0.50,
+// 14530 between 1.75 and 2.00, then a long thin tail of 11 past 200 — so no threshold on
+// the gap separates a column boundary from wide word spacing. Over the 12 documents in docs/
+// alone the shape is the same: 46917 spaces, 2738 below 0.50, 14337 between 1.75 and 2.00.
+// Twelve is the whole directory, not the eleven specifications the tolerance figures in
+// geom are denominated in — docs/ also holds LightOnOCR's paper — and the denominator is
+// named because a later reading taken over eleven would not reproduce these three numbers
+// and would look like drift. That is the measurement that rules out the gap clustering
+// pdfplumber and markitdown use, and it is why extract carries
 // doc.Page.Rules at all: a stroke drawn between two glyphs is the producer's own statement
 // that they are in different cells, where a gap is a statistic about them.
 //

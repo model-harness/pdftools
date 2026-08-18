@@ -506,6 +506,22 @@ func spaceAtGaps(blk *doc.Block) {
 // boundary already, and a byte scan cannot see one. This is the rune test extract's own
 // endsWithSpace makes (run.go:1143) for the same reason, kept as a decode here rather than a
 // third exported helper.
+//
+// That rune test is also what holds this rule apart from leadingIndent, and the MCID guard above
+// is not — worth stating because the MCID guard is the one that looks like it would. leadingIndent
+// adopts a whitespace run drawn outside marked content by indexing a copy that carries the
+// following span's MCID (newIndex, :1367), and that copy is what take returns and emitItem
+// assembles into the block this walks (:1064), so unlike this package's three fabricated spans it
+// arrives here non-negative and its geometry does get read. What declines it is the whitespace
+// test below, since leadingIndent adopts nothing else (:1460).
+//
+// Which matters because the two rules no longer answer one gap by construction. leadingIndent's
+// threshold was SpaceFrac, so attached meant exactly not-a-space and one gap could not be both;
+// split out as IndentAttachFrac it is 0.15 against this rule's 0.40, and the two now leave a band
+// from 0.15 to 0.40 where a gap is neither. Nothing structural keeps the numbers in that order
+// either — an IndentAttachFrac raised past SpaceFrac would make a gap attached and a word boundary
+// at once, and no test would state it. The whitespace test is what makes that safe at any two
+// values, which is why it is named here rather than left to be inferred from the constants.
 func gapSpace(prev, cur *doc.Span) bool {
 	if prev.MCID < 0 || cur.MCID < 0 {
 		return false
@@ -1417,18 +1433,28 @@ func newIndex(d *doc.Document) *index {
 //
 //   - Whitespace only, and by rune rather than by byte, for the reason gapSpace decodes:
 //     a run of U+00A0 is an indent too.
+//
 //   - First on its baseline within the block, which is what "leading" means. This is what
 //     rejects 31 of the 43, all of them mid-line. The other 12 are line-start and are
 //     rejected by attachment below: a bullet's space, whose glyph an element claims while
 //     the space beside it stays an artifact.
-//   - Attached to the next span, meaning a gap too narrow for a space of its own to fit.
-//     A separate run of spaces the producer drew as positioning stands *away* from the text
-//     after it; an indent runs right up to it. Measured, the gap is ≤ 0.243pt for all 23
-//     indents and ≥ 2.000 for every other run that has a same-line successor at all — an 8.2×
-//     empty band, so this is an order-of-magnitude test like spaceAtGaps' and not a tuned
-//     constant. Expressed as the negation of that rule's own space test, so the two cannot
-//     disagree: what this calls attached is exactly what gapSpace would refuse to put a space
-//     into.
+//
+//   - Attached to the next span, meaning the two runs are touching. A separate run of spaces
+//     the producer drew as positioning stands *away* from the text after it; an indent runs
+//     right up to it. Measured in space advances, the gap is ≤ 0.0532 for all 23 indents and
+//     ≥ 0.364 for every other run that has a same-line successor at all — a 6.8× empty band,
+//     so this is an order-of-magnitude test like spaceAtGaps' and not a tuned constant.
+//
+//     It was first written as the negation of that rule's own space test, sharing SpaceFrac
+//     so the two could not disagree about one gap, and that is the half of the rationale
+//     this rule no longer claims. The composition was never the reason the constant was
+//     right: raising SpaceFrac to 0.40 on its own measurement moved 8 spaces beside a
+//     bullet glyph from positioning to indentation, because 0.364 is under 0.40 and was
+//     over 0.30. What the two rules share is the population and the units, not the number —
+//     see geom.IndentAttachFrac. The adopted copy does reach gapSpace with a tagged span's
+//     MCID, so what keeps the two from ever calling one gap both attached and a word boundary
+//     is that the copy holds whitespace and gapSpace declines on that before reading any
+//     geometry (:534) — not the ordering of the two constants, and not the MCID guard.
 func leadingIndent(blk *doc.Block, i int) (*doc.Span, bool) {
 	sp := &blk.Spans[i]
 	if sp.Text == "" || strings.TrimFunc(sp.Text, unicode.IsSpace) != "" {
@@ -1450,7 +1476,7 @@ func leadingIndent(blk *doc.Block, i int) (*doc.Span, bool) {
 		}
 	}
 	tol := geom.DefaultTolerance
-	if math.Abs(nx.Box.X0-sp.Box.X1) > tol.SpaceFrac*spaceAdvance(nx.Style.Size) {
+	if math.Abs(nx.Box.X0-sp.Box.X1) > tol.IndentAttachFrac*spaceAdvance(nx.Style.Size) {
 		return nil, false
 	}
 	return nx, true

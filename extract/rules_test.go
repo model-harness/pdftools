@@ -203,7 +203,7 @@ func TestSplitAtRuleDividesTheFragment(t *testing.T) {
 //
 // The gap here is about 72pt against a 12pt font — six space widths, which is where any
 // threshold would fire. That it does not split is the measurement this package rests on:
-// the ratio of gap to space width is continuous over all 119246 inferred spaces on disk, so
+// the ratio of gap to space width is continuous over all 117499 inferred spaces on disk, so
 // only the stroke separates a cell boundary from wide spacing.
 func TestNoSplitWithoutARule(t *testing.T) {
 	p := extractPage(t, "BT /F1 12 Tf 100 605 Td (Left) Tj 100 0 Td (Right) Tj ET")

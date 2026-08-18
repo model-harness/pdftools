@@ -7,6 +7,68 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-08-17
 
+- **The space threshold was too low by a third, and the logged reason it could not be raised was
+  measured against the wrong population.** `SpaceFrac` goes from 0.30 to 0.40, which joins the 12
+  `Pdf MacIntegrityInfo` splits in ISO/TS 32004 and 229 more like them — `STANDAR D`, `Ver s ion`,
+  `ht t p`, `Ta b s`, `h t t p s : /`. The producers letter-space with `TJ` adjustments, which
+  `showArray` deliberately keeps off the pen, so ordinary tracking reaches the gap test as
+  unexplained displacement; at 0.30 of a 0.22 em Cambria space the threshold was 0.066 em, below
+  it.
+  - **The deferral's denominator was `needSpace`, and the rule only writes a character at
+    `writeSpace`.** Over the eleven specification documents those are 41164 gaps against 3627
+    insertions, an eleven-fold difference, and they disagree about this threshold: the band from
+    0.30 to 0.40 holds 1613 gaps but only **243 insertions, of which 241 are nameable defects**.
+    The other two are a dot leader meeting its page number, where a space is defensible either
+    way. Raising it costs 1605 recorded cuts, which are cell-boundary candidates rather than
+    characters.
+  - **0.40 and not further because the first defensible insertion is at 0.479**, so the value sits
+    in a margin rather than on an edge. Two aggregate discriminators were measured and killed
+    first — italic overhang finds 14 of the 243, a drawn space elsewhere on the line splits them
+    148/95 — and reading the raw content stream is what identified the mechanism.
+  - **Nothing in `extract` could see the constant's value before this, only its sign.** Mutating
+    0.40 to 0.34 or 0.38 left the whole package green while changing five of eleven documents'
+    output. A `TJ` adjustment brackets it two-sidedly instead — -111.2 thousandths must not space
+    and -111.3 must, 0.09% apart — and seven mutants including ±0.01 now die with the corpus
+    absent.
+  - **Verified as a repair rather than a trade.** `Pdf MacIntegrityInfo` 12 → 0; four of eleven
+    documents byte-identical; no line in any file grew, no file's line count moved, and the 2872
+    interior whitespace runs over those eleven are unchanged, so every diff is characters removed.
+    The distribution figures downstream of the constant are re-measured, and the one that did not
+    reconcile — a disk-wide count 18 higher than recorded, with the twelve-document figures
+    reproducing exactly — is recorded as unexplained in `docs/DESIGN.md` rather than overwritten.
+
+- **A leading indent and an inferred space shared a threshold, and raising it reclassified 8 runs.**
+  `geom.IndentAttachFrac` (0.15) is separated out of `SpaceFrac`, which `sectionize.leadingIndent`
+  had been expressed against so the two rules could not disagree about one gap. The composition was
+  sound and the shared *value* was a coincidence: at 0.40, eight spaces beside a bullet glyph in
+  PDF-Declarations — 2.184pt against 12pt text, 0.364 of a space advance — became leading indents.
+  Latent on disk, since the list writer emits its own `- ` and drops a line's leading whitespace, so
+  all eleven documents render byte-identically either way.
+  - **The corpus test that exists to guard this could not see it, because its band was in points.**
+    0.243pt to 2.000pt read as an empty 8.2× gap before and after, while the counts went 23/43 →
+    31/35 — the rejected runs are set in 12pt and the real indents in 9.12pt, so a size-relative
+    threshold crossed one population without either edge of a point-denominated band moving. The
+    band is now asserted in space advances, where it is 0.0532 against 0.364, and substituting
+    `SpaceFrac` back collapses it to 1.1× and fires the guard alongside the counts.
+  - **8 mutants die where 3 survived**: the four other `Tolerance` fields, the em for the space
+    advance, the indent's own type size for the text's, an unsigned comparison, and `>=` for `>`.
+    The two fixtures that bracket the constant are within 3% and 4% of it, and a new one asserts
+    the boundary attaches — the opposite convention to `gapSpace`, which declines on equality,
+    because an indent is drawn on the page where a space is inferred.
+  - **Splitting the constant removed the reason the two rules could not contradict, so what holds
+    them apart was traced rather than assumed.** Not the MCID guard `gapSpace`'s comment credits —
+    an adopted indent is indexed as a copy carrying the following span's MCID, so it arrives
+    non-negative and its geometry is read. It is the whitespace-rune test one line below, which
+    declines because `leadingIndent` adopts nothing else; disabling it fails three fixtures. Named
+    in both comments, since it now holds at any two values rather than by their ordering.
+  - **Moving one threshold loosened a fixture written to discriminate it from another.**
+    `TestGapJustOverTheSpaceThresholdIsASpace` used a 4pt gap on a 5pt space advance, chosen when
+    `SpaceFrac` was 0.30; at 0.40 the gap no longer sat between `SpaceFrac` and `LineFrac`'s 0.50,
+    and the `LineFrac` substitution started surviving it. Restated at 2.2pt, which is 0.44 of the
+    advance and inside the 10% band the two thresholds now leave. `SpaceFrac` has exactly two
+    consumers, `extract.place` and `sectionize.gapSpace`, and every substitution of another
+    `Tolerance` field into each is now killed.
+
 - **A geometric rule was comparing two page coordinate spaces as if they were one.** A `Box.Y0` is
   a position within its own page's user space, and `sectionize` joins spans in the order a
   structure element lists its content — so a paragraph continuing past a page break is one element
@@ -193,7 +255,9 @@ All notable changes to this project are documented here, following
     and *attached* to the following span separate them with no overlap: every indent meets its text
     within 0.243pt and every other run with a same-line successor stands at least 2.000pt clear.
     The threshold is the negation of `gapSpace`'s own space test, so the two rules cannot disagree
-    about one gap.
+    about one gap. *Superseded below:* both halves of that sentence stopped holding when `SpaceFrac`
+    was raised — the band had to be restated in space advances to be measurable at all, and the
+    shared threshold is now `geom.IndentAttachFrac`.
   - **The indexed span is a copy carrying the key's MCID, and the first version without that
     collapsed the listing it had just fixed.** `newLine` skips `MCID < 0`, so an indent left at −1
     answers false on both sides of itself; every restored indent arrived and all 24 line breaks
@@ -369,6 +433,8 @@ All notable changes to this project are documented here, following
     identifier-shaped discriminator finds 176 such gaps corpus-wide and all 176 are real spaces —
     and it does not match this case anyway, since `"Pdf"` has no digit, hyphen, or internal
     capital. Neither a threshold nor that discriminator separates the twelve.
+    **Superseded 2026-08-17:** the 1613 was a `needSpace` count and the rule writes a character
+    only at `writeSpace`, where the band holds 243 — raising `SpaceFrac` to 0.40 fixes all twelve.
 
 - **A 25-line XML sample came out as one 892-character fenced line.** `PDF-Declarations.pdf`
   declares a `Code` element holding its 25 listing lines as 25 MCIDs under no `P` at all, so the

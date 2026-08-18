@@ -170,6 +170,23 @@ type Tolerance struct {
 	// cell placement rather than a paragraph's first line, and is ignored.
 	IndentMax float64
 
+	// IndentAttachFrac is the fraction of a nominal space advance within which a
+	// run of whitespace drawn outside marked content counts as the leading indent
+	// of the text after it, rather than as positioning that stands away from it.
+	//
+	// Deliberately not SpaceFrac, which is the fraction it was first expressed as.
+	// The two rules do read the same page geometry, and stating one as the negation
+	// of the other is why a gap could not be a space and an indent at once — but
+	// they answer different questions. A space asks whether a producer meant a word
+	// boundary; an indent asks whether two runs are touching. Nothing makes the
+	// answers the same number, and when SpaceFrac was measured up from 0.30 to 0.40
+	// the shared constant crossed a run: 8 spaces beside a bullet glyph in
+	// PDF-Declarations, at 0.364 of a space advance, changed from positioning to
+	// indentation. Every unit fixture for both rules stayed green — the corpus test's
+	// 23/43 count is what caught it, and its own band assertion did not, because that
+	// band was denominated in points.
+	IndentAttachFrac float64
+
 	// Epsilon is the absolute tolerance for coordinate comparison in user-space
 	// units, absorbing float noise from matrix composition.
 	Epsilon float64
@@ -179,7 +196,33 @@ type Tolerance struct {
 // and are expected to move once the golden corpus can measure them; they are
 // not tuned constants inherited from anywhere.
 var DefaultTolerance = Tolerance{
-	SpaceFrac:     0.30,
+	// 0.40 is measured, and the measurement had to be taken on the right population to
+	// come out. The quantity that matters is not every gap the rule fires on but every
+	// gap where it appends a character: a producer setting justified text draws a space
+	// glyph and then stretches the gap around it, so the rule fires a second time on a
+	// boundary that is already spaced and the extra space is suppressed. Over the eleven
+	// specification documents that is 41164 gaps against 3627 insertions, an eleven-fold
+	// difference, and the two populations disagree about this threshold — a sweep against
+	// the gaps says every step costs hundreds, a sweep against the insertions says the
+	// first 243 are free.
+	//
+	// Free because they are wrong. Every insertion between 0.30 and 0.40 was read: 241
+	// of the 243 split a word that the page sets as one — "STANDAR D", "Ver s ion",
+	// "ht t p", "SH A 512", "Ta b s", "(GCM )", and "Pdf MacIntegrityInfo" twelve times
+	// in ISO/TS 32004 against four joined occurrences. The remaining two are a table of
+	// contents' dot leader meeting its page number, where a space is defensible either
+	// way. The producers of these documents letter-space their headings and their
+	// monospaced runs with TJ adjustments, which showArray deliberately does not add to
+	// the pen — that is how a wide adjustment reaches this test as the space it stands
+	// in for — so ordinary tracking arrives here as unexplained displacement too, and at
+	// 0.30 of a 0.22 em Cambria space the threshold is 0.066 em, below it.
+	//
+	// The ceiling is where real spaces start: the first insertion the corpus can defend
+	// is at 0.479, so 0.40 leaves a margin rather than sitting against the edge. What
+	// the raised threshold costs is 1605 recorded cuts, which are cell-boundary
+	// candidates rather than characters — splitAtRules only divides a fragment at a cut
+	// that a rule runs through, so a cut it drops here is one no rule was crossing.
+	SpaceFrac:     0.40,
 	WideSpaceFrac: 2.50,
 	LineFrac:      0.50,
 	ParaFrac:      1.50,
@@ -204,7 +247,16 @@ var DefaultTolerance = Tolerance{
 	// addresses.
 	IndentFrac: 1.0,
 	IndentMax:  6.0,
-	Epsilon:    1e-6,
+	// 0.15 sits in the middle of a band that has to be measured in space advances to be
+	// seen at all. The 23 indents on disk reach their text within 0.0532 of one, and the
+	// nearest run that must be rejected stands 0.364 off — a 6.8× gap, and 0.15 is
+	// centred in it on a log scale. The earlier reading of the same population put the
+	// band at 0.243pt to 2.000pt and called it empty for 8.2×, which was true and not
+	// usable: those two runs are set in different type sizes, 9.12pt and 12pt, so a
+	// threshold that scales with the size can cross one of them without either edge of
+	// a point-denominated band moving. That is exactly what SpaceFrac at 0.40 did.
+	IndentAttachFrac: 0.15,
+	Epsilon:          1e-6,
 }
 
 // NearlyEqual reports whether a and b are within the absolute epsilon.

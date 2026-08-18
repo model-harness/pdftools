@@ -492,10 +492,10 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 	// reference/table.pdf's header row sets wider cells than its body, so its column
 	// gaps are 2.400 space widths against the body's 4.128, and the filter admitted the
 	// body rows while silently discarding the header. That is the failure mode of every
-	// threshold on this quantity — the gap distribution over all 119246 inferred spaces
-	// on disk is continuous from the 0.30 the threshold itself imposes out to 1303 space
-	// widths, with no quarter-width band empty below 5 and the first gap of any size at
-	// 182 — and the rule is the evidence, so there is nothing for a width to add. The cost
+	// threshold on this quantity — the gap distribution over all 117499 inferred spaces
+	// on disk is continuous from the 0.40 the threshold itself imposes out to 1303 space
+	// widths, with no quarter-width band empty below 5 and the largest jump anywhere below
+	// 200 — and the rule is the evidence, so there is nothing for a width to add. The cost
 	// is bookkeeping on a slice that is discarded with the page.
 	//
 	// writeSpace is the narrower question of whether that one space is a character the
@@ -503,12 +503,19 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 	// does not know that the page has already drawn a space into it: justified text sets
 	// a space glyph and then stretches the word gap around it, so the pen ends up further
 	// from the next glyph than the nominal space width, and the rule fires a second time
-	// on a boundary that is already spaced. Measured on the corpus, 25892 of 48530
-	// inferred spaces follow text that already ends in whitespace and 12836 of those also
+	// on a boundary that is already spaced. Measured on the corpus, 24579 of 46917
+	// inferred spaces follow text that already ends in whitespace and 12835 of those also
 	// precede a space glyph, where the inserted character would be the third — 10922
 	// interior runs of two or more spaces reach the Markdown output because of it, 9719 of
 	// exactly two and 1203 of three or more, counting a run as interior when a
 	// non-whitespace character stands on each side of it.
+	//
+	// writeSpace and not needSpace is also the population SpaceFrac has to be swept against,
+	// and sweeping the wrong one is what kept the threshold at 0.30 for a phase. The gap
+	// between the two counts is what makes them disagree: over the eleven specification
+	// documents needSpace fires 41164 times and writeSpace 3627, an eleven-fold difference,
+	// so a step in the threshold reads as costing hundreds of correct spaces against the
+	// gaps and as free against the insertions. geom.SpaceFrac carries that measurement.
 	//
 	// Only the character is suppressed, never the cut. A cell boundary is a position in
 	// the text and stays one whether or not a space is written there: a header cell whose

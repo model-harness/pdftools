@@ -11,6 +11,7 @@ import (
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/geom"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/sectionize"
 	"github.com/model-harness/pdftools/tag"
@@ -446,10 +447,19 @@ func TestOutlineConservesCharacters(t *testing.T) {
 // The two counts move for different reasons. 23 is how many indent runs the producers draw
 // outside marked content; 43 is how many other untagged whitespace runs the corpus holds, and
 // a rule that started claiming one of those would move the second number without the first.
-// The band between them is the evidence that no threshold is being tuned: measured, every
-// indent meets its text within 0.243pt and every other run with a same-line successor stands at
-// least 2.000pt clear, so the threshold — SpaceFrac of half the type size, 1.37pt at the 9.12pt
-// the listing is set in — sits in an empty 8.2× gap.
+// The band between them is the evidence that no threshold is being tuned: measured in space
+// advances, every indent meets its text within 0.0532 of one and every other run with a
+// same-line successor stands at least 0.364 clear, so the threshold sits in an empty 6.8× gap.
+//
+// The unit is the correction, and it is why this test failed to catch what it was written to
+// catch. The band was first measured in points — 0.243pt to 2.000pt, an emptier-looking 8.2× —
+// and points cannot bound a threshold that scales with the type size. The 23 indents are set in
+// 9.12pt and the nearest rejected runs in 12pt, so when SpaceFrac was raised from 0.30 to 0.40
+// on its own measurement the threshold crossed those 12pt runs and *both edges of the band
+// stood still*: 8 spaces beside a bullet glyph became indents, indents went 23 → 31, and the
+// band assertion still read (0.243, 2.000). Two figures moved and the one guarding them did
+// not. Attachment now has its own constant, geom.IndentAttachFrac, and the band is asserted in
+// the fraction the rule compares against.
 //
 // The indented-line count is what watches the rule rather than the data. indentGap below is a
 // deliberate copy of leadingIndent's conditions, so on its own this test measures the population
@@ -526,10 +536,10 @@ func TestListingIndentsReachTheirListing(t *testing.T) {
 		t.Fatalf("no band to measure: %d attached, %d detached", len(attached), len(detached))
 	}
 	hi, lo := attached[len(attached)-1], detached[0]
-	if hi > 0.25 || lo < 2.0 {
-		t.Errorf("band = (%.3f, %.3f), want an empty gap from under 0.25 to over 2.0", hi, lo)
+	if hi > 0.06 || lo < 0.35 {
+		t.Errorf("band = (%.4f, %.4f) space advances, want an empty gap from under 0.06 to over 0.35", hi, lo)
 	}
-	t.Logf("indents=%d others=%d  widest attached=%.3f narrowest detached=%.3f (%.1fx)  indented lines=%d",
+	t.Logf("indents=%d others=%d  widest attached=%.4f narrowest detached=%.4f (%.1fx, space advances)  indented lines=%d",
 		indents, others, hi, lo, lo/hi, lines)
 }
 
@@ -564,6 +574,13 @@ func indentedLinesIn(s *doc.Section) int {
 // tagged span after it at all, so the caller can tell "stood too far off" from "had nothing to
 // attach to". A copy of sectionize.leadingIndent's conditions rather than a call, since the
 // point is to measure the population from outside the package that decides it.
+//
+// The distance is returned in space advances rather than points, which is the correction that
+// made this test able to see the defect it was written for. Points are the wrong unit for a
+// band around a size-relative threshold: the 23 indents are set in 9.12pt and the runs nearest
+// them in 12pt, so the threshold moved across one of those runs while both edges of the
+// point-denominated band stood still, and the assertion below reported the same 8.2× gap
+// before and after. In space advances the same population reads 0.0532 against 0.364.
 func indentGap(b *doc.Block, i int) (float64, bool) {
 	sp := &b.Spans[i]
 	line := func(x, y *doc.Span) bool {
@@ -573,16 +590,16 @@ func indentGap(b *doc.Block, i int) (float64, bool) {
 		return -1, false
 	}
 	nx := &b.Spans[i+1]
-	if nx.MCID < 0 || !line(sp, nx) {
+	if nx.MCID < 0 || !line(sp, nx) || nx.Style.Size <= 0 {
 		return -1, false
 	}
-	gap := absf(nx.Box.X0 - sp.Box.X1)
+	gap := absf(nx.Box.X0-sp.Box.X1) / (0.5 * nx.Style.Size)
 	for k := 0; k < i; k++ {
 		if line(&b.Spans[k], sp) {
 			return gap, false
 		}
 	}
-	return gap, gap <= 0.30*0.5*nx.Style.Size
+	return gap, gap <= geom.DefaultTolerance.IndentAttachFrac
 }
 
 func absf(f float64) float64 {

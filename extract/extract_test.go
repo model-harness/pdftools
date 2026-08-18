@@ -177,11 +177,34 @@ func TestSpaceFromTJAdjustment(t *testing.T) {
 // kerning is a small negative adjustment between glyphs of one word, and treating
 // it as a space is how a reader produces "H e l l o".
 func TestNarrowKernIsNotASpace(t *testing.T) {
-	// -20 thousandths at 12pt is 0.24pt. The threshold is 0.3 of a 12pt space
-	// advance (3.336pt), about 1pt.
+	// -20 thousandths at 12pt is 0.24pt. The threshold is 0.40 of a 12pt space
+	// advance (3.336pt), so 1.334pt.
 	got := extractText(t, `BT /F1 12 Tf 10 700 Td [(Hel) -20 (lo)] TJ ET`)
 	if got != "Hello" {
 		t.Errorf("got %q, want %q", got, "Hello")
+	}
+}
+
+// TestTheSpaceThresholdIsExactlyFourTenthsOfASpaceAdvance is the only test in this
+// package that can see SpaceFrac's value rather than its sign, and it exists because
+// nothing else here could: with the corpus absent, mutating 0.40 to 0.34 or 0.38 left
+// every test in this package passing while changing what the extractor writes on five
+// of eleven corpus documents. The fixtures above all sit orders of magnitude away from
+// the threshold, which is right for them — they pin that a gap test exists at all —
+// and useless for pinning where it is.
+//
+// Helvetica's space is 278/1000 em, so at 12pt the threshold is 0.40*3.336 = 1.3344pt,
+// and a TJ adjustment is the instrument that can be dialled to it: -111.2 thousandths
+// displaces 1.3344pt and must not space, -111.3 displaces 1.3356pt and must. That is a
+// two-sided bracket 0.09% wide, so every mutation of the constant in either direction
+// falls outside it. The pair also states the comparison's strictness: the rule is
+// gap > threshold, and a gap landing exactly on it joins.
+func TestTheSpaceThresholdIsExactlyFourTenthsOfASpaceAdvance(t *testing.T) {
+	if got := extractText(t, `BT /F1 12 Tf 10 700 Td [(Hel) -111.2 (lo)] TJ ET`); got != "Hello" {
+		t.Errorf("at the threshold: got %q, want %q: 1.3344pt is exactly 0.40 of a 12pt Helvetica space and must not space", got, "Hello")
+	}
+	if got := extractText(t, `BT /F1 12 Tf 10 700 Td [(Hel) -111.3 (lo)] TJ ET`); got != "Hel lo" {
+		t.Errorf("just over it: got %q, want %q: 1.3356pt is over 0.40 of a 12pt Helvetica space and must space", got, "Hel lo")
 	}
 }
 
@@ -204,7 +227,7 @@ func TestExplicitSpaceGlyphNotDoubled(t *testing.T) {
 // a space into it: a justified line sets its space glyph and then stretches the word gap
 // around it, so the pen ends up more than a nominal space width from the next glyph and the
 // rule fires on a boundary that is already spaced. That is the ordinary case in this corpus,
-// not a rare one — 25892 of 48530 inferred spaces follow text already ending in whitespace,
+// not a rare one — 24579 of 46917 inferred spaces follow text already ending in whitespace,
 // and 10922 interior runs of two or more spaces reached the Markdown because of it.
 //
 // One show operation per word, positioned by Td, is how the affected producers write it:
@@ -1327,8 +1350,8 @@ BT /F1 12 Tf 0 1 -1 0 100 400 Tm (down) Tj ET`
 // same treatment. A page-wide absolute threshold is wrong at every size but one.
 //
 // Both cases leave the same 1.312pt gap, and it means opposite things. At 7pt a
-// space advances 1.946pt and the threshold is 0.584pt, so the gap is a word
-// boundary. At 24pt a space advances 6.672pt and the threshold is 2.0pt, so the
+// space advances 1.946pt and the threshold is 0.778pt, so the gap is a word
+// boundary. At 24pt a space advances 6.672pt and the threshold is 2.669pt, so the
 // same gap is kerning inside a word. An absolute threshold cannot tell them apart.
 func TestSpaceScalesWithFontSize(t *testing.T) {
 	// "ab" in Helvetica is 1112/1000 em: 7.784pt at 7pt, 26.688pt at 24pt.
