@@ -132,6 +132,12 @@ type line struct {
 	frags  []frag
 	cross  float64
 	orient int
+
+	// joinPrev marks a line that continues the one before it with no word boundary
+	// between them, because joinFractions found a fraction bar at the wrap and wrote the
+	// solidus into the previous line. Without it appendLine would infer its usual space
+	// and emit "6/ 29".
+	joinPrev bool
 }
 
 // walk interprets a content stream, appending everything it draws to r.
@@ -714,12 +720,44 @@ func maxf(a, b float64) float64 {
 // position interleaves the columns of every two-column page. Recovering reading
 // order from geometry is what layout owns, and doing a half version of it here
 // would make the good case worse to improve the bad one.
+// sortLines puts every line's fragments in position order.
+//
+// Fragments within a line are ordered by position, not by when they were drawn.
+// Producers emit a line out of order routinely — a superscript after the clause it
+// annotates, a table cell revisited to add a leader — and within a single baseline,
+// position *is* reading order, so sorting here is safe in a way sorting whole lines
+// would not be. Stable, so two fragments starting at the same x keep their drawn order.
+//
+// Ahead of joinFractions rather than inside the assembly loop, because joinFractions reads
+// a level's position in its line — the numerator has to reach the line's end and the
+// denominator to start its own — and that question has no answer while the fragments are
+// still in the order the stream drew them.
+//
+// Behind splitAtRules, and the ordering is load-bearing in that direction only. splitFrag
+// returns one fragment's pieces in text order but leaves them in that fragment's slot, so
+// sorting the parents first does not sort the pieces: a fragment drawn as one show operation
+// with a wide gap in it — "AA" at x=100 and "ZZ" at x=280 — keeps both pieces ahead of a
+// differently-styled "mid" at x=150 that the stream drew later, and the line emits
+// "AA ZZmid". Splitting first and sorting the pieces is what puts them in position order.
+// splitAtRules itself does not care: it walks the fragments in slot order and replaces each
+// with its own pieces, so its output order follows its input order whatever that is.
+func (r *run) sortLines() {
+	for i := range r.lines {
+		ln := &r.lines[i]
+		sort.SliceStable(ln.frags, func(a, b int) bool {
+			return ln.frags[a].along0 < ln.frags[b].along0
+		})
+	}
+}
+
 func (r *run) blocks(opt Options) []doc.Block {
 	r.closeLine()
 	if len(r.lines) == 0 {
 		return nil
 	}
 	r.splitAtRules()
+	r.sortLines()
+	r.joinFractions()
 
 	var out []doc.Block
 	var cur *doc.Block
@@ -728,16 +766,6 @@ func (r *run) blocks(opt Options) []doc.Block {
 
 	for i := range r.lines {
 		ln := &r.lines[i]
-		// Fragments within a line are ordered by position, not by when they were
-		// drawn. Producers emit a line out of order routinely — a superscript after
-		// the clause it annotates, a table cell revisited to add a leader — and
-		// within a single baseline, position *is* reading order, so sorting here is
-		// safe in a way sorting whole lines would not be. Stable, so two fragments
-		// starting at the same x keep their drawn order.
-		sort.SliceStable(ln.frags, func(a, b int) bool {
-			return ln.frags[a].along0 < ln.frags[b].along0
-		})
-
 		art := lineIsArtifact(ln)
 		if art && !opt.KeepArtifacts {
 			// Dropped rather than emitted so that a running header does not appear a
@@ -748,7 +776,14 @@ func (r *run) blocks(opt Options) []doc.Block {
 			continue
 		}
 
-		if cur == nil || !continues(prev, ln, r.tol) || shape.startsParagraph(ln, r.tol) {
+		// A line joined to the one before it cannot start a block. joinFractions has
+		// already rewritten the pair as one expression — the solidus is written at the end
+		// of the previous line and the text that completes it is here — so a boundary
+		// between them emits "12/" and "116" as two paragraphs. The paragraph tests cannot
+		// see that: the two levels of a fraction are more than ParaFrac apart whenever the
+		// type is small relative to the stack, and a tagged document is rescued only by
+		// sameElement, which an untagged one has no MCID to satisfy.
+		if cur == nil || (!ln.joinPrev && (!continues(prev, ln, r.tol) || shape.startsParagraph(ln, r.tol))) {
 			out = append(out, doc.Block{Role: roleOf(art)})
 			cur = &out[len(out)-1]
 			shape = newIndent(ln)
@@ -1081,7 +1116,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 		if txt == "" {
 			continue
 		}
-		if i == 0 && len(b.Spans) > 0 {
+		if i == 0 && len(b.Spans) > 0 && !ln.joinPrev {
 			// A line break inside a paragraph is a word boundary, and the space goes on the
 			// *trailing* end of the span already there rather than the leading end of the
 			// one arriving.

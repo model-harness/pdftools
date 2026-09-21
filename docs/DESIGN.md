@@ -2414,6 +2414,75 @@ OKF-ified spec.
     box, and asserts both halves — 188140 spans, 188021 carrying a page, 119 fabricated at page 0 —
     plus that 7 cross-page pairs exist at all, so the guard cannot become dead code held up only by
     its fixtures.
+- **A stacked fraction is read as one quantity, and what is left open is the inline form.**
+  Two baselines with a rule between them mean 𝑎 divided by 𝑏; read as text they were 𝑎 and 𝑏
+  separated by whatever the wrap inferred, so ISO 32000-2 page 205 emitted `𝐿∗ + 16 116` — not a
+  formula that is hard to read, a *different* formula, indistinguishable from a page that really
+  said those two things in sequence. `extract.joinFractions` rewrites the pair into ISO 80000-2's
+  solidus form, `(𝐿∗ + 16)/116`, and stops there: no `\frac`, no `$…$`, because which notation a
+  document should be rendered in belongs to a sink. Four measurements separate a bar from the row
+  rules, underlines and cell edges that look like one — balance, thickness, overhang and side —
+  each worth a count taken by turning it off with the other three left on, and two further
+  conditions reject nothing here and are kept for stated reasons. `extract/fraction.go`'s doc
+  comment carries the funnel, the named counterexample for every threshold and the three
+  hypotheses that sound better and are false. 73 fractions over the 12 documents, nothing that is
+  not a fraction accepted anywhere.
+  - **The two producers draw the bar incompatibly, which is why `doc.Rule` gained `Width` and
+    `content.GraphicsState` gained `LineWidth`.** ISO 32000-2 *fills* a rectangle, so both long
+    edges arrive and the thickness is their separation, 0.60–0.72pt. pdfTeX *strokes* a line and
+    emits one rule with no second edge anywhere on the page, whose thickness is only in `w`. A
+    reader that recovers thickness from a pair of edges finds every fraction in the ISO documents
+    and none in a LaTeX one, so half the rule is unreachable without the field. 1.0 is the initial
+    line width per §8.4.3.2, not a guess: a stream that strokes without setting `w` gets a 1-unit
+    line, and defaulting to zero would report it as a hairline.
+  - **Deciding "grid line" by *any* same-extent partner made two fractions cancel each other, and
+    the corpus hid it by coincidence.** Two bars of the same width at the same indent are each
+    other's far partner, so a page that sets the same formula twice lost both — `\frac{1 + 2}{3}`
+    and `\frac{12}{3 + 4}` share the extent 294.554..316.693 because `1 + 2` and `3 + 4` set to the
+    same width in Computer Modern. ISO 32000-2's same-width equations happen to sit at different
+    x, which is the only reason the corpus is silent. A grid is now three or more rules at one
+    extent, three being the fewest a ruled table draws there — a booktabs table's top, mid and
+    bottom rules share theirs, which is what still rejects the hardest false positive on disk. Cost
+    of admitting the two-rule case, measured before it was written: **452 extra marks over the 12
+    documents and not one extra fraction**, every one declined by overhang or balance, with four
+    documents' Markdown byte-identical. `testdata/reference/fractions.pdf` is that page, it is the
+    repo's only fraction fixture whose PDF can be committed, and it fails against the pre-fix
+    binary on exactly the two colliding equations.
+  - **Still open: an inline `\frac` is not joined, because its two levels are not adjacent
+    lines.** Inline math sets the levels in scriptstyle around the *text* baseline, so the prose on
+    that baseline lies between them and `joinFractions` — which only ever looks at adjacent line
+    records — cannot see the pair. Measured on the fixture's own draft text: `An inline fraction
+    $\frac{12}{116}$ sits in a sentence` extracts as `An inline fraction 1`, `2`, `116 sits in a
+    sentence`. The numerator splitting across two line records at cross 554.986 and 558.908 is a
+    second defect and a line-assignment one, independent of fractions. Every fraction the corpus
+    has is set with each level alone on its own line, so nothing on disk exercises either; not
+    fixed, and not pinned by a fixture, because a fixture asserting today's output would be pinning
+    the wrong answer.
+  - **Still open: an inline nested fraction flattens.** ISO 32000-2 page 177 sets `1/(sin 𝑗/2)`
+    and emits `1sin𝑗/2`, which is wrong at HEAD too and in the same way. Recorded as a stated
+    limit rather than diagnosed: one instance on disk, and the mechanism has not been measured,
+    so what is written here is the symptom and nothing about the cause. The *stacked* nested case
+    is guarded instead, because there the flattening would invent a form ISO 80000-2 forbids:
+    three baselines with a bar between each pair would chain into `12/34/56`, a repeated solidus
+    with no parentheses, so a join now advances past its denominator and the second bar is left
+    undivided.
+  - **A fresh reviewer found a live regression the change had introduced, and eight latent
+    defects in its own new code.** The regression: hoisting the fragment sort out of the assembly
+    loop — necessary, since `joinFractions` reads where a level sits in its line — put it ahead of
+    `splitAtRules`, and `splitFrag` leaves a fragment's pieces in the parent's slot, so sorting
+    the parents does not sort the pieces. A table row emitted as one show operation with a
+    differently-styled run inside a cell came out `"AA ZZmid"` — the exact disorder the sort
+    exists to prevent. The other eight were latent, all in this change's own code, and all twelve
+    corpus documents are byte-identical through every fix: two scans that had come to disagree
+    about duplicate rules are now one; `bars` enforces the one-mark-per-bar contract it states,
+    which a producer emitting one path twice broke; a whitespace-only fragment past the numerator
+    emitted `"12/ 116"`; a pair straddling the artifact boundary emitted `"12/"`; `strokeWidth`
+    read its scale factors by user axis where `paintPath` classifies by page axis, so a
+    quarter-turn CTM reported 1.0 for a 1.5pt stroke; and `barMark`'s assumption that at most two
+    rules lie within a bar's thickness at one extent is now stated on the function instead of
+    being implied by it. **A review that reads the diff for what it claims, not for what it
+    changes, is what found the first one** — the hoist is three lines and its comment asserted
+    the invariant backwards.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

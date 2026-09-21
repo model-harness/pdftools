@@ -52,6 +52,12 @@ func TestMachineInitialState(t *testing.T) {
 	if !m.Visible() {
 		t.Error("render mode 0 should be visible")
 	}
+	// 1.0, not 0: the initial line width is one unit (§8.4.3.2), and zero is the
+	// legal way to ask for the thinnest line the device can draw. A stream that
+	// strokes without setting w would otherwise be reported as a hairline.
+	if m.GS.LineWidth != 1 {
+		t.Errorf("initial LineWidth = %v, want 1", m.GS.LineWidth)
+	}
 }
 
 func TestMachineTextStateOperators(t *testing.T) {
@@ -247,6 +253,34 @@ func TestMachineTextMatricesAreNotSavedByQ(t *testing.T) {
 	if m.Tm.E != 110 || m.Tm.F != 220 {
 		t.Fatalf("Tm = (%v,%v), want (110,220): Q should not restore the text matrix",
 			m.Tm.E, m.Tm.F)
+	}
+}
+
+// TestMachineLineWidth pins that w is tracked and that it is graphics state.
+//
+// It is tracked because a stroked line has no area: its whole extent across itself is this
+// number, and a consumer reading path geometry cannot otherwise tell a fraction bar from a
+// table border. It is state, not a per-path attribute, so a producer that sets it once and
+// strokes many rules must have every one of them read the same width — and Q must put the
+// old one back, or a rule stroked after a restore reports the width of a nested one.
+func TestMachineLineWidth(t *testing.T) {
+	m := NewMachine(geom.Identity)
+	run(t, m, "0.398 w", nil)
+	if m.GS.LineWidth != 0.398 {
+		t.Fatalf("LineWidth = %v, want 0.398", m.GS.LineWidth)
+	}
+
+	// Zero is a real width, not an absent one: it asks for the thinnest line the device
+	// can draw. A reader that treated it as unset would report a hairline as 1 unit.
+	run(t, m, "0 w", nil)
+	if m.GS.LineWidth != 0 {
+		t.Fatalf("LineWidth = %v after \"0 w\", want 0", m.GS.LineWidth)
+	}
+
+	m = NewMachine(geom.Identity)
+	run(t, m, "2 w q 0.5 w Q", nil)
+	if m.GS.LineWidth != 2 {
+		t.Errorf("LineWidth = %v after Q, want 2", m.GS.LineWidth)
 	}
 }
 
@@ -535,7 +569,7 @@ func TestMachineVisibleRenderModes(t *testing.T) {
 func TestMachineApplyReportsStateOperators(t *testing.T) {
 	m := NewMachine(geom.Identity)
 	stateOps := []string{
-		"q", "Q", "cm", "W", "W*", "BT", "ET", "Tf", "Tc", "Tw", "Tz", "TL",
+		"q", "Q", "cm", "w", "W", "W*", "BT", "ET", "Tf", "Tc", "Tw", "Tz", "TL",
 		"Ts", "Tr", "Td", "TD", "Tm", "T*", "BMC", "BDC", "EMC",
 	}
 	for _, name := range stateOps {
@@ -545,6 +579,14 @@ func TestMachineApplyReportsStateOperators(t *testing.T) {
 	}
 	// Text-showing and painting operators are the caller's business: Apply must
 	// report false so a caller can tell what it still has to handle.
+	//
+	// "gs" is in this list for a different reason, and it is a gap rather than a
+	// division of labour: it *is* a graphics-state operator, and an ExtGState may
+	// carry /LW, so a producer that sets its line width that way leaves LineWidth
+	// holding whatever the last "w" set. Applying it needs the page's resource
+	// dictionary, which this package deliberately does not take. Reported false so
+	// the caller at least knows the operator went unread — see the note on
+	// GraphicsState.LineWidth.
 	for _, name := range []string{"Tj", "TJ", "'", `"`, "Do", "re", "f", "S", "n", "gs"} {
 		if m.Apply(Op{Name: name}) {
 			t.Errorf("Apply(%s) = true, want false", name)
@@ -557,7 +599,7 @@ func TestMachineShortOperandListsAreSafe(t *testing.T) {
 	// these constantly, and a panic here loses the whole document.
 	m := NewMachine(geom.Identity)
 	for _, name := range []string{
-		"cm", "Tf", "Tc", "Tw", "Tz", "TL", "Ts", "Tr", "Td", "TD", "Tm",
+		"cm", "w", "Tf", "Tc", "Tw", "Tz", "TL", "Ts", "Tr", "Td", "TD", "Tm",
 		"BMC", "BDC",
 	} {
 		m.Apply(Op{Name: name})
@@ -567,6 +609,12 @@ func TestMachineShortOperandListsAreSafe(t *testing.T) {
 	run(t, m, "/F1 10 Tf 100 Tz", nil)
 	if m.GS.Text.Font != "F1" || m.GS.Text.Scale != 100 {
 		t.Fatalf("machine damaged by empty operands: %+v", m.GS.Text)
+	}
+	// w is the one operator here whose operand-count guard is observable: reading
+	// operand 0 of an empty list yields 0, and 0 is a legal width meaning "hairline",
+	// so dropping the guard would silently turn a malformed w into a real state change.
+	if m.GS.LineWidth != 1 {
+		t.Errorf("LineWidth = %v after a bare w, want 1 — the operand guard must leave it alone", m.GS.LineWidth)
 	}
 }
 

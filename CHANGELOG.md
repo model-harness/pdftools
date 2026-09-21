@@ -5,6 +5,91 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-21
+
+- **A stacked fraction is read as one quantity.** Two baselines with a rule between them mean 𝑎
+  divided by 𝑏; read as text they were 𝑎 and 𝑏 separated by whatever the wrap inferred, so ISO
+  32000-2 page 205 emitted `𝐿∗ + 16 116` — not a formula that is hard to read, a *different*
+  formula, indistinguishable from a page that really said those two things in sequence.
+  `extract.joinFractions` rewrites the pair into ISO 80000-2's solidus form, `(𝐿∗ + 16)/116`, with
+  the parentheses the standard requires when a level is a sum or a difference. 73 fractions over
+  the 12 documents on disk — 71 in ISO 32000-2, on 27 of its 1023 pages, and 2 in one arXiv paper — out of 281405
+  (line pair, mark) combinations that put a mark between two baselines, with nothing that is not a
+  fraction accepted anywhere. ADR 0014 records the decision.
+  - **Four measurements separate a bar from a row rule, an underline or a cell edge**, each worth a
+    count taken by turning it off with the other three left on: balance 27, thickness 8, overhang 2,
+    side 1. Every rejection is named in the source by document and page, because a threshold with no
+    named counterexample is a guess. Accepted fractions fall in overhang −0.0137..0.0763, balance
+    0.2795..0.3561, gap 1.0964..1.6304; the nearest thing overhang has to reject sits at 0.3694 and
+    balance's 27 are all underlines at 0.0500–0.0811.
+  - **Recall came from grouping, not from loosening: 31 to 73 with no threshold moved.** A compound
+    level is many fragments — `𝐿∗ + 16` is four, the CIE chromaticity numerators eighteen — so
+    gathering every fragment the bar spans on each baseline is what finds the compound cases.
+  - **Two public fields, because the two producers draw the bar incompatibly.** `doc.Rule.Width`
+    and `content.GraphicsState.LineWidth`: ISO 32000-2 *fills* a rectangle, so both long edges
+    arrive and the thickness is their separation (0.60–0.72pt), while pdfTeX *strokes* one line with
+    no second edge anywhere on the page and its thickness exists only in `w`. A reader with only
+    the pair finds every fraction in the ISO documents and none in a LaTeX one. `LineWidth` is
+    seeded to 1.0 per §8.4.3.2, since zero is the legal way to ask for a hairline and not the
+    absence of a value.
+  - **A grid line is three or more rules at one extent, and the first version of that test made two
+    fractions cancel each other.** Two bars of the same width at the same indent are each other's
+    far same-extent partner, so a page setting the same formula twice lost both — `\frac{1 + 2}{3}`
+    and `\frac{12}{3 + 4}` share the extent 294.554..316.693 because `1 + 2` and `3 + 4` set to the
+    same width in Computer Modern. ISO 32000-2's same-width equations happen to sit at different x,
+    which is the only reason the corpus was silent. Three is the floor because a booktabs table's
+    top, mid and bottom rules share an extent, which is what still rejects the hardest false
+    positive on disk (a bottom rule 75.09pt off its partner, passing overhang at 0.1707 and balance
+    at 0.3887). Measured before it was written: admitting the two-rule case adds **452 marks over
+    the 12 documents and zero fractions**, and four documents' Markdown is byte-identical.
+  - **`testdata/reference/fractions.pdf` is the eleventh reference fixture and the only fraction
+    test a clone can run**, every corpus fraction being in a gitignored ISO document. Built with
+    `pdflatex` so its bars are strokes, it holds the same-extent collision and a full-width
+    `\rule` between two paragraphs — the corpus's commonest false-positive shape — and its gold
+    asserts that rule yields no solidus. Enforced in `exactFixtures`; it fails against the
+    pre-fix binary on exactly the two colliding equations.
+  - **Twenty-three mutations on the geometry, twenty-one killed from `./extract/` alone.** An
+    earlier pass reported twelve of twelve killed with `./cmd/pdfspec/` included and three of
+    those kills came only from the fixture and corpus tests — a guard held up by a fixture is not
+    covered by the package that owns it. Two inclusive bounds needed exact coordinates: `700.1 −
+    700` is 0.10000000000002274 in float64, *above* `barThickMin` rather than on it. Two further
+    mutants survived a pass with every other one killed and both were unobservable by luck rather
+    than by equivalence — the mark sort's second key only matters when duplicates of two marks
+    interleave, the split-run guard only when a level's fragments overlap on the page — and both
+    now have a fixture built for that state. The two remaining survivors are stated on the code:
+    `joinFraction`'s opening position check, which rejects nothing balance does not also reject
+    and is kept for keeping the gap strictly positive, and the zero-width/zero-height bound, which
+    is a check on the producer's numbers rather than a filter.
+  - **A fresh reviewer found a live regression this change had introduced, and eight latent
+    defects in its own new code.** The regression: the fragment sort had to leave the assembly
+    loop so `joinFractions` could read where a level sits in its line, and it was hoisted one call
+    too far — ahead of `splitAtRules`, whose `splitFrag` leaves a fragment's pieces in the
+    parent's slot, so sorting the parents does not sort the pieces. A table row emitted as one
+    show operation with a differently-styled run inside a cell came out `"AA ZZmid"`, the exact
+    disorder the sort exists to prevent; `TestSplitPiecesSortIntoPositionOrder` fails if it moves
+    back. The eight latent ones are all in this change's own code and all twelve corpus documents
+    are byte-identical through every fix: `extentRules` replaces two scans that had come to
+    disagree about duplicate rules (two doubled bars at one extent counted as a grid and lost both
+    fractions); `dedupeMarks` enforces the one-mark-per-bar contract `bars` states; a
+    whitespace-only fragment past the numerator emitted `"12/ 116"`; a pair straddling the
+    artifact boundary emitted `"12/"`, a division with no divisor; a stacked nested fraction
+    chained into `12/34/56`, a form ISO 80000-2 forbids; `strokeWidth` read its scale factors by
+    user axis where `paintPath` classifies by page axis, reporting 1.0 for a stroke 1.5pt wide on
+    the page under a quarter-turn CTM; `barMark`'s assumption that at most two rules lie within a
+    bar's thickness at one extent is now stated rather than implied; and
+    `TestFractionKeepsEveryCharacter` was renamed, because the rewrite deletes one space
+    deliberately and the test asserted three substrings instead of the string.
+  - **Three limitations recorded rather than papered over.** An inline `\frac` is not joined,
+    because scriptstyle levels sit either side of the prose baseline and are not adjacent line
+    records — measured, `An inline fraction $\frac{12}{116}$ sits in a sentence` extracts as three
+    lines, and the numerator splitting across two of them is a separate line-assignment defect.
+    An inline nested fraction flattens: page 177's `1/(sin 𝑗/2)` emits `1sin𝑗/2`, wrong at HEAD
+    too. The stacked nested case is guarded instead, since chaining two joins would emit a
+    repeated solidus with no parentheses, which ISO 80000-2 does not permit.
+    `doc.Page.Rules`' own documentation was wrong in both directions and is re-measured: 793 of
+    ISO 32000-2's 72002 painting operators carry a real MCID rather than sitting in an `/Artifact`,
+    and of the 647 pages that both paint and show text exactly one paints first.
+
 ### Fixed — 2026-08-17
 
 - **The space threshold was too low by a third, and the logged reason it could not be raised was

@@ -56,6 +56,7 @@ var referenceFixtures = []struct {
 	{"tagged-lists", "list markers the structure tree declares, bulleted and numbered"},
 	{"tagged-table", "a table grid the structure tree declares, with a header row"},
 	{"metadata", "a page whose point is its information dictionary: the prose must stay one paragraph"},
+	{"fractions", "stacked fractions from a producer that strokes its bars, two of them at one extent"},
 }
 
 // TestReferenceFidelity is the assertion that must hold: the words the document
@@ -209,6 +210,16 @@ func TestReferenceExactMatch(t *testing.T) {
 		// Enforced so that stays true, with TestReferenceFrontmatter asserting the metadata
 		// itself.
 		"metadata": true,
+
+		// Three stacked fractions and a horizontal rule that divides nothing, exact on its
+		// first build. Enforced because it is the only fraction test a clone can run: every
+		// fraction in the corpus lives in a gitignored ISO document, and this is also the only
+		// document on disk whose bars are *stroked*, where a bar carries its own width instead
+		// of arriving as two edges. Two of its three bars share an extent, which is the shape
+		// that made a same-extent grid test cancel two fractions against each other — a
+		// fidelity-only assertion would not have caught it, because both equations still
+		// produced text.
+		"fractions": true,
 
 		// Not here, and measured rather than assumed: "text-styles" is not a styling gap
 		// at all. Every emphasis

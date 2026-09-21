@@ -171,6 +171,100 @@ func TestPathClearedAtPaint(t *testing.T) {
 	}
 }
 
+// widthsOf renders each rule's recorded thickness, which rulesOf deliberately omits: a
+// rule's position and its thickness are separate claims and an assertion on both at once
+// cannot say which one moved.
+func widthsOf(p doc.Page) string {
+	var out []string
+	for _, r := range p.Rules {
+		out = append(out, fmt.Sprintf("%.3f", r.Width))
+	}
+	return strings.Join(out, " ")
+}
+
+// TestStrokeRecordsItsWidth pins that a stroked rule carries the width it was stroked with.
+//
+// This is the measurement a fill cannot supply. A stroke is reported once and has no area,
+// so nothing in its own coordinates says how thick it is — and pdfTeX draws a fraction bar
+// this way, which is why extract/fraction.go reads the field at all.
+func TestStrokeRecordsItsWidth(t *testing.T) {
+	p := extractPage(t, "0.398 w 100 600 m 300 600 l S")
+	if got, want := widthsOf(p), "0.398"; got != want {
+		t.Errorf("widths = %q, want %q", got, want)
+	}
+}
+
+// TestStrokeWidthDefaultsToOne pins the initial width rather than zero.
+//
+// A producer that strokes without setting w gets a 1-unit line (§8.4.3.2). Reporting zero
+// would make it indistinguishable from a fill edge, which is the one distinction the field
+// exists to carry.
+func TestStrokeWidthDefaultsToOne(t *testing.T) {
+	p := extractPage(t, "100 600 m 300 600 l S")
+	if got, want := widthsOf(p), "1.000"; got != want {
+		t.Errorf("widths = %q, want %q", got, want)
+	}
+}
+
+// TestFillRecordsNoWidth pins that a fill reports zero however wide the line width is.
+//
+// A fill does not consult w, so carrying it here would report a fraction bar's thickness as
+// whatever the last stroke happened to set. The bar's real thickness is the distance between
+// the two edges the fill emits, which is the consumer's measurement to make.
+func TestFillRecordsNoWidth(t *testing.T) {
+	p := extractPage(t, "3 w 100 600 200 0.6 re f")
+	if got, want := widthsOf(p), "0.000 0.000 0.000 0.000"; got != want {
+		t.Errorf("widths = %q, want %q", got, want)
+	}
+}
+
+// TestStrokeWidthScaledByCTM pins that the width is in page units, like every coordinate
+// beside it.
+//
+// w is in unscaled user space, so a producer drawing inside a scaled frame states a number
+// that is not the thickness on the page. A consumer comparing the width against a threshold
+// in points needs the scaled one, and mixing the two is how a hairline inside a 10x frame
+// reads as a border.
+func TestStrokeWidthScaledByCTM(t *testing.T) {
+	p := extractPage(t, "q 2 0 0 3 0 0 cm 0.5 w 50 200 m 150 200 l S Q")
+	// Horizontal rule, so its thickness is across the y axis and takes the y factor.
+	if got, want := widthsOf(p), "1.500"; got != want {
+		t.Errorf("widths = %q, want %q", got, want)
+	}
+	// And the position still passed through the same matrix, so the two cannot have been
+	// read from different states.
+	if got, want := rulesOf(p), "H 600 100-300"; got != want {
+		t.Errorf("rules = %q, want %q", got, want)
+	}
+}
+
+// TestVerticalStrokeWidthTakesTheOtherFactor pins that thickness is perpendicular to the
+// rule's own axis, which is the whole reason strokeWidth returns two numbers.
+func TestVerticalStrokeWidthTakesTheOtherFactor(t *testing.T) {
+	p := extractPage(t, "q 2 0 0 3 0 0 cm 0.5 w 50 100 m 50 200 l S Q")
+	if got, want := widthsOf(p), "1.000"; got != want {
+		t.Errorf("widths = %q, want %q — a vertical rule's thickness is scaled by x, not y", got, want)
+	}
+}
+
+// TestStrokeWidthUnderAQuarterTurn is what the two tests above cannot see: both use a diagonal
+// matrix, where the user axes and the page axes coincide and either indexing of the two scale
+// factors gives the same answer.
+//
+// Here they do not. "0 2 3 0 0 0 cm" sends a user-horizontal line down the page — the rule
+// arrives vertical at x=300 — and its thickness is across user y, scaled by 3 rather than by
+// the 2 the user-x column carries. Reading the factors by user axis when paintPath classifies
+// by page axis reported 1.000 for a stroke that is 1.500 wide on the page.
+func TestStrokeWidthUnderAQuarterTurn(t *testing.T) {
+	p := extractPage(t, "q 0 2 3 0 0 0 cm 0.5 w 50 100 m 150 100 l S Q")
+	if got, want := rulesOf(p), "V 300 100-300"; got != want {
+		t.Fatalf("rules = %q, want %q — the turn has to reach the geometry too", got, want)
+	}
+	if got, want := widthsOf(p), "1.500"; got != want {
+		t.Errorf("widths = %q, want %q", got, want)
+	}
+}
+
 // cellStream draws a two-cell row with a vertical rule in the gap, and shows the two cells
 // as one Tj at a single size — which is how a producer emits a table row, and why the cells
 // arrive as one fragment with an inferred space between them.
@@ -193,6 +287,26 @@ func TestSplitAtRuleDividesTheFragment(t *testing.T) {
 	p := extractPage(t, cellStream("190"))
 	got := spansOf(p)
 	want := []string{"Left ", "Right"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("spans = %q, want %q", got, want)
+	}
+}
+
+// TestSplitPiecesSortIntoPositionOrder pins that the pieces of a split fragment are ordered
+// against the rest of the line and not against their parent's position.
+//
+// splitFrag leaves a fragment's pieces in that fragment's own slot, so sorting the line
+// before the split leaves the pieces wherever the parent sat: "Left" at 100 and "Right" at
+// 200 are one show operation, and a Courier "mid" at 150 drawn after them stays behind both
+// pieces, emitting "Left Rightmid". The sort has to run on the pieces, which means after the
+// split — the whole reason a line is sorted at all is that a producer may draw it out of
+// order, and this is that case arriving through the split rather than through the stream.
+func TestSplitPiecesSortIntoPositionOrder(t *testing.T) {
+	p := extractPage(t, "1 0 0 RG 190 600 m 190 620 l S\n"+
+		"BT /F1 12 Tf 100 605 Td (Left) Tj 100 0 Td (Right) Tj ET\n"+
+		"BT /F2 12 Tf 1 0 0 1 150 605 Tm (mid) Tj ET")
+	got := spansOf(p)
+	want := []string{"Left ", "mid", "Right"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("spans = %q, want %q", got, want)
 	}

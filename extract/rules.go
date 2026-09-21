@@ -95,9 +95,13 @@ func (r *run) applyPath(m *content.Machine, op content.Op) bool {
 		if r.path.have {
 			r.addSeg(seg{r.path.cx, r.path.cy, r.path.sx, r.path.sy})
 		}
-		r.paintPath()
-	case "S", "f", "F", "f*", "B", "B*":
-		r.paintPath()
+		r.paintPath(strokeWidth(m))
+	case "S", "B", "B*":
+		r.paintPath(strokeWidth(m))
+	case "f", "F", "f*":
+		// A fill has no stroke width. Its thickness is the distance between the two
+		// edges it emits, which is a different measurement and the caller's to make.
+		r.paintPath([2]float64{})
 	case "n":
 		// No-paint. This is the clipping idiom — "W n" establishes a clip and draws
 		// nothing — and a clip is not ink. Treating it as a rule would put a table edge
@@ -116,12 +120,46 @@ func (r *run) addSeg(s seg) {
 	r.path.segs = append(r.path.segs, s)
 }
 
+// strokeWidth returns the current line width in page units, measured across the line rather
+// than along it: slot 0 for a rule that runs down the page and slot 1 for one that runs
+// across, which is how paintPath indexes it.
+//
+// Two numbers because a rule's thickness is perpendicular to its own axis, so a page-vertical
+// rule is scaled by the factor across the page's x and a page-horizontal one by the factor
+// across its y. The swap is what makes the indices mean that. ScaleFactors is denominated in
+// the *user* axes — it returns the magnitudes of the transformed unit x and y vectors — while
+// paintPath classifies a rule by the page axis it ended up on, and a quarter-turn matrix
+// exchanges the two: under "0 2 3 0 0 0 cm" a user-horizontal line lands vertical on the page
+// and its thickness, across user y, is scaled by 3 rather than by 2. B is the page-y component
+// of the transformed user-x unit vector, so |B| exceeding |A| is exactly the case where user x
+// points along the page's y. Only quarter turns can reach here at all: paintPath records a
+// segment only when it is exactly axis-aligned on the page, and anything between leaves no
+// rule to measure.
+//
+// A skewed matrix is not answered by either number, and this is not guarded against. Each is
+// the magnitude of one column, which is the length of a transformed unit vector and not the
+// perpendicular distance between the stroke's two sides once the axes are no longer square.
+// How often a producer skews a rule is not measured here, so the honest state is that Width
+// would be wrong in that case, not that it cannot arise.
+func strokeWidth(m *content.Machine) [2]float64 {
+	sx, sy := m.GS.CTM.ScaleFactors()
+	if math.Abs(m.GS.CTM.B) > math.Abs(m.GS.CTM.A) {
+		sx, sy = sy, sx
+	}
+	return [2]float64{m.GS.LineWidth * sx, m.GS.LineWidth * sy}
+}
+
 // paintPath turns the finished path's axis-aligned segments into rules and clears it.
 //
 // Only axis-aligned segments survive. A table's edges are horizontal and vertical by
 // construction, and admitting a near-miss would place a column boundary from the
 // diagonal of a figure — the corpus draws 421 diagonals, all of them in artwork.
-func (r *run) paintPath() {
+//
+// width is the stroke thickness across each axis, or the zero value for a fill. It is
+// recorded rather than used: a stroked line is reported once and has no area, so its
+// thickness is not recoverable from the rule's own coordinates the way a filled
+// rectangle's is.
+func (r *run) paintPath(width [2]float64) {
 	for _, s := range r.path.segs {
 		if len(r.rules) >= maxRules {
 			break
@@ -132,11 +170,13 @@ func (r *run) paintPath() {
 			r.rules = append(r.rules, doc.Rule{
 				Vertical: true, Pos: s.x0,
 				From: math.Min(s.y0, s.y1), To: math.Max(s.y0, s.y1),
+				Width: width[0],
 			})
 		case exactly(dy) && !exactly(dx):
 			r.rules = append(r.rules, doc.Rule{
 				Pos:  s.y0,
 				From: math.Min(s.x0, s.x1), To: math.Max(s.x0, s.x1),
+				Width: width[1],
 			})
 		}
 	}
@@ -165,7 +205,7 @@ func (r *run) paintPath() {
 // actually encloses.
 //
 // Nothing is lost when no rule matches: a fragment with no matching cut is left exactly
-// as it was, which is why the 8 reference fixtures that draw no rules at all are
+// as it was, which is why the 9 reference fixtures that draw no rules at all are
 // bit-identical across this change.
 func (r *run) splitAtRules() {
 	if len(r.rules) == 0 {

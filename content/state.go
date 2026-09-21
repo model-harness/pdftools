@@ -48,12 +48,30 @@ type TextState struct {
 // confused with a font's PostScript name.
 type Name string
 
-// GraphicsState is the part of the graphics state that affects text placement.
-// The full state includes color, line width, and dash patterns, none of which
-// change where a glyph lands, so none of them are tracked.
+// GraphicsState is the part of the graphics state that affects where ink lands.
+// The full state also includes color, dash patterns, line joins and caps, none of
+// which move anything, so none of them are tracked.
 type GraphicsState struct {
 	CTM  geom.Matrix
 	Text TextState
+
+	// LineWidth is w, in unscaled user units. It moves no glyph, but a stroked
+	// line has no area of its own — its whole extent perpendicular to itself is
+	// this number — so a consumer reading path geometry cannot tell a hairline
+	// from a 3pt border without it. Zero is legal and means the thinnest line the
+	// device can render (§8.4.3.2), which is not the same as absent.
+	//
+	// Set by "w" and by nothing else, which is a known gap rather than the whole
+	// story: an ExtGState may carry /LW, so "/GS0 gs" can change the line width
+	// without a "w" anywhere, and this field then reports the stale value — 1 if
+	// nothing set one. Reading it needs the page's resource dictionary, which this
+	// package does not take on purpose: it interprets a stream and resolves no
+	// references. Apply reports false for "gs" so a caller that does have the
+	// resources can see the operator go by, and a caller that needs the width to
+	// be right must handle it. Both directions are wrong in a way that matters to
+	// a consumer measuring a mark: a 3pt border set through an ExtGState reports 1,
+	// and a hairline set that way after an unrelated "3 w" reports 3.
+	LineWidth float64
 
 	// ClipDepth counts how many clipping paths are active. It is carried so a
 	// consumer can tell that text may be clipped away, without this package
@@ -103,8 +121,12 @@ type markedContent struct {
 func NewMachine(ctm geom.Matrix) *Machine {
 	return &Machine{
 		GS: GraphicsState{
-			CTM:  ctm,
-			Text: TextState{Scale: 100},
+			CTM: ctm,
+			// 1.0 is the initial line width (§8.4.3.2), not a guess: a stream that
+			// strokes without setting w gets a 1-unit line, and defaulting to zero
+			// would report it as a hairline.
+			LineWidth: 1,
+			Text:      TextState{Scale: 100},
 		},
 		Tm:  geom.Identity,
 		Tlm: geom.Identity,
@@ -171,6 +193,14 @@ func (m *Machine) Apply(op Op) bool {
 			}
 			// cm concatenates: the new matrix applies before the existing CTM.
 			m.GS.CTM = cm.Mul(m.GS.CTM)
+		}
+	case "w":
+		// Taken as written, including a negative operand, which §8.4.3.2 does not allow. This
+		// package reports what the stream says and leaves the judgement to a consumer — the
+		// same reason Op.Num does not range-check anything else — and clamping here would make
+		// a malformed width indistinguishable from a hairline.
+		if len(op.Operands) >= 1 {
+			m.GS.LineWidth = op.Num(0)
 		}
 	case "W", "W*":
 		m.GS.ClipDepth++

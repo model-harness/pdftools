@@ -456,7 +456,7 @@ func assign(rows []band, n int) {
 // rebuild returns the page's blocks with each table's bands replaced by cell blocks.
 //
 // A block with no table band in it is passed through untouched, which is what keeps this
-// change invisible to the 8 reference fixtures that draw no rules and to every page whose
+// change invisible to the 9 reference fixtures that draw no rules and to every page whose
 // strokes are artwork. A block with one is taken apart: its non-table bands become blocks
 // carrying everything the original declared, and each cell becomes a block of its own.
 //

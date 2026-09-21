@@ -115,15 +115,28 @@ type Page struct {
 	// word spacing. A rule between two glyphs can, and it is the producer's own
 	// statement rather than a statistic about it.
 	//
-	// On the page rather than on a block because a rule belongs to no block. It is
-	// drawn outside any marked content, frequently before the text it encloses, and
-	// one rule bounds cells on both sides of it. Nothing downstream of layout reads
-	// these, and no accounting test counts them: they carry no characters, so they
-	// cannot affect the conservation invariant that every other field here is subject
-	// to.
+	// On the page rather than on a block because a rule belongs to no block: one rule
+	// bounds the cells on both sides of it, so attributing it to either is a choice
+	// the producer never made. Marked content cannot decide it either. Of ISO
+	// 32000-2's 72,002 painting operators, 71,194 sit inside an /Artifact with no MCID
+	// and 15 outside any marked content at all — a producer usually declares a rule
+	// not to be content — but 793 sit inside a Span, a P or a Figure carrying a real
+	// identifier, which is how page 205 paints the fraction bars extract reads. Nor
+	// are they painted ahead of the text they enclose: of the 647 pages that both
+	// paint and show text, exactly one paints first.
 	//
-	// Empty for a page that draws none, which is most pages — 580 of ISO 32000-2's
-	// 1,023 draw at least one, and 8 of the 9 reference fixtures draw none at all.
+	// Nothing downstream of layout reads these, and no accounting test counts them:
+	// they carry no characters, so they cannot affect the conservation invariant that
+	// every other field here is subject to.
+	//
+	// Empty for a page that draws none, which is the minority — 658 of ISO 32000-2's
+	// 1,023 draw at least one, 284,866 rules in all, and 9 of the 11 reference
+	// fixtures draw none.
+	//
+	// This comment said 580 pages before, and that is a corrected mismeasurement
+	// rather than a quantity that moved: nothing in the rule-collection path has
+	// changed the segments it records, only the width it records beside them. 658
+	// and 284,866 are what a walk of every page reports.
 	Rules []Rule
 }
 
@@ -147,6 +160,33 @@ type Rule struct {
 
 	// From and To bound the rule along its own axis, From <= To.
 	From, To float64
+
+	// Width is the rule's thickness perpendicular to itself, in page units, when
+	// it came from a stroked line; zero when it is one edge of a filled region.
+	//
+	// The two cases are not interchangeable and a consumer needs to tell them
+	// apart. A filled rectangle has area, so its thickness is the distance between
+	// the two edges reported here — both of them are. A stroked line has none: it
+	// is reported once and its thickness is only this number. That is a difference
+	// in the producer, not in the mark: ISO 32000-2 draws a fraction bar as a
+	// filled rectangle and pdfTeX strokes the same bar, so a reader that measures
+	// thickness one way sees it in one document and not the other.
+	//
+	// Zero is therefore ambiguous at the bottom end, deliberately: a hairline
+	// "0 w" stroke and a filled edge both report zero. Both are the thinnest mark
+	// the page can make, and distinguishing them would need a flag carrying no
+	// information about the geometry.
+	//
+	// A path that is filled *and* stroked reports the stroke's width on all four
+	// edges of its rectangle, so the two cases above are not exhaustive: "re B"
+	// makes every edge both a filled region's boundary and a stroke of its own.
+	//
+	// Two producer habits are not read at all, and a consumer that measures a mark
+	// should know it. A line width set through an ExtGState — "/GS0 gs" with /LW —
+	// is not seen, so this value may be whatever the last "w" set or the initial 1;
+	// and a skewed transformation has no single perpendicular extent for the
+	// thickness to be, so the number would be wrong rather than absent.
+	Width float64
 }
 
 // Length returns the rule's extent along its own axis.

@@ -1,0 +1,73 @@
+% fractions — a stacked fraction read as one quantity rather than two lines.
+%
+% One concern: two baselines with a rule between them mean 𝑎 divided by 𝑏, and read as
+% text they are 𝑎 and 𝑏 separated by whatever the wrap inferred. Extracting this document
+% before joinFractions existed gave "12 116", which is not a formula that is hard to read —
+% it is a different formula, and nothing in the output says which one the page set.
+%
+% Built with pdflatex, and that is the point rather than the convention. pdfTeX *strokes* a
+% fraction bar — "0.398 w x y m x y l S", one rule with no second edge anywhere on the
+% page — where ISO 32000-2 *fills* a rectangle and so emits both of its long edges. A
+% reader that recovers thickness only from a pair of edges finds every fraction in the ISO
+% documents and none here, which is exactly the state this file was written to catch. Every
+% fraction in the corpus lives in a gitignored PDF, so without this fixture a clone runs no
+% end-to-end fraction test at all.
+%
+% Display math, not inline. An inline \frac sets its levels in scriptstyle around the text
+% baseline, and the prose on that baseline then lies *between* the numerator and the
+% denominator — so the two levels are not adjacent line records and the rewrite cannot see
+% them. Measured on this file's own text, "An inline fraction $\frac{12}{116}$ sits in a
+% sentence" extracts as "An inline fraction 1", "2", "116 sits in a sentence": the levels
+% are not joined and the numerator is split across two lines. That is a real limitation,
+% logged as one; it is not what this fixture is for, and a fixture asserting it would be
+% pinning the wrong output. Every fraction the corpus has is set the way these are, with
+% each level alone on its own line.
+%
+% The three equations are chosen for what separates them:
+%
+%   - 12 over 116 is the simple case, and the only one whose bar has an extent of its own.
+%   - (1 + 2) over 3 needs the parentheses. ISO 80000-2 requires them when a level is a sum
+%     or a difference, because the solidus binds tighter than the "+" above it: "1 + 2/3"
+%     is a different number.
+%   - 12 over (3 + 4) takes them on the other side, and its bar is *the same extent as the
+%     equation above it* — 294.554 to 316.693 in both, because "1 + 2" and "3 + 4" set to
+%     the same width in this font. That collision is the reason this equation is here.
+%     Deciding a grid line by "has a parallel partner at this extent" made these two
+%     fractions cancel each other, and a page that sets the same formula twice draws it.
+%     Three rules at one extent are a table; two are a coincidence.
+%
+% The horizontal rule below the equations is the negative case, and it is the most common
+% false positive the corpus has: two prose paragraphs with a full-width rule between them,
+% which is a mark between two baselines with text above and below it, the same shape a
+% fraction bar has. It is declined on overhang — the rule reaches far past the wider line,
+% where a bar is drawn for the expression it divides and exceeds it by a typesetter's
+% margin. The gold file asserts that it contributes no solidus and no text, so a rule that
+% took it would fail here rather than in a corpus count nobody reads.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+
+\begin{document}
+
+A stacked fraction is two baselines with a rule between them, and on the page it means one
+quantity.
+
+\[ \frac{12}{116} \]
+
+The numerator is a sum, so the solidus form needs it bracketed.
+
+\[ \frac{1 + 2}{3} \]
+
+The denominator is a sum, and takes the brackets on the other side. Its bar is drawn at the
+same extent as the bar above it.
+
+\[ \frac{12}{3 + 4} \]
+
+The rule below this paragraph divides nothing, and is the shape a fraction bar has.
+
+\noindent\rule{\linewidth}{0.4pt}
+
+It reaches far past both lines it sits between, where a bar is drawn for the expression it
+divides.
+
+\end{document}
