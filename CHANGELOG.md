@@ -5,6 +5,34 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Documentation — 2026-09-22
+
+- **Phase 1's acceptance bar is met, and re-measured against a stronger reference than the one it
+  named.** The bar was "beat every column of §1's table on the same arXiv paper", and that table
+  came from a sibling project whose 6.89 MB file is not in this repo — so nothing in it was
+  reproducible and the claim had been inherited for the project's whole life. Re-measured at
+  `3f57dbd` on a paper this repo does have, with all columns run on that one file and poppler's
+  `pdftotext` 4.00 added as the reference the original table lacked: `pdfspec md` **291 ms**
+  against poppler 388 ms, pdfplumber 1,043 ms and `ledongthuc/pdf` 297 ms; **19 words over 25
+  characters (0.30%)** against poppler's 19, pdfplumber's 377 (15.76%) and ledongthuc's 55
+  (67.07%); longest token 71 against 71, 110 and 4,566.
+  - **The four alphanumeric counts agree within 0.15%, so nothing here is losing characters and
+    every difference is word segmentation.** `ledongthuc/pdf` recovers 99.5% of the characters and
+    1.3% of the words. That is §1's thesis as a measurement rather than a complaint.
+  - **Identical long-word counts against poppler on both files** — 19 of 19 on the paper, 332 of
+    332 on ISO 32000-2's 1,023 pages — and at scale the speed margin widens to **2.82 s against
+    15.44 s, 5.5×**. pdfplumber did not finish that file at all: still running after several
+    minutes at 3.9 GB resident.
+  - **Read by hand rather than by summary, the disagreements split in this package's favour.**
+    Poppler welds six table-header cells into single tokens, welds three hyphenated compounds, and
+    replaces two non-ASCII characters with U+FFFD. The one direction it reads better is
+    discretionary hyphenation — 7 tokens in 6,320, `under-standing` for `understanding` — which is
+    a stated policy, priced here for the first time, and the reason the *declared* soft-hyphen
+    `/ActualText` case is the half worth closing.
+  - Markdown markup is stripped before the text metrics, because `**Key**` is a 7-character token
+    whose content is 3: unstripped, `md` reports 22 long words instead of 19 and all four extras
+    are markers. Recorded so the number is not quietly flattering.
+
 ### Added — 2026-09-21
 
 - **A stacked fraction is read as one quantity.** Two baselines with a rule between them mean 𝑎

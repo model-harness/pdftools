@@ -33,6 +33,69 @@ magnitude cheaper than the Python path and two orders cheaper than an LLM call. 
 quality gap is not a speed/quality tradeoff — it is unfinished work in font and layout
 handling.
 
+**Phase 1's acceptance bar was "beat every column of that table on the same paper", and it
+has now been met against a stronger reference than the table holds — but not on the same
+paper, because that file is not in this repo.** The table above was measured in a sibling
+project and its 6.89 MB arXiv paper is not on disk here, so nothing in it can be reproduced.
+Re-measured 2026-09-22 at `3f57dbd`, all columns on one file this repo does have —
+`docs/LightOnOCR-2601.14251v1.pdf`, 12.15 MB, 17 pages, untagged, Type1 and Type3 fonts,
+DCT and Flate images — with wall clock as best of three including process start, on one
+machine, so the ratios travel and the absolute numbers do not. `pdfspec md` output has its
+Markdown markup stripped before the text metrics, because `**Key**` is a 7-character token
+whose content is 3 and counting the markers reports a segmentation defect that is not there:
+unstripped it reads 22 long words instead of 19, and the extra four are all markup.
+
+| | `pdfspec md` | poppler `pdftotext` 4.00 | pdfplumber 0.11.9 | `ledongthuc/pdf` |
+|---|---|---|---|---|
+| time | **291 ms** | 388 ms | 1,043 ms | 297 ms |
+| chars | 45,568 | 45,663 | 41,480 | 38,925 |
+| alphanumeric chars | 36,392 | 36,362 | 36,417 | 36,204 |
+| spaces | **13.44%** | 12.86% | 4.39% | 0.02% |
+| words | 6,320 | 6,295 | 2,392 | 82 |
+| words >25 ch | **19 (0.30%)** | 19 (0.30%) | 377 (15.76%) | 55 (67.07%) |
+| longest word | 71 | 71 | 110 | 4,566 |
+
+**The four alphanumeric counts agree within 0.15%, so no library here is losing characters —
+every difference between them is word segmentation.** That is the thesis of this section
+stated as a measurement rather than as a complaint: `ledongthuc/pdf` recovers 99.5% of the
+characters and 1.3% of the words, and its longest "word" is 4,566 characters, reproducing the
+signature the table above recorded at 4,069 on a different file. pdfplumber lands between the
+two, worse here (15.76% of tokens over 25 characters) than the 6.39% the table recorded.
+
+**Against poppler the long-word counts are identical, on both files, and that is the result
+worth stating.** 19 of 19 on the paper; 332 of 332 on ISO 32000-2's 1,023 pages, where the
+longest token is 166 against poppler's 169. Reading the two outputs' disagreements by hand:
+17 of the 19 long tokens are the same URLs, DOIs and filenames in both. Of the rest, poppler
+welds six table-header cells into one token each (`OverallEdit`, `TableTEDS`), welds three
+hyphenated compounds (`speedaccuracy`, `machinereadable`), and replaces two non-ASCII
+characters with U+FFFD — the `ä` in a German filename and an en dash. The one direction where
+poppler reads better is line-wrap hyphenation: 7 tokens on this file, `under-standing`,
+`halluci-nated`, `experi-ments`, where a discretionary hyphen is kept because a kept hyphen is
+repairable by a consumer and a deleted one is not. That is a stated policy rather than a
+defect, and 7 in 6,320 tokens is the price of it.
+
+At scale the margin widens, measured on `docs/ISO_32000-2_sponsored_EC3.pdf` — 18.31 MB,
+1,023 pages, tagged:
+
+| | `pdfspec md` | poppler `pdftotext` |
+|---|---|---|
+| time | **2.82 s** | 15.44 s (5.5×) |
+| chars | 2,450,894 | 2,556,530 |
+| words >25 ch | 332 (0.08%) | 332 (0.08%) |
+
+pdfplumber is absent from that table because it did not finish: left running on the same file
+it was still working after several minutes at 3.9 GB resident, which is a cost of a different
+kind from the 1,043 ms above and the reason the §1 claim about the Python path is about orders
+of magnitude rather than percentages.
+
+Two caveats on the comparison, both about what it does not say. `pdfspec md` emits Markdown —
+headings, emphasis, lists, tables — where the other three emit plain text, so it is doing
+strictly more work for the same time, and the metrics above deliberately strip that work back
+out to compare like with like. And the binary is 25.2 MB, against `ledongthuc/pdf`'s 3.5 MB for
+the same benchmark program: 10.0 MB of that is the pdfium WASM rasterizer (ADR 0005) and the
+rest is the OCR path and the font and filter subsystems, none of which the text comparison
+exercises. A caller that wants only text pays for a library it links, not for this CLI.
+
 ### Non-AI-first
 
 Tokens are the most expensive way to read a PDF that already contains its own text.
@@ -1778,6 +1841,21 @@ OKF-ified spec.
   when this was written, since three were reached later by the intra-line gap rule and the
   count is downstream of it. All 12 are drawn spaces rather than wrap decisions, and none is a
   defect; see the sub-entry below.
+  - **The discretionary hyphen itself is now measured against an outside reference, and it is
+    the one place a mature implementation reads a paper better than this one does.** The §1
+    benchmark compared `md` against poppler's `pdftotext` on `LightOnOCR-2601.14251v1.pdf`:
+    poppler joins a word TeX broke for justification and drops the hyphen, so it emits
+    `understanding`, `hallucinated`, `experiments`, `checkpoint`, `degradation`, `learning`,
+    `Accessed` where this package emits `under-standing` and the rest — **7 tokens in 6,320**,
+    0.11%. Keeping the hyphen is the stated policy and the conservative direction, since a kept
+    hyphen is repairable by a consumer and a deleted one is not recoverable from the output; the
+    figure is recorded because the trade-off was until now argued rather than priced. Nothing
+    separates a discretionary hyphen from a real one without a dictionary or a producer's
+    declaration, which is why the *declared* case — the soft-hyphen `/ActualText` item above,
+    16 structure elements — is the half worth closing first. In the other direction on the same
+    file poppler welds three genuine compounds (`speedaccuracy`, `machinereadable`,
+    `OlmoOCRBench`), so the two behaviours cost about the same and only the declared case is
+    unambiguously winnable.
   - **16 of the 483 need a walk back through spans**, because the dash is frequently a span
     of its own — a different style run, or its own MCID — leaving `prev` as a bare `-` with
     the word one span earlier. Those are the `surrounding`, `structure`, `constituent` and
