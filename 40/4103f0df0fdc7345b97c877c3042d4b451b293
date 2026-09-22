@@ -1,0 +1,80 @@
+cmd/pdfspec/corpus_test.go
+  s_5cd1b28ed520c1::t_948fd3e7ce8563 285-320,328-329
+  s_5cd1b28ed520c1::t_e13afa233ace92 8
+  s_5cd1b28ed520c1::t_243c3d50834bd6 321-327
+doc/doc.go
+  s_5cd1b28ed520c1::t_b427888d6c832c 109-125
+cmd/pdfspec/probe.go
+  s_5cd1b28ed520c1::t_5d35f194d41288 54-58,171,191,236
+  s_5cd1b28ed520c1::t_84f6f21ae8e3c0 251-255
+  s_5cd1b28ed520c1::t_6ff3796e9266e9 421-426
+  s_5cd1b28ed520c1::t_2142f1eea3d097 202-207
+objects/pdfcpu/page_test.go
+  s_5cd1b28ed520c1::t_9457a5d97cfe27 104-122,129-169,175-181
+  s_5cd1b28ed520c1::t_ac144a55cb01d7 123-128
+  s_5cd1b28ed520c1::t_e4d34899bdc636 1-103
+  s_5cd1b28ed520c1::t_7ec6fc433fedf8 170-174
+sink/markdown/markdown_test.go
+  s_5cd1b28ed520c1::t_12c2b3be45060a 873-901
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_2084d8670898ac 53,111,120
+  s_5cd1b28ed520c1::t_8463c77417df2f 2605-2606,2623
+  s_5cd1b28ed520c1::t_5f7c308403a82e 2690-2700
+  s_5cd1b28ed520c1::t_2393edf5a105d5 2648-2650,2654-2669,2673-2685
+  s_5cd1b28ed520c1::t_afd5388feef991 2647,2651-2653,2670-2672,2686-2689,2701-2706
+cmd/pdfspec/empty_test.go
+  s_5cd1b28ed520c1::t_cbc5dcdf8582c9 4,10,112-131,136,140-146,155-156
+  s_5cd1b28ed520c1::t_25423acd6fccf4 132-135,147,150-154
+  s_5cd1b28ed520c1::t_e5554c0c30890d 137-139,148-149
+  s_5cd1b28ed520c1::t_14c377c144e0a8 157
+cmd/pdfspec/font_test.go
+  s_5cd1b28ed520c1::t_e5f80d670b4a85 810-816
+cmd/pdfspec/probe_failed_test.go
+  s_5cd1b28ed520c1::t_2b61e57a73add9 1-60
+extract/extract.go
+  s_5cd1b28ed520c1::t_6c813dfc1db942 113-116,134-137,147-151
+  s_5cd1b28ed520c1::t_92c483babfba2b 84-89
+  s_5cd1b28ed520c1::t_4809caf43e93c2 103-112,117-118,125-132,152,159-163
+  s_5cd1b28ed520c1::t_76d1347fe59c49 164
+objects/pdfcpu/pdfcpu.go
+  s_5cd1b28ed520c1::t_70087a8bfd0309 157-158,160-186
+  s_5cd1b28ed520c1::t_602deeee1ff427 159,187
+extract/extract_test.go
+  s_5cd1b28ed520c1::t_cb6f4d93a2224c 4,1848-1860,1862-1876,1886-1893,1899-1906,1918
+  s_5cd1b28ed520c1::t_c385258a363d8f 29-33,66-68
+  s_5cd1b28ed520c1::t_f70dfe2c79b8a0 1877-1885
+  s_5cd1b28ed520c1::t_7a2ed803854f58 34-38,58-63,1861,1894-1898,1907-1917,1919-1931
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_c94be30f53caf5 47-48,53
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_c94be30f53caf5 94-95,100
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_cc2048c963b4f8 56-57,64,112-129,131
+  s_5cd1b28ed520c1::t_7185415443d39f 130
+  s_5cd1b28ed520c1::t_72cbbf45122a9e 132-150
+  s_5cd1b28ed520c1::t_ce388d52762be5 9
+  s_5cd1b28ed520c1::t_98ad2b396ed953 151
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_5f7c308403a82e 35-42
+  s_5cd1b28ed520c1::t_afd5388feef991 10,14-15,23,43-47
+  s_5cd1b28ed520c1::t_8463c77417df2f 11-13,16-22,24-34
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_b8a95d727f89e7 87-89
+  s_5cd1b28ed520c1::t_cb2dc56fb93c62 81-86,90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "404103f0df0fdc7345b97c877c3042d4b451b293",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
