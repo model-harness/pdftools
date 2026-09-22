@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/model-harness/pdftools/extract"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/tag"
 )
@@ -280,4 +281,49 @@ func TestCrossPageSectionsExist(t *testing.T) {
 		t.Fatal("no element spans pages: the tagged-path premise does not hold here")
 	}
 	t.Logf("%d elements span more than one page", spanning)
+}
+
+// TestCorpusEveryPageLoads is the assertion whose absence let a whole page go missing.
+//
+// Extractor.Document substitutes a blank page for one it cannot read, on purpose: one
+// malformed page must not cost the other 999. The cost of that policy is that a refusal is
+// invisible to every other check here — the counts, the conservation tests and the
+// byte-comparisons all measure what *was* read — so nothing failed when ISO/TS 32002 page 3
+// stopped loading, and its cover page was absent from every conversion for the life of the
+// project. The store asked pdfcpu to consolidate that page's resources and consolidation
+// refuses a page that marks content with /MC0 and declares no /Properties; it no longer
+// asks, and this test is what says so.
+//
+// Every page of every document, because the class is a resource dictionary a validator
+// dislikes and nothing about it is specific to one file or one page.
+func TestCorpusEveryPageLoads(t *testing.T) {
+	files := corpusFiles()
+	if len(files) == 0 {
+		t.Skip("corpus absent")
+	}
+	total := 0
+	for _, name := range files {
+		s, err := pcstore.Open(corpusFile(t, name))
+		if err != nil {
+			t.Errorf("%s: open: %v", name, err)
+			continue
+		}
+		ex := extract.New(s, extract.DefaultOptions)
+		if _, err := ex.Document(); err != nil {
+			t.Errorf("%s: Document: %v", name, err)
+		}
+		for _, f := range ex.Failed() {
+			t.Errorf("%s: %v", name, f)
+		}
+		total += s.PageCount()
+		_ = s.Close()
+	}
+	// An equality, not a floor: the list is known, so a floor's slack is only a way to
+	// miss the absence of a small document. 1,234 pages over the 11 corpus documents —
+	// not the 1,251 of docs/*.pdf, which counts the arXiv paper the corpus list excludes
+	// for exactly the reason this comment exists.
+	if len(files) != len(corpus) || total != 1234 {
+		t.Errorf("%d pages over %d of %d corpus documents, want 1234 over %d",
+			total, len(files), len(corpus), len(corpus))
+	}
 }

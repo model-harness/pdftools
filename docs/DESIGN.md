@@ -50,7 +50,7 @@ figure that blamed another implementation for this package's own defect.
 
 | | `pdfspec md` | Poppler `pdftotext` 24.04.0 | Xpdf `pdftotext` 4.00 | pdfplumber 0.11.9 | `ledongthuc/pdf` |
 |---|---|---|---|---|---|
-| time | **345 ms** | 459 ms | 388 ms | 1,043 ms | 297 ms |
+| time | **297 ms** | 459 ms | 388 ms | 1,043 ms | 297 ms |
 | chars | 45,546 | 45,703 | 45,663 | 41,480 | 38,925 |
 | alphanumeric chars | 36,392 | — | 36,362 | 36,417 | 36,204 |
 | spaces | **13.45%** | 11.61% | 12.86% | 4.39% | 0.02% |
@@ -108,7 +108,7 @@ At scale the margin widens, measured on `docs/ISO_32000-2_sponsored_EC3.pdf` —
 
 | | `pdfspec md` | Poppler 24.04.0 | Xpdf 4.00 | pdfplumber |
 |---|---|---|---|---|
-| time | **2.37 s** | 12.15 s (5.1×) | 15.44 s (6.5×) | 357.5 s (151×) |
+| time | **1.81 s** | 12.15 s (6.7×) | 15.44 s (8.5×) | 357.5 s (197×) |
 | chars | 2,450,868 | 2,562,016 | 2,556,530 | 2,535,280 |
 | words >25 ch | 332 (0.08%) | **330 (0.08%)** | 332 (0.08%) | 335 (0.08%) |
 | longest word | 166 | 169 | 169 | 166 |
@@ -117,7 +117,7 @@ At scale the margin widens, measured on `docs/ISO_32000-2_sponsored_EC3.pdf` —
 quoting selectively: pdfplumber's *segmentation* on this file is as good as anyone's** — 335
 long tokens against our 332, the same longest token — so its 15.76% on the paper above is a
 property of that paper, not of the library. What does not vary is the cost: 357.5 s against our
-2.37 s, **151×**, and 3.9 GB resident against a 286 MB peak working set. The Python path is two
+1.81 s, **197×**, and 3.9 GB resident against a 316 MB peak working set. The Python path is two
 orders of magnitude more expensive here for an answer of the same quality, which is the claim §1
 should be read as making.
 
@@ -2602,8 +2602,8 @@ OKF-ified spec.
   tolerance — and opens a new line at a baseline just ruled part of this one. It is now
   denominated in `line.height`, the tallest type size on the line, which is a property of the
   line rather than of drawing order.
-  - **One raised digit is unaffected, which is why it survived 11 fixtures and a 1,251-page
-    corpus.** The split only shows from the second glyph on. `x²` is fine; `x²³` came out as `x2`
+  - **One raised digit is unaffected, which is why it survived 11 fixtures and the corpus's
+    1,234 pages.** The split only shows from the second glyph on. `x²` is fine; `x²³` came out as `x2`
     and a new paragraph beginning `3`.
   - **Two documents change and every change is a repair.** ISO 32000-2: 21 lines carrying 26
     spurious spaces inside subscripted identifiers — `x i` for `xi`, `Domain 2i` for `Domain2i`,
@@ -2620,7 +2620,7 @@ OKF-ified spec.
     large initial raises it for whatever follows on that line — and if the next line's step were
     smaller than the raised tolerance it would be absorbed. Over all 12 documents there are
     **55,940 adjacent line pairs and none is at or under its own tolerance**, and the population
-    this change can move is smaller than that: **431 pairs, 0.77%, have a wider tolerance than
+    this change can move is smaller than that (the 12 files of docs/*.pdf, the paper included): **431 pairs, 0.77%, have a wider tolerance than
     before, by at most 1.715×, and the tightest of them clears its new tolerance by 1.176×.** The
     corpus-wide minimum, **1.004×** — a step of 5.540 against 5.520 — belongs to a pair the change
     does not touch, because it is dominated by the *next* line's own size and the old formula
@@ -2644,6 +2644,66 @@ OKF-ified spec.
     exactly. Hyphenation is off and the text ragged right so that no discretionary hyphen lands
     in a file named for something else — the first draft hyphenated `sentence` across a line and
     would have pinned that separate limit here.
+- **A whole page was missing from every conversion this repo has ever produced, and it took an
+  outside oracle to notice.** ISO/TS 32002's cover page — the English and French titles, the
+  edition line, and behind `-artifacts` the reference number and the copyright line — never
+  appeared in any output, in any mode, and `pdfspec md` exited 0. The
+  store asked pdfcpu for the page with `consolidateRes=true`, which parses the content stream,
+  computes which resources are *used*, prunes the dictionary to those, and **fails the page** when
+  a used name has no subdictionary. That page marks content with `/MC0` and declares no
+  `/Properties`, which is invalid — Table 353 requires a BDC operand to be an inline dictionary or
+  a name the `/Properties` subdictionary resolves — and it is also a page a reader has to read
+  anyway. Validating a page's resources is a different job from reading it, and this package's
+  contract is the second one, so it asks for the unconsolidated dictionary now.
+  - **Consolidation also inherited in a way the contract forbids, which is the stronger half of
+    the argument and was missing from the first version of this entry.** §7.7.3.4 says an
+    inheritable value is taken as-is, "without merging, even for composite data types such as
+    arrays and dictionaries", and that the search stops at the first `/Resources` found —
+    `objects.Store.Page`'s own comment cites the clause. Consolidation merged a page's ancestors
+    instead, so a document splitting `/Resources` across two page-tree levels got a union the
+    clause forbids. No page on disk can tell the two apart — 1,251 of 1,251 declare their own
+    `/Resources`, which is what §7.7.3.4's note tells writers to do — so a hand-built fixture
+    pins it. What is given up is the pruning, and it costs a consumer that looks a name up
+    nothing; it does cost the three that *enumerate* — `probe`'s per-page font and XObject
+    counts, `image.Reader`, the font census — which would report an ancestor's entries on a page
+    that inherits. Named rather than guarded, because the guard would be the merge.
+  - **The method is the transferable part.** Every internal check measures what *was* read, so
+    none of them could see a page that was not: the counts, the conservation invariants and the
+    byte-comparisons all reconciled with the page absent. What found it was running an
+    independent implementation over the whole corpus and reading the disagreements. Method, since
+    the figures mean nothing without it: Poppler 24.04.0 as the reference, tokens of 8 or more
+    characters that are entirely alphanumeric, our Markdown markup and backslash escapes stripped
+    from our side, set difference per document, summed. **98 such words are the reference's and
+    not ours, and the fix takes it to 94.** Of the 94: **78 are a hyphen this package keeps and
+    the reference drops** (`DER-encoded` against `DERencoded`), which is the policy priced
+    elsewhere in this document; **12** are the sponsored copies' licence watermark and **3** the
+    "Reference number" line, all artifacts dropped by design and recoverable with `-artifacts`;
+    and **1**, `Adobe356`, is unexplained and stays on the list. The **4** the fix recovered are
+    `TECHNICAL`, `SPECIFICATION`, `numériques` and `portable`. A looser tokenizer gives larger
+    numbers in every column and a residue in the hundreds; this one is narrow enough to read by
+    hand, which is the only reason its residue is a worklist rather than a statistic.
+  - **1 page of the corpus's 1,234, and the count is the wrong measure of it.** A page is not a
+    word: what was lost is a document's title in two languages and its identifier, on the page a
+    reader looks at first. The recovered output is byte-identical to the old one everywhere else —
+    11 of 12 documents unchanged — and the one moved figure is the drawn-glyph census, 2,689,358 →
+    2,689,813, which is the only assertion in the repo that noticed the page had come back.
+  - **The silent half is the worse half, and it is fixed in five places rather than three.**
+    `Extractor.Document` substitutes a blank page for one it cannot read, on purpose — one
+    malformed page must not cost the other 999 — but it *dropped the error*, so a conversion with
+    a page missing was indistinguishable from a whole one to a reader and to a script.
+    `Extractor.Failed` reports what was lost, with the reason, and `md`, `okf` and `ocr` name the
+    pages on stderr. Two more sites needed the same thing and got it from a different direction:
+    `doc.Page.Failed` travels with the page, so `md -split` writes a comment into the page file
+    instead of an empty one — the field is the reason a *sink* can tell a blank page from a page
+    that is blank — and `probe`, which has its own page loop and no `doc.Page` at all, reports a
+    refusal as a line of its own rather than skipping the row while the page count still says 14.
+    A count is not enough in any of them: which page is unreadable is the actionable half.
+  - **The guard that would have caught it is corpus-only, so the class has a clone-safe fixture
+    too.** `TestCorpusEveryPageLoads` walks every page of every corpus document and fails on any
+    refusal — and it skips in a clone, which is the same as not covering it. `objects/pdfcpu`'s
+    own test writes the malformed page out byte by byte, `/MC0` marked and `/Properties` absent,
+    with the valid form beside it as the control, because no producer this repo can drive emits
+    the shape: it is what a real one got wrong.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/model-harness/pdftools/doc"
@@ -52,13 +53,15 @@ func runMD(args []string) error {
 
 	opt := extract.DefaultOptions
 	opt.KeepArtifacts = *artifacts
-	d, err := extract.New(s, opt).Document()
+	ex := extract.New(s, opt)
+	d, err := ex.Document()
 	if err != nil {
 		return err
 	}
 	// The extractor reads the file, so it cannot know what the user called it.
 	d.Meta.Path = in
 	warnIfEmpty(d)
+	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 
 	mopt := markdown.Options{Frontmatter: *frontmatter, Artifacts: *artifacts}
 	if *split {
@@ -104,6 +107,46 @@ func warnIfEmpty(d *doc.Document) {
 	fmt.Fprint(os.Stderr, "  the fonts may carry no /ToUnicode and no recognizable glyph names,\n"+
 		"  in which case the characters are not recoverable from the file itself.\n"+
 		"  run \"pdfspec probe\" to see the fonts, or \"pdfspec ocr\" to read the pages as images.\n")
+}
+
+// warnIfPagesFailed reports on stderr that some pages could not be read.
+//
+// Named pages rather than a count, because the number is what a reader acts on: the
+// output is a document with those pages blank, and nothing in the Markdown says which
+// ones. Extractor.Document keeps the other pages on purpose — one malformed page must
+// not cost the rest — and this is the half of that policy that was missing, since a
+// conversion with a page dropped read exactly like a whole one and exited 0.
+//
+// stderr for the same reason warnIfEmpty uses it: redirecting stdout to a .md still
+// shows the warning.
+func warnIfPagesFailed(failed []extract.PageError, pages int) {
+	if len(failed) == 0 {
+		return
+	}
+	nums := make([]string, 0, len(failed))
+	for _, f := range failed {
+		nums = append(nums, strconv.Itoa(f.Page))
+	}
+	fmt.Fprintf(os.Stderr, "warning: %d of %d page(s) could not be read and are blank in the output: %s\n",
+		len(failed), pages, strings.Join(nums, ", "))
+	fmt.Fprintf(os.Stderr, "  %s\n", oneLine(failed[0].Error()))
+}
+
+// oneLine folds an error onto a single line and bounds its length.
+//
+// Because a parser's error is not a sentence. The one this warning was written for arrives
+// as eleven lines — pdfcpu prints the page's whole resource inventory after its message —
+// and printed raw it takes the warning's shape apart: the continuation lines are
+// unindented, so they read as output rather than as the reason for a warning. Taking the
+// first line alone would not do either, since the message and the start of the inventory
+// share it. Folded and capped, a reader gets the sentence and can re-run for the rest.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	const max = 200
+	if len(s) > max {
+		s = s[:max] + "…"
+	}
+	return s
 }
 
 // readOutline reconstructs the clause hierarchy, or returns nil when the file has no

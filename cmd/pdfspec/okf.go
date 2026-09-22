@@ -44,11 +44,13 @@ func runOKF(args []string) error {
 
 	eopt := extract.DefaultOptions
 	eopt.KeepArtifacts = *artifacts
-	d, err := extract.New(s, eopt).Document()
+	ex := extract.New(s, eopt)
+	d, err := ex.Document()
 	if err != nil {
 		return err
 	}
 	d.Meta.Path = in
+	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 
 	o, err := readOutline(s, d)
 	if err != nil {

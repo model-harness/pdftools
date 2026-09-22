@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
 )
 
 // TestWarnIfEmptySpeaksOnlyWhenNothingCameOut covers the signal that a conversion
@@ -106,4 +108,50 @@ func captureStderr(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// TestWarnIfPagesFailedNamesThePages covers the other silent success: a conversion that
+// dropped whole pages and said nothing.
+//
+// The case is real rather than hypothetical. ISO/TS 32002's cover page failed to load for
+// the life of the project, so every conversion of that file emitted 13 of its 14 pages,
+// with no warning and exit 0 — indistinguishable, to a reader or a script, from a complete
+// one. Extractor.Document keeps the other pages on purpose; this is the part that says
+// which one is missing.
+//
+// The page numbers are asserted rather than just the count, because the number is what a
+// reader acts on: it tells them which part of the output to distrust.
+func TestWarnIfPagesFailedNamesThePages(t *testing.T) {
+	t.Run("silent when nothing failed", func(t *testing.T) {
+		if got := captureStderr(t, func() { warnIfPagesFailed(nil, 14) }); got != "" {
+			t.Errorf("stderr = %q, want nothing", got)
+		}
+	})
+
+	t.Run("names every page and the document size", func(t *testing.T) {
+		// The first error is the real one's shape, not a sentence: pdfcpu prints the page's
+		// whole resource inventory after its message, on ten further lines. Printed raw it
+		// takes the warning apart — the continuation lines are unindented, so they read as
+		// output rather than as a reason — and a one-line fake error cannot see that.
+		failed := []extract.PageError{
+			{Page: 3, Err: errors.New(
+				"extract: page 3: pdfcpu: page 3: missing required resource subdict: Properties\n" +
+					"\tPageResourceNames:\n\tPattern: \n\tProperties: MC0\n\tXObject: Fm0\n\tFont: TT0, TT1, TT2, F1\n")},
+			{Page: 9, Err: errors.New("no content")},
+		}
+		got := captureStderr(t, func() { warnIfPagesFailed(failed, 14) })
+		for _, want := range []string{"warning:", "2 of 14", "3, 9", "Properties"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("stderr = %q, want it to contain %q", got, want)
+			}
+		}
+		if n := strings.Count(strings.TrimRight(got, "\n"), "\n"); n != 1 {
+			t.Errorf("stderr has %d newlines, want 1 — two lines, whatever shape the error arrived in:\n%s", n, got)
+		}
+		// And the page is named once. The wrapped error already says "page 3" twice; a
+		// PageError that prepended its own would make three, which is what a reader reads.
+		if n := strings.Count(got, "page 3"); n > 2 {
+			t.Errorf("%q names page 3 %d times, want at most 2", got, n)
+		}
+	})
 }

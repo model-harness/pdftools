@@ -154,9 +154,37 @@ func (s *store) Page(n int) (objects.Dict, error) {
 	if n < 1 || n > s.ctx.PageCount {
 		return nil, fmt.Errorf("objects: page %d out of range 1..%d: %w", n, s.ctx.PageCount, objects.ErrNotFound)
 	}
-	// consolidateRes=true makes pdfcpu walk the page tree and merge inherited
-	// /Resources, which the Store contract requires.
-	pcDict, _, attrs, err := s.ctx.XRefTable.PageDict(n, true)
+	// consolidateRes=false, for two reasons, and the second one is why the first is not a
+	// trade.
+	//
+	// The true form parses the content stream, computes which resources are *used*, prunes
+	// the dictionary to those, and **fails the whole page** when a used name has no
+	// subdict. ISO/TS 32002 page 3 is that page: its content marks content with /MC0 and
+	// declares no /Properties — Table 353 requires a BDC operand to be an inline dictionary
+	// or a name the /Properties subdictionary resolves — so consolidation refused it, and
+	// the cover page was silently absent from every output this package produced, in every
+	// mode. 1 page of the 11 corpus documents' 1,234 is refused by the true form and 0 by
+	// this one. Validating a page's resources is a different job from reading it, and this
+	// package's contract is the second one.
+	//
+	// The two forms also *inherit differently*, and the false one is the form the contract
+	// asks for. §7.7.3.4 says inheritable values are taken as-is, without merging, and the
+	// search stops at the first /Resources found — which is what pdfcpu reports here when
+	// asked not to consolidate. The true form merged a page's ancestors instead, so a
+	// document splitting /Resources across two page-tree levels got a union that §7.7.3.4
+	// forbids and that objects.Store.Page's own comment cites the clause against. No page
+	// on disk can tell the two apart: 1,251 of 1,251 declare their own /Resources and 0
+	// inherit, which is what §7.7.3.4's note tells writers to do.
+	//
+	// What is given up is the pruning, and it costs a consumer that looks a name up
+	// nothing — a lookup that misses is already the answer for a malformed page. It does
+	// cost a consumer that *enumerates*: probe reports len(/Font) and len(/XObject) per
+	// page, image.Reader ranges over /XObject, and the font census counts what it finds,
+	// so on a page with inherited resources those three would now report the ancestor's
+	// entries rather than the ones this page draws. Unreachable while every page declares
+	// its own, and named here rather than guarded because the guard would be the merge
+	// §7.7.3.4 forbids.
+	pcDict, _, attrs, err := s.ctx.XRefTable.PageDict(n, false)
 	if err != nil {
 		return nil, fmt.Errorf("pdfcpu: page %d: %w", n, err)
 	}

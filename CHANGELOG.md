@@ -7,6 +7,44 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-09-22
 
+- **A whole page was missing from every conversion this repo has ever produced.** ISO/TS 32002's
+  cover page — the English and French titles and the edition line, plus the reference number and
+  copyright line behind `-artifacts` — never appeared in any output, in any mode, and the command
+  exited 0. `objects/pdfcpu` asked for the page with
+  `consolidateRes=true`, which prunes the resource dictionary to what the content stream uses and
+  **fails the page** when a used name has no subdictionary; that page marks content with `/MC0`
+  and declares no `/Properties`, which Table 353 requires to be resolvable. Reading a page and
+  validating its resources are different jobs, and this package's contract is the first one.
+  - **Consolidation also merged inherited resources, which §7.7.3.4 forbids** — an inheritable
+    value is taken as-is, without merging, and the search stops at the first `/Resources` found,
+    which is what `objects.Store.Page`'s own comment cites. So the change fixes a conformance
+    violation as well as a refusal. No page on disk can tell the two readings apart, so a
+    hand-built three-level page tree pins it.
+  - **Found with an outside oracle, because nothing internal could see it**: every check here
+    measures what *was* read. Method stated, since the numbers mean nothing without it — Poppler
+    24.04.0, tokens of 8+ characters that are entirely alphanumeric, our markup and backslash
+    escapes stripped, set difference per document: **98 words are the reference's and not ours,
+    and the fix takes it to 94**. Of the 94, **78 are a hyphen this package keeps and the
+    reference drops**, 12 the licence watermark, 3 the "Reference number" line, and 1
+    (`Adobe356`) unexplained. The fix recovered **4**.
+  - **1 of the corpus's 1,234 pages, 11 of the 12 files in `docs/` byte-identical**, and one
+    figure moved: the drawn-glyph census, 2,689,358 → 2,689,813, which is the only assertion in
+    the repo that noticed. Removing consolidation also removed a second parse of every content
+    stream: ISO 32000-2 converts in **1.81 s where it took 2.37 s**, and §1's ratios are
+    re-measured with it.
+  - **The silent half is fixed in five places and is the worse half.** `Extractor.Document` keeps
+    the other pages on purpose but *dropped the error*, so an incomplete conversion read exactly
+    like a complete one. `Extractor.Failed` reports what was lost with its reason and `md`, `okf`
+    and `ocr` name the pages on stderr; `doc.Page.Failed` travels with the page so `md -split`
+    writes a comment into the page file instead of an empty one; and `probe`, which has its own
+    page loop, reports a refusal instead of skipping the row while the page count still says 14.
+    The error is folded onto one line before printing — pdfcpu's arrives with the page's whole
+    resource inventory attached, eleven lines of it, which printed raw takes the warning apart.
+  - **Clone-safe as well as corpus-covered.** `TestCorpusEveryPageLoads` fails on any refused page
+    across the corpus and skips without it; `objects/pdfcpu`'s own test writes the malformed page
+    out byte by byte with the valid form beside it as the control, since no producer this repo can
+    drive emits the shape.
+
 - **A superscript of more than one glyph opened a new line, and every reference fixture was blind
   to it.** `extract`'s same-line tolerance is `LineFrac` times a type size, and the size it read
   was the *previous fragment's*: the first raised glyph is measured against the body text and

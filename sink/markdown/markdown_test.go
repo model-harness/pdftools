@@ -870,3 +870,32 @@ func TestWriteErrorSurfaces(t *testing.T) {
 		t.Error("no error from failing writer")
 	}
 }
+
+// TestWritePageMarksAnUnreadablePage covers the split output's blind spot.
+//
+// md -split writes one file per page, so a page the extractor could not read becomes an
+// empty page-NN.md — indistinguishable from a page that is genuinely empty, which is how a
+// real document's cover page went missing without anything saying so. An HTML comment,
+// because a rendered document must not change: a reader diffing or grepping the file finds
+// it, and a Markdown renderer shows nothing.
+//
+// Only on the page that failed, and only in the per-page writer: WritePage is the split
+// path, and the whole-document path already warns on stderr where a reader will see it.
+func TestWritePageMarksAnUnreadablePage(t *testing.T) {
+	var got, clean strings.Builder
+	if err := WritePage(&got, doc.Metadata{}, doc.Page{Number: 3, Failed: true}, 14, DefaultOptions); err != nil {
+		t.Fatalf("WritePage: %v", err)
+	}
+	if err := WritePage(&clean, doc.Metadata{}, doc.Page{Number: 4}, 14, DefaultOptions); err != nil {
+		t.Fatalf("WritePage: %v", err)
+	}
+	if !strings.Contains(got.String(), "could not be read") {
+		t.Errorf("failed page rendered %q, want a note that it could not be read", got.String())
+	}
+	if !strings.HasPrefix(strings.TrimSpace(got.String()), "<!--") {
+		t.Errorf("the note is not an HTML comment: %q", got.String())
+	}
+	if strings.Contains(clean.String(), "could not be read") {
+		t.Errorf("a page that read fine carries the note: %q", clean.String())
+	}
+}

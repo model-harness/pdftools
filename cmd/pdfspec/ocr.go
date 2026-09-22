@@ -91,11 +91,13 @@ func runOCR(args []string) error {
 
 	eopt := extract.DefaultOptions
 	eopt.KeepArtifacts = *artifacts
-	d, err := extract.New(s, eopt).Document()
+	ex := extract.New(s, eopt)
+	d, err := ex.Document()
 	if err != nil {
 		return err
 	}
 	d.Meta.Path = in
+	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 
 	want, err := parseRanges(*pages, len(d.Pages))
 	if err != nil {

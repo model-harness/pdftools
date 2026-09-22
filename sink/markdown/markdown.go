@@ -78,6 +78,16 @@ func WritePage(w io.Writer, meta doc.Metadata, p doc.Page, total int, opt Option
 	if opt.Frontmatter {
 		mw.frontmatter(meta, p.Number, total)
 	}
+	// A page the extractor could not read is blank for a reason, and a blank file cannot
+	// say which. Written as an HTML comment, so a rendered document is unchanged and a
+	// reader, a grep or a diff of the file still finds it: this is the split output, where
+	// an unreadable page is otherwise an empty page-NN.md indistinguishable from a page
+	// that is genuinely empty.
+	if p.Failed {
+		mw.str("<!-- pdfspec: this page could not be read; its content is missing, not absent -->")
+		mw.nl()
+		mw.nl()
+	}
 	mw.page(p, opt)
 	if err := mw.err; err != nil {
 		return err

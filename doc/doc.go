@@ -106,6 +106,23 @@ type Page struct {
 	// read as fact.
 	Rasterized bool
 
+	// Failed reports that this page could not be read, so its emptiness is a loss and
+	// not a fact about the document.
+	//
+	// It travels with the page for the same reason Rasterized does: a consumer has to be
+	// able to tell an inference from a reading, and a blank page from a page that is
+	// blank. extract.Document substitutes an empty page for one it cannot parse — one
+	// malformed page must not cost the other 999 — and without this field that
+	// substitution is indistinguishable from a genuinely empty page to every sink, every
+	// accounting test and every reader. It was: ISO/TS 32002's cover page was absent from
+	// every conversion this repo produced and every check reconciled, because they all
+	// measure what was read.
+	//
+	// Carries no reason, on purpose. The error belongs to the extractor that met it and
+	// is available from extract.Extractor.Failed; what a sink needs is the one bit that
+	// says do not present this page as content.
+	Failed bool
+
 	// Rules are the page's axis-aligned straight strokes and fills, in the order
 	// drawn. They are the only evidence an untagged ruled table leaves behind, which
 	// is why they are carried at all: measured over every inferred space on disk, the

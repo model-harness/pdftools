@@ -81,6 +81,12 @@ type Extractor struct {
 	// difference between a fast conversion and a slow one, and the whole point of
 	// font.Load doing its work up front.
 	fonts map[objects.Ref]*font.Font
+
+	// failed records the pages the last Document call could not extract. Kept here
+	// rather than returned, because Document's contract is that one bad page costs
+	// only that page — an error return would make it cost the document — and a caller
+	// still has to be able to tell a reader which pages are missing.
+	failed []PageError
 }
 
 // New returns an Extractor over s. The Store is borrowed, not owned: closing it
@@ -94,13 +100,41 @@ func New(s objects.Store, opt Options) *Extractor {
 	}
 }
 
+// PageError reports a page Document could not extract, so a caller can say so.
+//
+// Its own type rather than a bare error because the page number is the actionable
+// half: "page 3 of 14 is missing" tells a reader which part of the document to
+// distrust, where a wrapped error tells them only that something went wrong.
+type PageError struct {
+	Page int
+	Err  error
+}
+
+// Error is the wrapped error unchanged, because Page already names the page in it and a
+// second "page 3:" in front of "extract: page 3: …" is the shape a caller prints to a user.
+// The Page field is for a caller that wants the number on its own.
+func (p PageError) Error() string { return p.Err.Error() }
+func (p PageError) Unwrap() error { return p.Err }
+
 // Document extracts every page.
 //
 // A page that fails to extract yields an empty page rather than an error for the
 // document. One malformed page out of a thousand must not cost the other 999, and
 // an empty page in the output is visible where a missing one would silently
 // renumber everything after it.
+//
+// Visible to a program, that is. It was not visible to a *reader*: the error was
+// dropped here, so a document converted with a page missing looked exactly like one
+// converted whole, and nothing in any output said which. ISO/TS 32002's cover page
+// was absent from every conversion this package produced for the life of the project
+// and the command exited 0. Failed now records what was lost, and the commands say
+// so on stderr — which is the difference between a converter that is incomplete and
+// one that is wrong about being complete.
 func (e *Extractor) Document() (*doc.Document, error) {
+	// Reset before the early return below, not after it: Failed describes the call that
+	// just ran, and a call that fails at the page count has lost nothing — reporting the
+	// previous document's missing pages for it would name the wrong file.
+	e.failed = nil
 	d := &doc.Document{Meta: e.metadata()}
 	n := e.s.PageCount()
 	if n < 0 {
@@ -110,12 +144,23 @@ func (e *Extractor) Document() (*doc.Document, error) {
 	for i := 1; i <= n; i++ {
 		p, err := e.Page(i)
 		if err != nil {
-			p = doc.Page{Number: i}
+			// Failed on the page as well as in the list, because the list is only visible
+			// to a caller that asks this Extractor and the page travels to every sink. A
+			// blank page that a reader cannot distinguish from a genuinely blank one is
+			// the defect this whole field exists for.
+			p = doc.Page{Number: i, Failed: true}
+			e.failed = append(e.failed, PageError{Page: i, Err: err})
 		}
 		d.Pages = append(d.Pages, p)
 	}
 	return d, nil
 }
+
+// Failed returns the pages the last Document call could not extract, in page order.
+//
+// Reset by each Document rather than accumulated, so it describes one extraction and
+// not the Extractor's history.
+func (e *Extractor) Failed() []PageError { return e.failed }
 
 // Page extracts one 1-based page.
 func (e *Extractor) Page(n int) (doc.Page, error) {

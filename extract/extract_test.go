@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,16 @@ type memStore struct {
 	objs    map[objects.Ref]objects.Object
 	pages   []objects.Dict
 	content [][]byte
+
+	// pageErr fails the named pages, which is the only way to reach Document's
+	// one-bad-page-does-not-cost-the-rest path: no synthetic page dict is malformed
+	// enough for Page to refuse it, and the corpus has no refused page left.
+	pageErr map[int]error
+
+	// badCount overrides PageCount with a negative number, which is the only way to
+	// reach Document's early return — and therefore the only way to see whether the
+	// failure list is reset before it or after it.
+	badCount bool
 }
 
 func (m *memStore) Resolve(o objects.Object) (objects.Object, error) {
@@ -44,9 +55,17 @@ func (m *memStore) Resolve(o objects.Object) (objects.Object, error) {
 
 func (m *memStore) Trailer() (objects.Dict, error) { return objects.Dict{}, nil }
 func (m *memStore) Catalog() (objects.Dict, error) { return objects.Dict{}, nil }
-func (m *memStore) PageCount() int                 { return len(m.pages) }
+func (m *memStore) PageCount() int {
+	if m.badCount {
+		return -1
+	}
+	return len(m.pages)
+}
 
 func (m *memStore) Page(n int) (objects.Dict, error) {
+	if err, bad := m.pageErr[n]; bad {
+		return nil, err
+	}
 	if n < 1 || n > len(m.pages) {
 		return nil, objects.ErrNotFound
 	}
@@ -1826,3 +1845,87 @@ func squeeze(s string) string {
 		return r
 	}, s)
 }
+
+// TestDocumentRecordsAFailedPage pins both halves of Document's policy: the other pages
+// survive, and the one that did not is reported.
+//
+// The second half is the one that was missing. ISO/TS 32002 page 3 failed to load for the
+// life of the project — the store asked pdfcpu to consolidate the page's resources and
+// consolidation refused it — and because the error was dropped here, every conversion of
+// that file came out with a blank cover page, read exactly like a whole document, and
+// exited 0. A caller cannot warn about what it is not told.
+func TestDocumentRecordsAFailedPage(t *testing.T) {
+	s := onePage("BT /F1 12 Tf 10 700 Td (first) Tj ET")
+	s.pages = append(s.pages, s.pages[0])
+	s.content = append(s.content, []byte("BT /F1 12 Tf 10 700 Td (second) Tj ET"))
+	s.pageErr = map[int]error{2: errRefused}
+
+	ex := New(s, DefaultOptions)
+	d, err := ex.Document()
+	if err != nil {
+		t.Fatalf("Document: %v — one bad page must not cost the document", err)
+	}
+	if len(d.Pages) != 2 {
+		t.Fatalf("pages = %d, want 2 — the failed page is kept blank so the rest are not renumbered", len(d.Pages))
+	}
+	if got := d.Pages[0].Text(); got != "first" {
+		t.Errorf("page 1 text = %q, want %q", got, "first")
+	}
+	if got := strings.TrimSpace(d.Pages[1].Text()); got != "" {
+		t.Errorf("page 2 text = %q, want empty", got)
+	}
+	// The flag on the page, not only the list on the Extractor: the list reaches a caller
+	// that asks this Extractor, and the page reaches every sink. An empty page a reader
+	// cannot tell from a genuinely empty one is the whole defect.
+	if !d.Pages[1].Failed {
+		t.Error("page 2 is not marked Failed: a sink cannot tell this blank page from a blank page")
+	}
+	if d.Pages[0].Failed {
+		t.Error("page 1 is marked Failed: only the page that failed may be")
+	}
+	failed := ex.Failed()
+	if len(failed) != 1 || failed[0].Page != 2 {
+		t.Fatalf("Failed() = %v, want one entry for page 2", failed)
+	}
+	if !strings.Contains(failed[0].Error(), "page 2") {
+		t.Errorf("Failed()[0].Error() = %q, want it to name the page", failed[0].Error())
+	}
+
+	// Unwrap, so a caller can ask what kind of failure it was rather than only which page.
+	if !errors.Is(failed[0], errRefused) {
+		t.Errorf("errors.Is(failed[0], errRefused) = false; PageError must unwrap to the cause")
+	}
+
+	// Reset per call, so Failed describes one extraction rather than the Extractor's
+	// history: a caller that converts twice must not report the first run's losses.
+	s.pageErr = nil
+	if _, err := ex.Document(); err != nil {
+		t.Fatalf("second Document: %v", err)
+	}
+	if got := ex.Failed(); len(got) != 0 {
+		t.Errorf("Failed() = %v after a clean run, want none", got)
+	}
+
+	// And reset before the early return, not after it: a call that fails at the page count
+	// has lost no page, so reporting the previous document's losses for it would name the
+	// wrong file.
+	s.pageErr = map[int]error{2: errRefused}
+	if _, err := ex.Document(); err != nil {
+		t.Fatalf("third Document: %v", err)
+	}
+	if got := ex.Failed(); len(got) != 1 {
+		t.Fatalf("Failed() = %v, want one entry before the count check runs", got)
+	}
+	s.badCount = true
+	if _, err := ex.Document(); err == nil {
+		t.Fatal("Document with a negative page count returned no error")
+	}
+	if got := ex.Failed(); len(got) != 0 {
+		t.Errorf("Failed() = %v after a call that returned an error, want none — the reset belongs above the early return", got)
+	}
+}
+
+// errRefused stands in for a store that will not hand over a page. A sentinel rather than a
+// fresh error, so the test can assert PageError unwraps to the cause and not merely that
+// something went wrong.
+var errRefused = errors.New("synthetic refusal")

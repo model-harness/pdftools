@@ -807,8 +807,13 @@ func TestCorpusDrawnCodesDecodeToText(t *testing.T) {
 		// statement about this package and becomes one about the producer.
 		t.Errorf("composite fonts with no /ToUnicode: %s", sortedCounts(noToUnicode))
 	}
-	if simple.drawn != 2689358 || composite.drawn != 211135 {
-		t.Errorf("drawn glyphs: %d simple and %d composite, want 2689358 and 211135",
+	// 2689813, up from 2689358 when ISO/TS 32002 page 3 was unreadable: the store asked
+	// pdfcpu to consolidate that page's resources, consolidation refused it for declaring
+	// /MC0 with no /Properties, and its 455 cover-page glyphs were absent from every
+	// census here. The figure moving is the census working — it is the only assertion in
+	// the repo that noticed the page had come back.
+	if simple.drawn != 2689813 || composite.drawn != 211135 {
+		t.Errorf("drawn glyphs: %d simple and %d composite, want 2689813 and 211135",
 			simple.drawn, composite.drawn)
 	}
 	if composite.inForm != 1977 || len(composites) != 96 || len(codes) != 2617 {

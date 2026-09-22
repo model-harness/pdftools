@@ -51,6 +51,11 @@ type report struct {
 	ProbeMS int64 `json:"probe_ms"`
 
 	PageDetail []pageInfo `json:"page_detail,omitempty"`
+
+	// Unreadable names the pages the store refused. Reported because probe's whole job is
+	// to say what a file holds and how it will be read: a page it cannot open is the most
+	// useful thing it can say about that page, and omitting it is how one went missing.
+	Unreadable []string `json:"unreadable,omitempty"`
 }
 
 type tagSummary struct {
@@ -163,7 +168,7 @@ func probeOne(path string, wantPages bool) report {
 		}
 	}
 
-	r.Filters, r.Fonts, r.Images, r.PageDetail = scanPages(s, wantPages)
+	r.Filters, r.Fonts, r.Images, r.PageDetail, r.Unreadable = scanPages(s, wantPages)
 
 	switch {
 	case r.Encrypted:
@@ -183,7 +188,7 @@ func probeOne(path string, wantPages bool) report {
 // scanPages walks every page for the resources that decide the extraction path:
 // which filters must be implemented, which font types must be handled, and
 // whether there is any text at all.
-func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images int, detail []pageInfo) {
+func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images int, detail []pageInfo, unreadable []string) {
 	sc := &scanner{
 		s:       s,
 		filters: map[string]bool{},
@@ -194,6 +199,12 @@ func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images
 	for n := 1; n <= s.PageCount(); n++ {
 		page, err := s.Page(n)
 		if err != nil {
+			// Reported rather than skipped. probe exists to say what a file contains and
+			// which path will read it, so a page it cannot open is the most useful thing
+			// it can say about that page — and skipping silently is how ISO/TS 32002's
+			// cover went missing from this table for the life of the project, with the
+			// per-page rows running 1, 2, 4, 5 and the total still reading 14.
+			sc.failed = append(sc.failed, fmt.Sprintf("page %d: %s", n, oneLine(err.Error())))
 			continue
 		}
 
@@ -222,7 +233,7 @@ func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images
 		}
 	}
 
-	return sortedKeys(sc.filters), sortedKeys(sc.fonts), sc.images, detail
+	return sortedKeys(sc.filters), sortedKeys(sc.fonts), sc.images, detail, sc.failed
 }
 
 // scanner accumulates the resource facts across a document.
@@ -237,6 +248,11 @@ type scanner struct {
 	fonts   map[string]bool
 	seen    map[objects.Ref]bool
 	images  int
+
+	// failed names the pages the store refused, one line each. A count would not do:
+	// which page is unreadable is the actionable half, and a report that says "13 of 14"
+	// leaves the reader to find the gap by eye.
+	failed []string
 }
 
 // maxFormDepth bounds recursion into Form XObjects. Same value and same reason as in
@@ -402,6 +418,12 @@ func printReports(rs []report) {
 		}
 		fmt.Printf("  images      %d\n", r.Images)
 		fmt.Printf("  path        %s\n", r.Path)
+		if len(r.Unreadable) > 0 {
+			fmt.Printf("  unreadable  %d page(s) the parser refused; their content is missing\n", len(r.Unreadable))
+			for _, u := range r.Unreadable {
+				fmt.Printf("    %s\n", u)
+			}
+		}
 		fmt.Printf("  probed in   %d ms\n", r.ProbeMS)
 
 		if len(r.PageDetail) > 0 {
