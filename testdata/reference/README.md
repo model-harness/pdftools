@@ -1,6 +1,6 @@
 # Reference fixtures — the yardstick
 
-Eleven small PDFs, each exercising one thing, each beside the Markdown it *should*
+Twelve small PDFs, each exercising one thing, each beside the Markdown it *should*
 produce. Everything here is ours: generated from the `.tex` sources in this
 directory, licensed MIT with the rest of the repo, and therefore committable —
 unlike the sponsored ISO documents in `docs/`, which are the corpus we measure
@@ -70,7 +70,7 @@ were learned the hard way:
 and nothing here had ever looked at it. That gap is half of why `objects/pdfcpu` could
 drop the trailer's `/Info` entry and leave every document's title, author, subject,
 keywords, creator, producer and dates empty for the project's whole life with the suite
-green: no gold file ran with the flag on, and none of the other ten sources sets any of
+green: no gold file ran with the flag on, and none of the other eleven sources sets any of
 those four fields, so the values most likely to be wrong were also the ones no
 expectation described. LaTeX does not write `\title` into `/Info` on its own — that is
 `hyperref`'s job, through `\hypersetup` — so their absence was a property of the sources
@@ -121,6 +121,7 @@ which field separates them.
 | `tagged-table.tex` | A declared table grid with a header row | yes |
 | `metadata.tex` | The information dictionary, as YAML frontmatter | no |
 | `fractions.tex` | Stacked fractions, from a producer that strokes its bars | no |
+| `superscripts.tex` | Raised and lowered runs of more than one glyph | no |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
 The `.tex` is committed beside the `.pdf` so the fixture can be rebuilt and so the
@@ -130,7 +131,7 @@ assertion nobody can check.
 ## Rebuilding
 
 ```sh
-pdflatex -interaction=nonstopmode <name>.tex        # the eight untagged fixtures
+pdflatex -interaction=nonstopmode <name>.tex        # the nine untagged fixtures
 lualatex -interaction=nonstopmode clauses.tex       # the tagged ones — see below
 lualatex -interaction=nonstopmode tagged-lists.tex
 lualatex -interaction=nonstopmode tagged-table.tex

@@ -5,21 +5,66 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-09-22
+
+- **A superscript of more than one glyph opened a new line, and every reference fixture was blind
+  to it.** `extract`'s same-line tolerance is `LineFrac` times a type size, and the size it read
+  was the *previous fragment's*: the first raised glyph is measured against the body text and
+  joins the line, the second is measured against the superscript's own size — 7pt against 10pt,
+  two thirds of the tolerance — and opens a line at a baseline just ruled part of this one. It is
+  now denominated in the tallest type size on the line, which is a property of the line rather
+  than of the order the page was drawn in.
+  - **One raised digit is unaffected, which is why it survived 11 fixtures and a 1,251-page
+    corpus.** `x²` is fine; `x²³` came out as `x2` and a new paragraph beginning `3`.
+  - **Two documents change and every change is a repair.** ISO 32000-2: 21 lines carrying 26
+    spurious spaces inside subscripted identifiers — `x i` for `xi`, `Domain 2i` for `Domain2i`, `*a*m in`
+    for `*a*min`. The arXiv paper: 391 lines to 369, including an exponent that had been splitting
+    a paragraph in two and a five-fragment scatter that now reads `*Bi*gt and *Bi*pred`. The other
+    ten documents are byte-identical.
+  - **The margin was measured before the change shipped**, because widening a tolerance can pay
+    for itself with a worse defect: the new tolerance is half the tallest size on the line, so a
+    large initial raises it for what follows. Over all 12 documents, **55,940 adjacent line pairs
+    and none at or under its own tolerance** — and the population this change can move is smaller
+    still: **431 pairs (0.77%) widen, by at most 1.715×, and the tightest clears its new tolerance
+    by 1.176×**. The corpus minimum of 1.004× belongs to a pair the change does not touch, which
+    is why both figures are recorded: one says `LineFrac` is tight here already, the other says
+    this change did not make it tighter.
+  - **Seven mutations, seven killed from `./extract/` alone**, including both directions of the
+    maximum: dropping the line's height reinstates the defect, and dropping the arriving glyph's
+    size breaks a large operator off a line of small text, which is how ISO 32000-2 sets an inline
+    summation beside its subscripted limits. The seventh came from review — the height of the
+    fragment that *opened* the line passed the whole suite, differing only in a span list — and
+    `continues`' duplicate loop over a closed line's fragments is deleted, since the field is
+    valid there too and two expressions for one quantity cannot be told apart by a test.
+  - `testdata/reference/superscripts.pdf` is the twelfth reference fixture, enforced exactly, with
+    hyphenation off so no discretionary hyphen lands in a file named for something else.
+  - **It also corrects three things in yesterday's benchmark entry, two of them in the reference
+    implementation's favour.** Of six welded table-header tokens attributed to the reference, five were
+    an artifact of comparing our *unstripped* Markdown against the reference's plain text — they
+    were in both outputs, and all six are under 25 characters, so they were never in the
+    long-token set the paragraph said they came from — and the sixth, `OverallEdit`, was this
+    defect. **The reference itself was mislabelled:** the `pdftotext` on this machine's `PATH` is
+    Xpdf 4.00 ("Glyph & Cog"), not Poppler, which has never had a 4.00. A real Poppler 24.04.0
+    ships with MiKTeX and §1 now measures both — 459 ms and 18 long tokens on the paper, 12.15 s
+    on the spec against our 2.37 s. And the ≥8-character figure was itself one-sided: normalizing
+    both sides gives 3 words against 5 before the fix and 4 against 4 after, not the 11 recorded.
+
 ### Documentation — 2026-09-22
 
 - **Phase 1's acceptance bar is met, and re-measured against a stronger reference than the one it
   named.** The bar was "beat every column of §1's table on the same arXiv paper", and that table
   came from a sibling project whose 6.89 MB file is not in this repo — so nothing in it was
   reproducible and the claim had been inherited for the project's whole life. Re-measured at
-  `3f57dbd` on a paper this repo does have, with all columns run on that one file and poppler's
-  `pdftotext` 4.00 added as the reference the original table lacked: `pdfspec md` **291 ms**
-  against poppler 388 ms, pdfplumber 1,043 ms and `ledongthuc/pdf` 297 ms; **19 words over 25
-  characters (0.30%)** against poppler's 19, pdfplumber's 377 (15.76%) and ledongthuc's 55
+  `3f57dbd` on a paper this repo does have, with all columns run on that one file and the
+  `pdftotext` on this machine's `PATH` added as the reference the original table lacked — labelled
+  poppler here and in fact Xpdf 4.00, which the entry above corrects: `pdfspec md` **291 ms**
+  against that build's 388 ms, pdfplumber 1,043 ms and `ledongthuc/pdf` 297 ms; **19 words over 25
+  characters (0.30%)** against that build's 19, pdfplumber's 377 (15.76%) and ledongthuc's 55
   (67.07%); longest token 71 against 71, 110 and 4,566.
   - **The four alphanumeric counts agree within 0.15%, so nothing here is losing characters and
     every difference is word segmentation.** `ledongthuc/pdf` recovers 99.5% of the characters and
     1.3% of the words. That is §1's thesis as a measurement rather than a complaint.
-  - **Identical long-word counts against poppler on both files** — 19 of 19 on the paper, 332 of
+  - **Identical long-word counts against that reference on both files** — 19 of 19 on the paper, 332 of
     332 on ISO 32000-2's 1,023 pages — and at scale the speed margin widens to **2.82 s against
     15.44 s, 5.5×**, with pdfplumber at **357.5 s, 127×**.
   - **pdfplumber's segmentation on the spec is as good as anyone's**, 335 long tokens against our

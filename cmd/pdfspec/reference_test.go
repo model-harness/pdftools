@@ -57,6 +57,7 @@ var referenceFixtures = []struct {
 	{"tagged-table", "a table grid the structure tree declares, with a header row"},
 	{"metadata", "a page whose point is its information dictionary: the prose must stay one paragraph"},
 	{"fractions", "stacked fractions from a producer that strokes its bars, two of them at one extent"},
+	{"superscripts", "raised and lowered runs of more than one glyph, which belong to their line"},
 }
 
 // TestReferenceFidelity is the assertion that must hold: the words the document
@@ -221,6 +222,14 @@ func TestReferenceExactMatch(t *testing.T) {
 		// produced text.
 		"fractions": true,
 
+		// A superscript or subscript of more than one glyph. Enforced because the defect it
+		// pins was invisible to every other fixture here and to most of the corpus: one raised
+		// digit is unaffected, so the split only shows from the second glyph on, and in running
+		// prose it reads as a spurious space rather than as the broken paragraph this file
+		// gets. Before the line tolerance was denominated in the line's own type size this
+		// fixture came out as four paragraphs instead of two.
+		"superscripts": true,
+
 		// Not here, and measured rather than assumed: "text-styles" is not a styling gap
 		// at all. Every emphasis
 		// marker it emits is already byte-correct; its four one-line paragraphs arrive as
@@ -256,7 +265,7 @@ func TestReferenceExactMatch(t *testing.T) {
 // every document's Title, Author, Subject, Keywords, Creator, Producer and dates empty
 // for the project's whole life with the suite green. Nothing in this harness — the only
 // place that compares output to an independently authored expectation — ran with the
-// flag on, and none of the other nine fixtures sets any of those four fields, so the
+// flag on, and none of the other eleven fixtures sets any of those four fields, so the
 // values most likely to be wrong were also the ones no gold file described. The other
 // half was TestMDFrontmatterOffByDefault, which checked that every emitted line was a
 // well-formed "key: value" and passed on six keys where twelve belong, because the

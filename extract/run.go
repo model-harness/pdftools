@@ -133,6 +133,33 @@ type line struct {
 	cross  float64
 	orient int
 
+	// height is the tallest type size on the line so far, and it is what the
+	// same-line tolerance is denominated in.
+	//
+	// The line's own scale rather than the previous fragment's, because cross is the
+	// line's baseline and a tolerance read off the last fragment makes the test depend
+	// on the order the page drew things. A superscript is the case that shows it: its
+	// first glyph is compared against the body size and joins, and its second is then
+	// compared against the superscript's own size — 7pt against 10pt — and opens a line
+	// at the position that had just been ruled part of this one. "x²³" arrived as "x2"
+	// and a new paragraph beginning "3".
+	//
+	// The consequence worth stating for a reader deciding whether the change was safe:
+	// this is pointwise at least the previous fragment's height, so wherever the two
+	// readings differ the newer one *joins* where the older one split. Every behaviour
+	// change is in that one direction, which is why an output diff over the corpus is
+	// enough evidence — 21 lines in ISO 32000-2 and 5 passages in one arXiv paper, all
+	// of them a space or a paragraph break removed, and the other ten documents
+	// byte-identical.
+	//
+	// Valid for a closed line too, and that is load-bearing rather than incidental:
+	// closeLine copies the line by value and splitAtRules rebuilds frags from copies
+	// that keep their heights, so the max never goes stale. continues reads it for the
+	// previous line, where a second loop over frags computing the same maximum used to
+	// live — two implementations of one quantity, which is the shape that cannot be
+	// tested because either can be substituted for the other.
+	height float64
+
 	// joinPrev marks a line that continues the one before it with no word boundary
 	// between them, because joinFractions found a fraction bar at the wrap and wrote the
 	// solidus into the previous line. Without it appendLine would infer its usual space
@@ -471,8 +498,13 @@ func (r *run) place(m *content.Machine, g font.Glyph, trm geom.Matrix, ox, oy, s
 	hadPen := r.havePen
 
 	prev := r.cur()
+	// prev is not read by the tolerance any more — the line's own height is — so the nil
+	// test here is for endsInSpace further down, which dereferences it. An open line always
+	// has a fragment, since startFrag runs on the statement after r.open is assigned, so
+	// nothing on this line can be nil while r.open is not; the guard is kept because the use
+	// it protects is 50 lines away and a reader of that use cannot see this one.
 	sameLine := r.open != nil && prev != nil && r.open.orient == orient &&
-		math.Abs(cross-r.open.cross) <= r.tol.LineFrac*maxf(sy, prev.height)
+		math.Abs(cross-r.open.cross) <= r.tol.LineFrac*maxf(sy, r.open.height)
 	if !sameLine {
 		r.closeLine()
 		r.open = &line{cross: cross, orient: orient}
@@ -620,6 +652,7 @@ func (r *run) appendText(s string, along, end, height float64) {
 }
 
 func (r *run) startFrag(along, end, cross float64, orient int, height, space float64, style doc.Style, mcid int, artifact bool) {
+	r.open.height = maxf(r.open.height, height)
 	r.open.frags = append(r.open.frags, frag{
 		along0:   along,
 		along1:   end,
@@ -831,7 +864,7 @@ func continues(prev, ln *line, t geom.Tolerance) bool {
 	if prev == nil || prev.orient != ln.orient {
 		return false
 	}
-	h := lineHeight(prev)
+	h := prev.height
 	if h <= 0 {
 		return false
 	}
@@ -1095,16 +1128,6 @@ func domSize(ln *line) float64 {
 		}
 	}
 	return best
-}
-
-func lineHeight(ln *line) float64 {
-	h := 0.0
-	for i := range ln.frags {
-		if ln.frags[i].height > h {
-			h = ln.frags[i].height
-		}
-	}
-	return h
 }
 
 // appendLine adds a line's fragments to a block as spans, joining to the previous

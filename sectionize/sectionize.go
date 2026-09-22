@@ -403,8 +403,13 @@ func linesText(role doc.Role) bool {
 // role either folds a newline to a space or, for a table cell, cannot hold one.
 //
 // LineFrac of the type size rather than a fixed epsilon, so a listing set in 6pt is measured
-// against 6pt, and of the larger of the two sizes — which is the extractor's own line test
-// (run.go's maxf(sy, prev.height)) rather than a second opinion about the same question. The
+// against 6pt, and of the larger of the two sizes — the same reading the extractor's own line
+// test takes, and not a second opinion about the same question. It is no longer the same
+// *expression*: run.go asks whether an arriving glyph joins an accumulating line, so it takes
+// the larger of the glyph's size and the line's tallest so far (maxf(sy, r.open.height)),
+// where this rule compares two finished spans and has no accumulated line to read. The pairwise
+// maximum is the whole of that question here; anchoring to a run would make a listing's spans
+// staircase away from whichever one came first. The
 // larger size is also the conservative direction: a superscript half the height of its line
 // clears half of its own size long before it clears half of the line's, so measuring against
 // the small span would break a line in two at every raised digit. 49 of the corpus's 179
@@ -453,7 +458,8 @@ func breakAtBaselines(blk *doc.Block) {
 // the constant.
 //
 // Two sizes, not one, because the extractor uses two. Its line test takes the larger of the
-// pair — maxf(sy, prev.height) at run.go:462, and newLine matches it for the same reason — while
+// pair — maxf(sy, r.open.height) in run.go's place, and newLine matches that reading for the
+// same reason — while
 // its space test takes the incoming glyph's own advance (run.go:448, read per glyph and never
 // maximised). So the same split is kept here: the larger size decides "one line", the following
 // span's size decides "one space". Collapsing both onto one reading would be a second opinion
@@ -561,9 +567,11 @@ func gapSpace(prev, cur *doc.Span) bool {
 // every fixture that would have killed one of them was already killing its twin in the first.
 // Duplicated tolerance arithmetic cannot be tested, only tested somewhere.
 //
-// LineFrac of the larger of the two sizes, which is the extractor's own line test
-// (run.go's maxf(sy, prev.height)) rather than a second opinion about the same question; see
-// breakAtBaselines for why the larger size is also the conservative direction.
+// LineFrac of the larger of the two sizes, which is the reading the extractor's own line test
+// takes rather than a second opinion about the same question — though not the same expression,
+// since run.go measures an arriving glyph against an accumulating line and this measures two
+// finished spans against each other; see breakAtBaselines for both halves of that and for why
+// the larger size is the conservative direction.
 //
 // Unsigned, and the page guard below is why that is now a fixture's claim rather than a measured
 // one. The witness used to be the cross-page rise — a listing continuing onto the next page steps

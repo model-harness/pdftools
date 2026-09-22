@@ -330,6 +330,81 @@ func TestLineBreakJoinsWithSpace(t *testing.T) {
 	}
 }
 
+// TestSuperscriptOfSeveralGlyphsStaysOnItsLine pins that the same-line tolerance is
+// denominated in the line's own type size and not in the previous fragment's.
+//
+// The second glyph is the one that shows it. Reading the tolerance off the fragment before
+// makes the test depend on drawing order: the first raised glyph is measured against the
+// 12pt body and joins, and the second is then measured against the superscript's own 8pt —
+// two thirds of the tolerance — and opens a new line at a baseline that had just been ruled
+// part of this one. The offset here, 4.5pt, is deliberately between the two answers: it is
+// inside 0.50 × 12 and outside 0.50 × 8. The three runs are drawn edge to edge so that no
+// space is inferred anywhere and the assertion is about line membership alone.
+//
+// Asserting the block count as well as the text, because the failure is not a lost space. A
+// new line at that position becomes a new *block*, and the paragraph breaks in half.
+func TestSuperscriptOfSeveralGlyphsStaysOnItsLine(t *testing.T) {
+	p := extractPage(t, "BT /F1 12 Tf 1 0 0 1 100 700 Tm (x) Tj ET\n"+
+		"BT /F1 8 Tf 1 0 0 1 106 704.5 Tm (23) Tj ET\n"+
+		"BT /F1 12 Tf 1 0 0 1 114.9 700 Tm (tail) Tj ET")
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1 — a superscript does not end a paragraph", len(p.Blocks))
+	}
+	if got, want := p.Text(), "x23tail"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+}
+
+// TestALineStillEndsAtALineStep is the other half of the measurement above, and it is here
+// because widening a tolerance is the kind of fix that pays for itself with a worse defect.
+//
+// A 14pt step at 12pt type is a new line whatever the line already holds, including a glyph
+// larger than the body: the tolerance is half the *tallest* type size on the line, so a 20pt
+// initial raises it to 10pt, and the step has to clear that. Measured over all 12 documents
+// on disk, no adjacent line pair comes closer than 1.004× its own tolerance in 55,940 pairs,
+// so nothing there is joined by this; the margin is thin enough to be worth a fixture rather
+// than a sentence.
+func TestALineStillEndsAtALineStep(t *testing.T) {
+	p := extractPage(t, "BT /F1 20 Tf 1 0 0 1 100 700 Tm (T) Tj ET\n"+
+		"BT /F1 12 Tf 1 0 0 1 112.3 700 Tm (his line) Tj ET\n"+
+		"BT /F1 12 Tf 1 0 0 1 100 686 Tm (and the next) Tj ET")
+	if got, want := p.Text(), "This line and the next"; got != want {
+		t.Errorf("text = %q, want %q — the 14pt step must still end the line", got, want)
+	}
+}
+
+// TestALargeGlyphJoinsALineOfSmallText is the other direction of the same maximum, and the
+// reason the tolerance takes the larger of the arriving size and the line's rather than the
+// line's alone.
+//
+// A big operator set beside small text is the case: an integral or a summation sign is drawn
+// several times the size of the limits around it and sits low, so its baseline is further from
+// the line's than half the small text would allow. Measured against its own 20pt it is well
+// inside; measured against the 7pt line it is not, and the operator would become a line of its
+// own. The corpus draws this — ISO 32000-2 sets inline summations beside subscripted variables
+// — but it cannot hold the threshold, because the output reads the same either way once the
+// lines are rejoined into a paragraph.
+// The third run is what separates the line's tallest size from the size of the fragment that
+// *opened* the line, and nothing else in the repo does: it is small again, and 6pt from the
+// line's baseline, so it is inside half the operator's 20pt and outside half the 7pt the line
+// began with. Both readings join the first two runs and only one joins this, which is why the
+// assertion is on the span count — the text reads the same either way once a wrap space is
+// inferred, and a span list is the only place the difference shows.
+func TestALargeGlyphJoinsALineOfSmallText(t *testing.T) {
+	p := extractPage(t, "BT /F1 7 Tf 1 0 0 1 100 700 Tm (n) Tj ET\n"+
+		"BT /F1 20 Tf 1 0 0 1 104 695 Tm (S) Tj ET\n"+
+		"BT /F1 7 Tf 1 0 0 1 115 694 Tm (m) Tj ET")
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	if got, want := len(p.Blocks[0].Spans), 3; got != want {
+		t.Errorf("spans = %d, want %d — three runs on one line, with no wrap space between any of them", got, want)
+	}
+	if got, want := p.Text(), "nSm"; got != want {
+		t.Errorf("text = %q, want %q — a 20pt glyph 5pt below a 7pt line is on that line, and so is the 7pt glyph after it", got, want)
+	}
+}
+
 // TestWrapSpaceTrailsThePreviousSpan pins *which* span the wrap space lands on, which
 // the test above cannot see: it concatenates the spans, and " second" and "first " read
 // the same way once joined.

@@ -1,0 +1,54 @@
+% superscripts — a raised or lowered run of more than one glyph belongs to its line.
+%
+% One concern: a superscript sits on its own baseline, a few points off the line's, and a
+% reader decides membership by how far that baseline is from the line's own. The threshold
+% has to be denominated in a type size, and the size it used was the *previous fragment's*:
+% so the first glyph of a superscript was measured against the body text and joined, and the
+% second was measured against the superscript's own size — 7pt against 10pt, 0.70 of the
+% tolerance — and opened a new line at a position that had just been ruled part of this one.
+%
+% Extracting this document before that was fixed gave "A two-glyph superscript x2", then a
+% new paragraph beginning "3 and a two-glyph subscript". One raised digit is not affected,
+% which is why the defect survived: every superscript in the reference set had a single
+% glyph, and the corpus's own cases are subscripts in running prose, where the same split
+% reads as a spurious space rather than as a broken paragraph — "x i" for "xi", "Domain 2i"
+% for "Domain2i", 26 of them over 21 lines in ISO 32000-2.
+%
+% The cases are chosen for what separates them:
+%
+%   - x^{23} and y_{45} are the minimum reproduction: two glyphs at one raised or lowered
+%     baseline. The superscript is the one that broke, because TeX raises further than it
+%     lowers — 4.5pt against 2.8pt here — and only the raised offset exceeded the collapsed
+%     tolerance.
+%   - e^{\mathrm{abc}} is the same defect in an upright font, so a reader cannot pass this
+%     file by special-casing digits.
+%   - D_{\mathrm{min}} is the case that already worked, kept as the negative control: its
+%     offset is small enough that the collapsed tolerance still admitted it.
+%   - The second paragraph is set with no math at all, and it is what proves a real line
+%     break still breaks: this fixture's whole subject is a tolerance that decides when a
+%     baseline shift means a new line, so it has to assert both answers.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+% Hyphenation off, so nothing breaks inside a word. This fixture is about a baseline
+% tolerance and nothing else; a discretionary hyphen is a separate stated limit, and letting
+% one land here would pin that limit in a file named for something else. Ragged right for the
+% same reason: justified text makes TeX prefer a hyphen to a loose line, and the penalty alone
+% is a preference rather than a prohibition.
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\raggedright
+
+\begin{document}
+
+A two-glyph superscript $x^{23}$ and a two-glyph subscript $y_{45}$ sit in this sentence, as
+does an upright superscript $e^{\mathrm{abc}}$ and the subscript $D_{\mathrm{min}}$ that a
+narrower tolerance already admitted.
+
+\bigskip
+
+\noindent This paragraph carries no raised or lowered text at all. It is here to show that a
+baseline shift of a whole line still ends the line, which is the answer the same measurement
+gives in the other direction.
+
+\end{document}

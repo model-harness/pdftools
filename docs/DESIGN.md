@@ -34,63 +34,92 @@ quality gap is not a speed/quality tradeoff — it is unfinished work in font an
 handling.
 
 **Phase 1's acceptance bar was "beat every column of that table on the same paper", and it
-has now been met against a stronger reference than the table holds — but not on the same
+has now been met against two stronger references than the table holds — but not on the same
 paper, because that file is not in this repo.** The table above was measured in a sibling
 project and its 6.89 MB arXiv paper is not on disk here, so nothing in it can be reproduced.
-Re-measured 2026-09-22 at `3f57dbd`, all columns on one file this repo does have —
-`docs/LightOnOCR-2601.14251v1.pdf`, 12.15 MB, 17 pages, untagged, Type1 and Type3 fonts,
-DCT and Flate images — with wall clock as best of three including process start, on one
-machine, so the ratios travel and the absolute numbers do not. `pdfspec md` output has its
-Markdown markup stripped before the text metrics, because `**Key**` is a 7-character token
-whose content is 3 and counting the markers reports a segmentation defect that is not there:
-unstripped it reads 22 long words instead of 19, and the extra four are all markup.
+Re-measured on one file this repo does have — `docs/LightOnOCR-2601.14251v1.pdf`, 12.15 MB, 17
+pages, untagged, Type1 and Type3 fonts, DCT and Flate images — with wall clock as best of three
+including process start, on one machine, so the ratios travel and the absolute numbers do not.
 
-| | `pdfspec md` | poppler `pdftotext` 4.00 | pdfplumber 0.11.9 | `ledongthuc/pdf` |
-|---|---|---|---|---|
-| time | **291 ms** | 388 ms | 1,043 ms | 297 ms |
-| chars | 45,568 | 45,663 | 41,480 | 38,925 |
-| alphanumeric chars | 36,392 | 36,362 | 36,417 | 36,204 |
-| spaces | **13.44%** | 12.86% | 4.39% | 0.02% |
-| words | 6,320 | 6,295 | 2,392 | 82 |
-| words >25 ch | **19 (0.30%)** | 19 (0.30%) | 377 (15.76%) | 55 (67.07%) |
-| longest word | 71 | 71 | 110 | 4,566 |
+`pdfspec md` output has its Markdown markup stripped before the text metrics — the `*`, `` ` ``
+and `#` characters and the backslash escapes — because `**Key**` is a 7-character token whose
+content is 3, and counting the markers reports a segmentation defect that is not there:
+unstripped it reads 22 long words instead of 19. Both sides of every comparison below are
+normalized that way, and the method is stated because getting it wrong once already produced a
+figure that blamed another implementation for this package's own defect.
 
-**The four alphanumeric counts agree within 0.15%, so no library here is losing characters —
-every difference between them is word segmentation.** That is the thesis of this section
-stated as a measurement rather than as a complaint: `ledongthuc/pdf` recovers 99.5% of the
-characters and 1.3% of the words, and its longest "word" is 4,566 characters, reproducing the
-signature the table above recorded at 4,069 on a different file. pdfplumber lands between the
-two, worse here (15.76% of tokens over 25 characters) than the 6.39% the table recorded.
+| | `pdfspec md` | Poppler `pdftotext` 24.04.0 | Xpdf `pdftotext` 4.00 | pdfplumber 0.11.9 | `ledongthuc/pdf` |
+|---|---|---|---|---|---|
+| time | **345 ms** | 459 ms | 388 ms | 1,043 ms | 297 ms |
+| chars | 45,546 | 45,703 | 45,663 | 41,480 | 38,925 |
+| alphanumeric chars | 36,392 | — | 36,362 | 36,417 | 36,204 |
+| spaces | **13.45%** | 11.61% | 12.86% | 4.39% | 0.02% |
+| words | 6,309 | 6,363 | 6,295 | 2,392 | 82 |
+| words >25 ch | 19 (0.30%) | **18 (0.28%)** | 19 (0.30%) | 377 (15.76%) | 55 (67.07%) |
+| longest word | 71 | 71 | 71 | 110 | 4,566 |
 
-**Against poppler the long-word counts are identical, on both files, and that is the result
-worth stating.** 19 of 19 on the paper; 332 of 332 on ISO 32000-2's 1,023 pages, where the
-longest token is 166 against poppler's 169. Reading the two outputs' disagreements by hand:
-17 of the 19 long tokens are the same URLs, DOIs and filenames in both. Of the rest, poppler
-welds six table-header cells into one token each (`OverallEdit`, `TableTEDS`), welds three
-hyphenated compounds (`speedaccuracy`, `machinereadable`), and replaces two non-ASCII
-characters with U+FFFD — the `ä` in a German filename and an en dash. The one direction where
-poppler reads better is line-wrap hyphenation: 7 tokens on this file, `under-standing`,
-`halluci-nated`, `experi-ments`, where a discretionary hyphen is kept because a kept hyphen is
-repairable by a consumer and a deleted one is not. That is a stated policy rather than a
-defect, and 7 in 6,320 tokens is the price of it.
+> **Two columns, because the first version of this table had one and it was mislabelled.** The
+> `pdftotext` on this machine's `PATH` is **Xpdf 4.00** — "Copyright 1996–2017 Glyph & Cog, LLC"
+> — not Poppler, which has never had a 4.00. Every figure attributed to poppler in the first
+> version of this section was Xpdf's. A real Poppler 24.04.0 ships with MiKTeX and is now
+> measured beside it; the two agree closely, so nothing the section concluded changes, but the
+> label was wrong and a reader checking it would have found a different program. Naming the
+> build is part of the measurement.
+
+**The alphanumeric counts agree within 0.15%, so no library here is losing characters — every
+difference between them is word segmentation.** That is the thesis of this section stated as a
+measurement rather than as a complaint: `ledongthuc/pdf` recovers 99.5% of the characters and
+1.3% of the words, and its longest "word" is 4,566 characters, reproducing the signature the
+table above recorded at 4,069 on a different file. pdfplumber lands between the two, worse here
+(15.76% of tokens over 25 characters) than the 6.39% the table recorded.
+
+**Against both references the long-word populations are the same size and nearly the same set.**
+19 against Xpdf's 19 and Poppler's 18 on the paper; 332 against 332 and 330 on ISO 32000-2's
+1,023 pages. Read token by token: against Xpdf, 18 of 19 are the same string and the one
+disagreement is a German filename where Xpdf replaces the `ä` with U+FFFD; against Poppler, 16
+are shared and the three remaining are footnote markers, where a raised digit before a URL is
+glued to it here (`1https://huggingface.co/…`) and separated there. That is this package reading
+the line as drawn, and Poppler applying a judgement about what the digit is for; neither is
+wrong and the difference is worth naming rather than scoring.
+
+> **The first version of this paragraph credited the reference implementation with six welded
+> table-header cells, and that was this package's own defect plus a comparison artifact.** Five
+> of the six — `TableTEDS`, `TextEdit`, `FormulaEdit`, `FormulaCDM`, `TableEdit` — were present
+> in *both* outputs all along, and they are all **under** 25 characters, so they were never in
+> the long-token set at all: they came from the ≥8-character word comparison, built from this
+> package's *unstripped* Markdown against the reference's plain text, where `**Table**TEDS↑`
+> matches nothing. The sixth, `OverallEdit`, really was absent, and it was a multi-glyph
+> superscript splitting the header across a paragraph break — fixed in the entry below.
+> **A comparison that normalizes one side and not the other attributes its own artifacts to the
+> other implementation**, which is worth more than the figures it corrected.
+
+Read at ≥8 characters, alphanumeric, both sides normalized, the outputs differ by **4 words each
+way against Xpdf** and **3 against Poppler's 4**. Against Xpdf: it has `degradation` and
+`hallucinated`, where a discretionary hyphen is kept here — a kept hyphen is repairable by a
+consumer and a deleted one is not, so that is a stated policy, 7 tokens in 6,309, and this is
+what it costs — plus `imagelocalization` and `speedaccuracy`, which are two words. This package
+has `Cavaillès`, `Stéphane` and `Sämtliche`, three accented words Xpdf loses to U+FFFD, plus one
+flattening of nested math. Before the superscript fix the same comparison read 3 against 5, so
+the fix moved one word out of the reference's column and added one of ours: a repaired
+`IoU(B_i^pred)` now forms a single token that no reference produces.
 
 At scale the margin widens, measured on `docs/ISO_32000-2_sponsored_EC3.pdf` — 18.31 MB,
 1,023 pages, tagged:
 
-| | `pdfspec md` | poppler `pdftotext` | pdfplumber |
-|---|---|---|---|
-| time | **2.82 s** | 15.44 s (5.5×) | 357.5 s (127×) |
-| chars | 2,450,894 | 2,556,530 | 2,535,280 |
-| words >25 ch | **332 (0.08%)** | 332 (0.08%) | 335 (0.08%) |
-| longest word | 166 | 169 | 166 |
+| | `pdfspec md` | Poppler 24.04.0 | Xpdf 4.00 | pdfplumber |
+|---|---|---|---|---|
+| time | **2.37 s** | 12.15 s (5.1×) | 15.44 s (6.5×) | 357.5 s (151×) |
+| chars | 2,450,868 | 2,562,016 | 2,556,530 | 2,535,280 |
+| words >25 ch | 332 (0.08%) | **330 (0.08%)** | 332 (0.08%) | 335 (0.08%) |
+| longest word | 166 | 169 | 169 | 166 |
 
 **That table corrects the shape of §1's complaint, and it is worth correcting rather than
 quoting selectively: pdfplumber's *segmentation* on this file is as good as anyone's** — 335
 long tokens against our 332, the same longest token — so its 15.76% on the paper above is a
 property of that paper, not of the library. What does not vary is the cost: 357.5 s against our
-2.82 s, **127×**, and 3.9 GB resident against a 286 MB peak working set. The Python path is two orders of magnitude
-more expensive here for an answer of the same quality, which is the claim §1 should be read as
-making.
+2.37 s, **151×**, and 3.9 GB resident against a 286 MB peak working set. The Python path is two
+orders of magnitude more expensive here for an answer of the same quality, which is the claim §1
+should be read as making.
 
 Two caveats on the comparison, both about what it does not say. `pdfspec md` emits Markdown —
 headings, emphasis, lists, tables — where the other three emit plain text, so it is doing
@@ -1847,17 +1876,18 @@ OKF-ified spec.
   defect; see the sub-entry below.
   - **The discretionary hyphen itself is now measured against an outside reference, and it is
     the one place a mature implementation reads a paper better than this one does.** The §1
-    benchmark compared `md` against poppler's `pdftotext` on `LightOnOCR-2601.14251v1.pdf`:
-    poppler joins a word TeX broke for justification and drops the hyphen, so it emits
+    benchmark compared `md` against both `pdftotext` builds on this machine — Xpdf 4.00 and
+    Poppler 24.04.0, which agree here — on `LightOnOCR-2601.14251v1.pdf`: each joins a word TeX
+    broke for justification and drops the hyphen, so both emit
     `understanding`, `hallucinated`, `experiments`, `checkpoint`, `degradation`, `learning`,
-    `Accessed` where this package emits `under-standing` and the rest — **7 tokens in 6,320**,
+    `Accessed` where this package emits `under-standing` and the rest — **7 tokens in 6,309**,
     0.11%. Keeping the hyphen is the stated policy and the conservative direction, since a kept
     hyphen is repairable by a consumer and a deleted one is not recoverable from the output; the
     figure is recorded because the trade-off was until now argued rather than priced. Nothing
     separates a discretionary hyphen from a real one without a dictionary or a producer's
     declaration, which is why the *declared* case — the soft-hyphen `/ActualText` item above,
     16 structure elements — is the half worth closing first. In the other direction on the same
-    file poppler welds three genuine compounds (`speedaccuracy`, `machinereadable`,
+    file both references weld three genuine compounds (`speedaccuracy`, `machinereadable`,
     `OlmoOCRBench`), so the two behaviours cost about the same and only the declared case is
     unambiguously winnable.
   - **16 of the 483 need a walk back through spans**, because the dash is frequently a span
@@ -2565,6 +2595,55 @@ OKF-ified spec.
     being implied by it. **A review that reads the diff for what it claims, not for what it
     changes, is what found the first one** — the hoist is three lines and its comment asserted
     the invariant backwards.
+- **A superscript of more than one glyph opened a line, and every reference fixture was blind
+  to it.** The same-line tolerance is `LineFrac` times a type size, and the size it read was the
+  *previous fragment's*: the first raised glyph is measured against the body text and joins, the
+  second is measured against the superscript's own size — 7pt against 10pt, two thirds of the
+  tolerance — and opens a new line at a baseline just ruled part of this one. It is now
+  denominated in `line.height`, the tallest type size on the line, which is a property of the
+  line rather than of drawing order.
+  - **One raised digit is unaffected, which is why it survived 11 fixtures and a 1,251-page
+    corpus.** The split only shows from the second glyph on. `x²` is fine; `x²³` came out as `x2`
+    and a new paragraph beginning `3`.
+  - **Two documents change and every change is a repair.** ISO 32000-2: 21 lines carrying 26
+    spurious spaces inside subscripted identifiers — `x i` for `xi`, `Domain 2i` for `Domain2i`,
+    `*p*0 0` for `*p*00`, `*a*m in` for `*a*min`. The arXiv paper: 391 lines to 369, including an
+    exponent that had been splitting a paragraph in two (`10*−*` then a blank line then `4,`) and
+    a five-fragment scatter of `*B*g`/`t *i*`/`and *B*p`/`red`/`*i*` that now reads `*Bi*gt and
+    *Bi*pred`. The other ten documents are byte-identical.
+  - **In prose the defect reads as a lost space, not as a broken paragraph**, because the block
+    assembler rejoins consecutive lines of a paragraph with an inferred space. That is why the
+    corpus showed it as 26 spurious spaces over 21 lines and a fixture shows it as four
+    paragraphs instead of two, and why no corpus count would ever have named it.
+  - **Widening a tolerance can pay for itself with a worse defect, so the margin was measured
+    before the change shipped.** The new tolerance is half the *tallest* size on the line, so a
+    large initial raises it for whatever follows on that line — and if the next line's step were
+    smaller than the raised tolerance it would be absorbed. Over all 12 documents there are
+    **55,940 adjacent line pairs and none is at or under its own tolerance**, and the population
+    this change can move is smaller than that: **431 pairs, 0.77%, have a wider tolerance than
+    before, by at most 1.715×, and the tightest of them clears its new tolerance by 1.176×.** The
+    corpus-wide minimum, **1.004×** — a step of 5.540 against 5.520 — belongs to a pair the change
+    does not touch, because it is dominated by the *next* line's own size and the old formula
+    gives it the same figure. Both numbers are worth having and neither is a substitute for the
+    other: the 1.004 says `LineFrac` itself is tight on this corpus, which is pre-existing, and
+    the 1.176 says this change did not make it tighter.
+  - **Both directions of the maximum are load-bearing and both now have a fixture.** Dropping
+    the line's height reinstates the defect; dropping the arriving glyph's size breaks a large
+    operator off a line of small text, which is how ISO 32000-2 sets an inline summation beside
+    its subscripted limits. Seven mutations, seven killed from `./extract/` alone — the seventh
+    came from review: taking the height of the fragment that *opened* the line instead of the
+    tallest on it passed the whole suite, because the two differ only in a **span list** and not
+    in any text, and the large-operator fixture had to gain a third run to see it.
+  - **The change deleted a second implementation of its own quantity rather than living beside
+    one.** `continues` computed the same maximum with its own loop over a closed line's
+    fragments; `line.height` is valid for a closed line too, so that loop is gone and the field
+    is the only reading. Substituting the loop for the field was a mutant that survived the whole
+    suite — two expressions for one quantity cannot be told apart by any test, which is the shape
+    `sectionize`'s own comment warns about after six such mutants survived there.
+  - `testdata/reference/superscripts.pdf` is the twelfth reference fixture and is enforced
+    exactly. Hyphenation is off and the text ragged right so that no discretionary hyphen lands
+    in a file named for something else — the first draft hyphenated `sentence` across a line and
+    would have pinned that separate limit here.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`
