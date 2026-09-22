@@ -21,8 +21,12 @@ All notable changes to this project are documented here, following
     1.3% of the words. That is §1's thesis as a measurement rather than a complaint.
   - **Identical long-word counts against poppler on both files** — 19 of 19 on the paper, 332 of
     332 on ISO 32000-2's 1,023 pages — and at scale the speed margin widens to **2.82 s against
-    15.44 s, 5.5×**. pdfplumber did not finish that file at all: still running after several
-    minutes at 3.9 GB resident.
+    15.44 s, 5.5×**, with pdfplumber at **357.5 s, 127×**.
+  - **pdfplumber's segmentation on the spec is as good as anyone's**, 335 long tokens against our
+    332 and the same longest token, so its 15.76% on the paper is a property of that file and not
+    of the library. What does not vary is cost: 127× the time and 3.9 GB resident against a 286 MB
+    peak. §1's complaint about the Python path is about price for the same answer, and the entry
+    now says that instead of implying the quality gap is universal.
   - **Read by hand rather than by summary, the disagreements split in this package's favour.**
     Poppler welds six table-header cells into single tokens, welds three hyphenated compounds, and
     replaces two non-ASCII characters with U+FFFD. The one direction it reads better is

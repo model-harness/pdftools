@@ -77,16 +77,20 @@ defect, and 7 in 6,320 tokens is the price of it.
 At scale the margin widens, measured on `docs/ISO_32000-2_sponsored_EC3.pdf` — 18.31 MB,
 1,023 pages, tagged:
 
-| | `pdfspec md` | poppler `pdftotext` |
-|---|---|---|
-| time | **2.82 s** | 15.44 s (5.5×) |
-| chars | 2,450,894 | 2,556,530 |
-| words >25 ch | 332 (0.08%) | 332 (0.08%) |
+| | `pdfspec md` | poppler `pdftotext` | pdfplumber |
+|---|---|---|---|
+| time | **2.82 s** | 15.44 s (5.5×) | 357.5 s (127×) |
+| chars | 2,450,894 | 2,556,530 | 2,535,280 |
+| words >25 ch | **332 (0.08%)** | 332 (0.08%) | 335 (0.08%) |
+| longest word | 166 | 169 | 166 |
 
-pdfplumber is absent from that table because it did not finish: left running on the same file
-it was still working after several minutes at 3.9 GB resident, which is a cost of a different
-kind from the 1,043 ms above and the reason the §1 claim about the Python path is about orders
-of magnitude rather than percentages.
+**That table corrects the shape of §1's complaint, and it is worth correcting rather than
+quoting selectively: pdfplumber's *segmentation* on this file is as good as anyone's** — 335
+long tokens against our 332, the same longest token — so its 15.76% on the paper above is a
+property of that paper, not of the library. What does not vary is the cost: 357.5 s against our
+2.82 s, **127×**, and 3.9 GB resident against a 286 MB peak working set. The Python path is two orders of magnitude
+more expensive here for an answer of the same quality, which is the claim §1 should be read as
+making.
 
 Two caveats on the comparison, both about what it does not say. `pdfspec md` emits Markdown —
 headings, emphasis, lists, tables — where the other three emit plain text, so it is doing
