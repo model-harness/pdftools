@@ -1,0 +1,22 @@
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_55b65046da5431 80-90,92-93
+  s_5cd1b28ed520c1::t_93d2c8860231c3 91
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_93d2c8860231c3 24-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9429d68322a023eccc930eb1afc8ff93786149fe",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
