@@ -2678,7 +2678,10 @@ OKF-ified spec.
     the reference drops** (`DER-encoded` against `DERencoded`), which is the policy priced
     elsewhere in this document; **12** are the sponsored copies' licence watermark and **3** the
     "Reference number" line, all artifacts dropped by design and recoverable with `-artifacts`;
-    and **1**, `Adobe356`, is unexplained and stays on the list. The **4** the fix recovered are
+    and **1**, `Adobe356`, was unexplained and is now closed: the reference welds body text to
+    a *folio*. The sentence runs off the bottom of page 356 as "…Adobe-", the footer draws the
+    page number, and `pdftotext` emits `Adobe356` — a token that exists in neither the page nor
+    the document. This package emits `Adobe-` and continues with `Korea1` on the next page. The **4** the fix recovered are
     `TECHNICAL`, `SPECIFICATION`, `numériques` and `portable`. A looser tokenizer gives larger
     numbers in every column and a residue in the hundreds; this one is narrow enough to read by
     hand, which is the only reason its residue is a worklist rather than a statistic.
@@ -2704,6 +2707,37 @@ OKF-ified spec.
     own test writes the malformed page out byte by byte, `/MC0` marked and `/Properties` absent,
     with the valid form beside it as the control, because no producer this repo can drive emits
     the shape: it is what a real one got wrong.
+- **The hyphen policy is priced, the last unexplained oracle word is closed, and a mid-word
+  paragraph break turned out to be the producer's.** Three loose ends from the oracle run above,
+  all closed by measurement and none of them needing a code change.
+  - **`Adobe356` was the reference welding body text to a folio.** A sentence runs off the bottom
+    of ISO 32000-2 page 356 as "…Adobe-"; the footer draws the page number; `pdftotext` emits
+    `Adobe356`, a token in neither the page nor the document. This package emits `Adobe-` and
+    resumes with `Korea1`. Nothing to fix here, and it is the second time in this investigation
+    that the oracle's residue was the oracle's own defect — which is the reason for reading a
+    disagreement rather than counting it.
+  - **The 78 dash disagreements split 71 / 4 / 3, and the instrument was wrong.** 71 are
+    compounds the reference welds *mid-line* (`DER-encoded`, `CIE-based`, `Anti-aliasing`), where
+    this package is right; 4 are compounds that happen to break at their own hyphen
+    (`document-level`, `id-shake256`), where keeping the hyphen is also right; 3 are genuine
+    discretionary hyphens (`constitu-ent`, `descend-ants`, `sur-rounding`). But **that set cannot
+    price the policy**: it is built from words absent from our output, and a discretionary
+    hyphen's joined form is usually present elsewhere, so the class is excluded by construction.
+    The figure that answers the question is the document's own spelling, re-measured over the
+    twelve files: **166 distinct wrap-dash words in 232 occurrences, dropping right for 8 and
+    wrong for 100.** `extract.dashHoldsTheWord` carried 218-right-against-170-wrong before, from
+    a seventeen-file corpus that no longer exists — prose hyphenates for justification where a
+    specification is full of hyphenated compounds — so the policy's own evidence used to point
+    against it and now points with it. The conclusion never moved; only the honesty of its
+    footing.
+  - **A word split across a paragraph break is the producer's split, not ours.** Four words in
+    ISO 32000-2 read as `path-` / paragraph break / `painting`, and the tempting fix is to join
+    two blocks when the first ends in a word-holding dash. Measured first: **0 of that document's
+    29,400 `P` elements span more than one page.** The producer closes the paragraph at the page
+    boundary and opens another, so two blocks is what the structure tree says, and joining them
+    would be this package overruling a producer's own statement about its document — the thing
+    the tagged path exists not to do. The reference joins them because it reads geometry and
+    ignores the tree, which is also how it produced `Adobe356`.
 - **Clause URI scheme.** `iso32000-2:2020#7.5.8` is a placeholder. Worth checking whether
   a registered ISO identifier scheme exists before baking it into `resource` values.
 - **Whether the golden corpus should move out of `docs/`.** The spec PDFs sit in `docs/`

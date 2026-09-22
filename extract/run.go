@@ -1292,14 +1292,31 @@ func wrapNeedsSpace(prev, next string) bool {
 // this rule missed. Only spans of pure dashes are skipped over, so the walk cannot run past
 // the word it is looking for.
 //
-// Whether to also drop the dash is a separate question this does not answer. Looking each
-// joined word up in its own document, with this rule off so the search is not finding the
-// join it just made, splits the 483: dropping would be right for the 218 the document spells
-// out elsewhere without a dash ("applica-|tion" against "application"), wrong for the 170 it
-// spells out with one ("cross-|reference" against "cross-reference"), either way for 14
-// spelled both ways, and unanswerable for the 81 that appear nowhere else at all. So the dash
-// stays: an unsplit word with a hyphen in it is a reading a consumer can still repair, while
-// a deleted hyphen is not recoverable from the output.
+// Whether to also drop the dash is a separate question this does not answer, and the evidence
+// for the answer has moved. Looking each joined word up in its own document — the only
+// dictionary available at runtime — splits the wrap-dash population four ways: dropping is
+// right where the document spells the word out elsewhere *without* a dash ("applica-|tion"
+// against "application"), wrong where it spells it *with* one ("cross-|reference" against
+// "cross-reference"), either way where both spellings occur, and unanswerable where the word
+// appears nowhere else.
+//
+// Re-measured over the twelve documents on disk: **166 distinct wrap-dash words in 232
+// occurrences, of which dropping would be right for 8 and wrong for 100** — 160 occurrences
+// against 8 — with 6 either way and 52 unanswerable. The figures this comment carried before
+// were 218 right against 170 wrong, and they were measured over a seventeen-file corpus that no
+// longer exists: prose-heavy PDFs hyphenate for justification, and a specification is full of
+// hyphenated compounds instead. So the conclusion is unchanged and its justification is no
+// longer against it. The dash stays either way, because an unsplit word with a hyphen in it is
+// a reading a consumer can still repair while a deleted hyphen is not recoverable from the
+// output — but it is worth knowing that the corpus now agrees rather than being overridden.
+//
+// An independent implementation is the other check, and it is the wrong instrument for this
+// question: of the 94 words Poppler emits that this package does not, 78 are a dash it drops
+// and this keeps, and only 3 of those 78 are discretionary. That ratio flatters the policy
+// because the set is built from words *absent* from our output, and a discretionary hyphen's
+// joined form is usually present elsewhere — excluded by construction. The 100-against-8
+// above is the figure that answers the question; the 3 is the figure for how often the
+// disagreement is visible to a reader comparing the two outputs.
 //
 // The full dash alphabet, because the corpus proves the rule is not about U+002D alone:
 // U+2013 EN DASH holds "a–|f" together in a hexadecimal range, and U+2011 NON-BREAKING

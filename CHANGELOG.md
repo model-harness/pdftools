@@ -5,6 +5,36 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Documentation — 2026-09-22
+
+- **The hyphen policy is priced on the corpus it actually has, and its old evidence pointed the
+  wrong way.** `extract.dashHoldsTheWord` keeps a dash that holds a word across a line wrap, and
+  justified it with "218 right against 170 wrong" — figures from a seventeen-file corpus that no
+  longer exists. Re-measured over the twelve documents on disk, by the only dictionary available
+  at runtime (the document's own spelling elsewhere): **166 distinct wrap-dash words in 232
+  occurrences, dropping right for 8 and wrong for 100**, 6 either way, 52 unanswerable. Prose
+  hyphenates for justification; a specification is full of hyphenated compounds. The conclusion
+  never moved — a kept hyphen is repairable and a deleted one is not — but it was being held
+  against its own numbers and now agrees with them.
+- **The 78 dash disagreements with `pdftotext` split 71 / 4 / 3, and the set was the wrong
+  instrument.** 71 are compounds the reference welds mid-line (`DER-encoded`, `CIE-based`), 4 are
+  compounds that break at their own hyphen (`document-level`), and 3 are genuine discretionary
+  hyphens. That ratio flatters the policy: the set is built from words *absent* from our output,
+  and a discretionary hyphen's joined form is usually present elsewhere, so the class is excluded
+  by construction. Recorded on the rule so the 75-against-3 is not quoted as the price.
+- **`Adobe356`, the last unexplained word from the oracle run, was the reference welding body
+  text to a folio.** A sentence runs off the bottom of ISO 32000-2 page 356 as "…Adobe-", the
+  footer draws the page number, and `pdftotext` emits `Adobe356` — a token in neither the page
+  nor the document. Second time in one investigation that the residue was the oracle's own
+  defect, which is the argument for reading a disagreement rather than counting it.
+- **A word split across a paragraph break is the producer's split.** Four words in ISO 32000-2
+  read as `path-` / break / `painting`, and joining two blocks when the first ends in a
+  word-holding dash was the tempting fix. Measured first: **0 of that document's 29,400 `P`
+  elements span more than one page**, so the producer closes the paragraph at the page boundary
+  and two blocks is what the structure tree says. Joining them would overrule a producer's
+  statement about its own document, which is what the tagged path exists not to do.
+
+
 ### Fixed — 2026-09-22
 
 - **A whole page was missing from every conversion this repo has ever produced.** ISO/TS 32002's
