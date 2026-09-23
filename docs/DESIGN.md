@@ -873,7 +873,46 @@ absence of a tree: a heading is promoted where the document *numbers* it, so a f
 headings are all unnumbered still yields no clauses and the verb says to run `md` instead.
 
 **Phase 6 — native replacement.** Rasterizer first, then JBIG2. Driven by the interfaces
-already in place.
+already in place. **Started, and the starting point was chosen by census rather than by
+preference** — see ADR 0015.
+
+`render/native` implements `render.Rasterizer` with a scanline rasterizer: path construction,
+both fill rules, clipping, anti-aliased coverage, `/Rotate`, and the device colour spaces.
+Coverage is sampled 16× per pixel row and computed exactly along each scanline, which agrees with
+`render/pdfium` to a **mean ink difference of 0.000–0.050 of 255** over fourteen streams chosen
+for what separates them, with total ink matching to 1.000 in aggregate and no pixel further apart
+than 28 — except on two tight curves, where five pixels each differ by 40 no matter how finely the
+curve is flattened, because that is where pdfium places a curve's anti-aliasing. pdfium is the
+yardstick rather than a second opinion, because borrow-then-replace makes the borrowed engine the
+definition of what the native one has to reproduce.
+
+**It refuses any page it cannot draw in full, and today that is all of them.** 0 of 1,251
+corpus pages and 0 of 12 reference fixtures, which is stated rather than softened: this
+increment buys a proven core and a measured worklist, not a working backend. A rasterizer that
+skipped what it does not implement would return a page with its text missing and nothing to say
+so — the same failure as the dropped cover page above, and worse, because a plausible image
+invites less scrutiny than an empty one.
+
+**What the census settled.** Every one of the 1,251 pages draws text; 357 draw nothing else, 894
+draw text with paths or images; 0 are image-only and 0 are path-only. So a rasterizer that starts
+anywhere but text renders no page, and text needs glyph outlines that `font` does not have. Of the
+corpus's 229 fonts, 216 carry an embedded program and **140 of those are TrueType `glyf`** against
+56 CFF and 20 Type 1 — so `glyf` is the next increment, and the other 13 fonts will need a
+substituted face. A page is surveyed before it is painted and the survey lists every blocker
+rather than the first, which is what ranks the rest:
+
+| blocked by | pages |
+|---|---|
+| `TJ` / `Tj` | 1,241 / 1,234 |
+| `gs` | 1,184 |
+| `Do` | 173 |
+| `S` | 156 |
+| `cs` / `scn` | 97 / 97 |
+| `sh` | 1 |
+
+`gs` at 1,184 is the figure that connects this phase to the last documented hole in `content`:
+an ExtGState's `/LW` is unread because applying one needs the page's resource dictionary, which
+`content` does not take. Rendering is the consumer that makes that gap expensive.
 
 **Phase 7 — Rust.** Same architecture, same CLI surface, shared golden corpus. Deferred
 until the Go boundaries have been proven by use, so the Rust port inherits a validated

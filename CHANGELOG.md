@@ -5,6 +5,70 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-23
+
+- **Phase 6 starts: `render/native` rasterizes paths in Go, and refuses any page it cannot draw
+  in full.** ADR 0015. A scanline rasterizer — path construction, both fill rules, clipping,
+  anti-aliased coverage, `/Rotate`, the device colour spaces — sampled 16× per pixel row and
+  computed exactly along each scanline. Against `render/pdfium` on **fourteen streams** chosen for
+  what separates them: **mean ink difference 0.000–0.050 of 255, total ink 1.000 in aggregate**,
+  and no pixel further than 32 except on two tight curves, where five pixels each differ by 40 no
+  matter how finely the curve is flattened — that is where pdfium places a curve's anti-aliasing,
+  and the bound is stated as a count of edge pixels rather than loosened. pdfium is the yardstick
+  rather than a second opinion, because borrow-then-replace makes the borrowed engine the
+  definition of what the native one must reproduce.
+  - **Where to start was decided by census, not preference.** Every one of the corpus's 1,251
+    pages draws text; 357 draw nothing else and 894 draw text with paths or images; **0 are
+    image-only and 0 are path-only**. So a rasterizer that starts anywhere but text renders no
+    page — and text needs glyph outlines, which `font` does not have. Of the corpus's 229 fonts,
+    216 carry an embedded program and **140 of those are TrueType `glyf`** against 56 CFF and 20
+    Type 1, which fixes the next increment; the other 13 will need a substituted face.
+  - **Today it draws 0 of 1,251 corpus pages and 0 of 12 fixtures, and that is stated rather than
+    softened.** This increment buys a proven core and a ranked worklist. A page is surveyed before
+    it is painted and the survey lists every blocker rather than the first, which is what produced
+    the ranking: `TJ`/`Tj` 1,241/1,234 pages, **`gs` 1,184**, `Do` 173, `S` 156, `cs`/`scn` 97, `sh`
+    1. `gs` at 1,184 connects this phase to the last documented hole in `content` — an ExtGState's
+    `/LW` is unread because applying one needs the page resource dictionary `content` deliberately
+    does not take.
+  - **Nothing falls back yet, and the code says so now.** `cmd/pdfspec` constructs `render/pdfium`
+    unconditionally; `ErrUnsupported` is what a fallback will be built on, not something one uses.
+    The package comment claimed otherwise.
+  - **The spike found two defects before any of this was written.** The harness flipped a path's y
+    before its closing edge existed, so every shape carried one edge between two coordinate spaces
+    and filled as a diagonal band; and quantizing coverage per subsample put a fully covered pixel
+    at 240 of 255 — `floor(255/16)` is 15 — a 6% pale page that looks like nothing at all.
+  - **A review then found three blocking defects, two of them ways to stop the process.** An inline
+    image was drawn as *nothing*: `content.Scanner` reports `BI` as `INLINE_IMAGE`, so a refusal
+    list naming `BI` refused nothing and the page came back blank with no error — the exact silent
+    omission the backend exists to prevent, produced by the list rather than the rasterizer. The
+    list is now an allow-list of operators that mark nothing, which is the only shape that survives
+    an operator this package has not heard of. A clip set inside a `q…Q` confined everything after
+    the `Q` as well, because the clip is a mask on the canvas and `content.Machine` cannot stack
+    it. And a coordinate of 1e19 became the most negative int64 as a loop bound — a hung process on
+    input a producer controls — while an edge whose spans overflow to ±∞ made a crossing NaN, which
+    passed every comparison and indexed a row at that same negative int64.
+  - **Four costs of one shape, all found by measuring the whole corpus rather than by reading.** A
+    coverage mask per fill; a page-area intersect per clip (200 clips at 200 DPI: 3.6 s → nothing,
+    once the mask carries its own row bounds); a page-area *opaque* mask rebuilt on every `Q`,
+    which is the cheapest-looking line in the walker and cost more than everything else in it put
+    together (**43 s → 5.5 s** once an unclipped `q…Q` became free); and painting every path before
+    a page's first `Tj` (**32.6 s → 1.1 s**, now resolution-independent, once the survey runs
+    first). Edges are bucketed by their first row as well: 10,000 segments spanning a page take
+    **5.5 ms against 154 ms** rescanned per sample.
+  - **28 mutations, 27 killed.** The survivor is `scan` closing a path in place rather than
+    locally, which is equivalent now that the clip is taken at the end of the path object; it stays
+    local because the next caller is a glyph cache. Notable additions the mutants forced: a unit
+    test for `intersect`'s rounding (one level of 255, invisible in any image), a 0.1pt hairline for
+    the sample count (four samples leave no ink where sixteen leave 32), a non-zero `/MediaBox`
+    origin, a shape ending exactly at the page width, and every stroking and text-showing operator
+    by name. The pdfium comparison now fails rather than skips when the borrowed backend is
+    missing: ten kills depend on it.
+  - **CMYK is the one place this backend and its own yardstick disagree, deliberately.** Pure K by
+    §8.6.4.4's formula is black; pdfium paints it at ≈RGB(35,35,35) from a calibrated table, a
+    **mean of 11.0 with 12,600 pixels over 32**. Matching the table would adopt a colour-management
+    decision the page does not state, so CMYK is outside the pdfium bar by construction and a test
+    of its own six cases stands in for it.
+
 ### Documentation — 2026-09-22
 
 - **The hyphen policy is priced on the corpus it actually has, and its old evidence pointed the
