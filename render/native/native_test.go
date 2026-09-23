@@ -264,13 +264,16 @@ func TestClipRestrictsALaterFill(t *testing.T) {
 	}
 }
 
-// TestPageWithTextIsRefusedNotHalfDrawn is the backend's safety property, and the reason it is
-// a test rather than a comment: an incomplete rasterizer that returns an image is
+// TestPageWithUndrawableTextIsRefusedNotHalfDrawn is the backend's safety property, and the
+// reason it is a test rather than a comment: an incomplete rasterizer that returns an image is
 // indistinguishable from a complete one that rendered a page with nothing on it.
 //
-// The error names the operator, because the caller's next question is which feature to
-// implement and "Tj" answers it.
-func TestPageWithTextIsRefusedNotHalfDrawn(t *testing.T) {
+// The page here is a fill *and* a line of text in a font the page never declares, which is the
+// combination that matters: everything before the text draws, so a backend that returned what it
+// managed would return a plausible page with a line missing. The error names why the text could
+// not be drawn rather than which operator drew it, because the caller's next question is which
+// feature to implement and "Tj" stopped answering it once Tj worked.
+func TestPageWithUndrawableTextIsRefusedNotHalfDrawn(t *testing.T) {
 	stream := "0 g 20 20 100 100 re f BT /F1 12 Tf 30 30 Td (text) Tj ET"
 	path := onePagePDF(t, stream, 200, 200)
 	s, err := pcstore.Open(path)
@@ -292,8 +295,9 @@ func TestPageWithTextIsRefusedNotHalfDrawn(t *testing.T) {
 	if !errors.As(err, &u) {
 		t.Fatalf("error %v is not an *Unsupported, so nothing names the missing feature", err)
 	}
-	if len(u.Ops) == 0 || u.Ops[0] != "Tj" {
-		t.Errorf("Ops = %v, want it to name Tj", u.Ops)
+	joined := strings.Join(u.Ops, " | ")
+	if !strings.Contains(joined, "text:") || !strings.Contains(joined, "/Font") {
+		t.Errorf("Ops = %v, want a text reason naming the missing /Font resource", u.Ops)
 	}
 	if u.Page != 1 {
 		t.Errorf("Page = %d, want 1", u.Page)
@@ -369,6 +373,10 @@ func (b *boxStore) Resolve(o objects.Object) (objects.Object, error) {
 // unsupported operator would have reported "Tj" for every page in the corpus and hidden that
 // gs blocks 1,184 of them and Do 173 — the ranking that decides what comes after text.
 //
+// The list mixes both kinds of entry on purpose: an operator this backend cannot draw at all, and
+// a reason a drawable operator could not be drawn on this page. One list, because the caller's
+// question is the same for both.
+//
 // Painting does stop, which is the other half and the reason walking on is affordable: lexing a
 // stream is cheap, rasterizing into an image nobody will receive is not.
 func TestRefusalListsEveryMissingFeature(t *testing.T) {
@@ -392,10 +400,13 @@ func TestRefusalListsEveryMissingFeature(t *testing.T) {
 	for _, op := range u.Ops {
 		got[op] = true
 	}
-	for _, want := range []string{"Tj", "gs", "S"} {
+	for _, want := range []string{"gs", "S"} {
 		if !got[want] {
 			t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, want)
 		}
+	}
+	if !strings.Contains(strings.Join(u.Ops, " | "), "text:") {
+		t.Errorf("Ops = %v, missing the text reason", u.Ops)
 	}
 	// Sorted, so the message reads the same way every run and a diff of two logs is about the
 	// features rather than about map order.

@@ -167,11 +167,25 @@ func (m *Machine) InArtifact() bool {
 	return false
 }
 
-// Apply updates state for op and reports whether it was a state operator.
+// Apply updates state for op and reports whether op was *fully* handled.
 //
-// Text-showing operators (Tj, TJ, ', ") are not handled here: they need font
+// Text-showing operators (Tj, TJ, ', ") are never fully handled: they need font
 // metrics to advance the text matrix, which this package does not own. A caller
 // handles them and calls Advance with the displacement it computed.
+//
+// ' and " are the two that need care, because each is a state change *and* a
+// show. §9.4.3 defines ' as T* followed by Tj, and " as setting word and
+// character spacing and then behaving as '. The line move and the spacing are
+// pure state and need no metrics, so they happen here — and the report is still
+// false, because the caller has a string left to draw. A caller that treats
+// false as "nothing happened" is wrong about Tj too.
+//
+// The alternative was to leave both to the caller, and that is what this package
+// did: the state half was spelled out in extract's walker and nowhere else, so
+// render/native — written later, against this comment — assumed the machine had
+// moved the line and drew every ' on the line above. §9.4.3 is one rule and two
+// readings of it is one too many, which is the same argument this machine exists
+// on.
 func (m *Machine) Apply(op Op) bool {
 	switch op.Name {
 	// Graphics state.
@@ -250,6 +264,20 @@ func (m *Machine) Apply(op Op) bool {
 		}
 	case "T*":
 		m.NextLine()
+	case "'":
+		// The state half of a quote, as this function's comment explains. Falls through to
+		// the false report because the string still has to be drawn by the caller.
+		m.NextLine()
+		return false
+	case `"`:
+		if len(op.Operands) >= 2 {
+			// The spacing operands persist after the string (§9.4.3), which is why they are
+			// state and not arguments to this one show.
+			m.GS.Text.WordSpace = op.Num(0)
+			m.GS.Text.CharSpace = op.Num(1)
+		}
+		m.NextLine()
+		return false
 
 	// Marked content.
 	case "BMC":

@@ -116,11 +116,15 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		return nil, fmt.Errorf("render/native: page %d content: %w", n, err)
 	}
 
+	res, _ := objects.GetDict(r.s, page, "Resources")
 	w := &walker{
+		s:     r.s,
+		res:   res,
 		w:     pw,
 		h:     ph,
 		base:  pageMatrix(box, dpi/72, rotate),
 		unsup: map[string]bool{},
+		fonts: map[string]*textFont{},
 	}
 	w.run(data)
 
@@ -206,6 +210,18 @@ type walker struct {
 
 	base matrix
 
+	// s and res are the page's store and resource dictionary, which text needs and paths do
+	// not: a glyph is looked up in a font the stream names, and the name only means something
+	// against /Resources /Font.
+	s   objects.Store
+	res objects.Dict
+
+	// fonts caches what a /Font name resolved to, per page. A page names the same font at
+	// every Tf — a spec page has hundreds — and parsing a font program per Tf would parse the
+	// same tens of kilobytes hundreds of times.
+	fonts map[string]*textFont
+	font  *textFont
+
 	// fill is the only colour kept. A stroke colour is accepted and discarded: setting one
 	// marks nothing, so refusing G/RG/K would refuse a page over an operator that changed no
 	// pixel, and storing it would be state no code reads while stroking itself is refused.
@@ -273,23 +289,91 @@ func (w *walker) run(data []byte) {
 	}
 }
 
-// survey records every operator this backend cannot draw, without drawing anything.
+// survey records every reason this backend cannot draw the page, without drawing anything.
 //
-// Every operator rather than the first, because the error is a worklist: over a thousand pages
+// Every reason rather than the first, because the error is a worklist: over a thousand pages
 // the actionable question is which feature to implement next, and only the full list answers it.
 // Stopping early would have reported Tj for every page in the corpus and hidden that gs blocks
 // 1,184 of them.
+//
+// # Why this resolves fonts and glyphs rather than only lexing
+//
+// A show operator is not refused for being a show operator — it is refused when the font behind it
+// has no program this backend reads, and that is a *reason* the caller can act on. Deciding it
+// needs the resource dictionary and the font program, so the first version left it to the paint
+// pass, where showText already had to know. That made the list silently incomplete in exactly the
+// case it exists for: the paint pass never runs when anything else blocked the page, so a page
+// with an ExtGState and a CFF font reported `gs` alone. Over the corpus, where gs blocks 1,184 of
+// 1,251 pages, the font census — the thing that ranks the increments after this one — would have
+// been taken from the 67 pages that happened to have nothing else wrong with them.
+//
+// The cost is the same font parse the paint pass would have done, cached per resource name, and
+// the machine runs here too so that a glyph is only required where it would actually be drawn:
+// §9.3.6's render mode 3 is how a scanned page's invisible OCR layer is written, and demanding a
+// glyph for text nobody draws would refuse a page over characters that mark nothing.
 func (w *walker) survey(data []byte) {
+	m := content.NewMachine(geom.Identity)
 	sc := content.NewScanner(data)
 	for {
 		op, ok := sc.Next()
 		if !ok {
 			return
 		}
-		if !marks(op.Name) {
+		m.Apply(op)
+		if marks(op.Name) {
+			w.unsup[op.Name] = true
 			continue
 		}
-		w.unsup[op.Name] = true
+		switch op.Name {
+		case "Tf":
+			if len(op.Operands) >= 1 {
+				w.font = w.loadFont(string(op.NameAt(0)))
+			}
+		case "Tj", "'":
+			if len(op.Operands) >= 1 && m.Visible() {
+				w.checkText(op.Str(0))
+			}
+		case "\"":
+			if len(op.Operands) >= 3 && m.Visible() {
+				w.checkText(op.Str(2))
+			}
+		case "TJ":
+			if len(op.Operands) >= 1 && m.Visible() {
+				for _, item := range op.Arr(0) {
+					if s, ok := item.(objects.String); ok {
+						w.checkText(s)
+					}
+				}
+			}
+		}
+	}
+}
+
+// checkText records why a string cannot be drawn, without drawing it.
+//
+// The same three questions showText would ask — is there a font, does it carry a program this
+// backend reads, and does every code in the string resolve to a glyph — asked where the answer can
+// still reach the caller. showText does not ask them again: painting happens only when this
+// returned nothing, so by then each is settled.
+func (w *walker) checkText(str []byte) {
+	tf := w.font
+	switch {
+	case tf == nil:
+		w.refuseText("the page shows a string before naming a font with Tf")
+		return
+	case tf.tt == nil:
+		w.refuseText(tf.why)
+		return
+	}
+	for _, g := range tf.f.Decode(str) {
+		if _, ok := tf.gid(g); !ok {
+			// A code with no glyph is a character the page draws and this backend cannot, which
+			// is the same class as an operator it cannot draw and gets the same answer. Dropping
+			// it would put a page on screen with one character quietly missing — the failure
+			// mode this whole backend refuses pages to avoid, at the granularity where it is
+			// hardest to notice.
+			w.refuseText(fmt.Sprintf("no glyph for code %d in /%s", g.Code, tf.f.BaseFont))
+		}
 	}
 }
 
@@ -327,6 +411,31 @@ func (w *walker) op(m *content.Machine, op content.Op) {
 			to := ctm.apply(point{op.Num(2), op.Num(3)})
 			w.path.curveTo(c1, to, to)
 		}
+	// Text. The show operators draw; Tf chooses the font the page names.
+	case "Tf":
+		if len(op.Operands) >= 1 {
+			w.font = w.loadFont(string(op.NameAt(0)))
+		}
+	case "Tj":
+		if len(op.Operands) >= 1 {
+			w.showText(m, op.Str(0))
+		}
+	case "'":
+		// A quote shows a string on the next line, and content.Machine has already moved the
+		// text matrix there by the time this runs.
+		if len(op.Operands) >= 1 {
+			w.showText(m, op.Str(0))
+		}
+	case "\"":
+		// Word and character spacing come first, and the machine applies them.
+		if len(op.Operands) >= 3 {
+			w.showText(m, op.Str(2))
+		}
+	case "TJ":
+		if len(op.Operands) >= 1 {
+			w.showArray(m, op.Arr(0))
+		}
+
 	case "h":
 		w.path.close()
 	case "re":
@@ -413,6 +522,10 @@ func marks(op string) bool {
 	switch op {
 	case // path construction and the painting operators this backend implements
 		"m", "l", "c", "v", "y", "h", "re", "f", "F", "f*", "n", "W", "W*",
+		// text, whose refusal is a property of the *font* rather than of the operator: a
+		// glyf program is drawn and a CFF one is refused, and only the paint pass can tell
+		// which a page holds. The survey lets these through and showText refuses by reason.
+		"Tj", "TJ", "'", "\"",
 		// fill colour in the device spaces
 		"g", "rg", "k",
 		// graphics state

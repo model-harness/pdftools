@@ -119,7 +119,7 @@ either way and the only observable was wall time.
 
 | blocked by | pages |
 |---|---|
-| `TJ` / `Tj` — show text | 1,241 / 1,234 |
+| `TJ` / `Tj` — show text | 1,241 / 1,234 |<!-- superseded: ADR 0016 draws text and refuses by font reason instead -->
 | `gs` — ExtGState | **1,184** |
 | `Do` — XObject | 173 |
 | `S` — stroke | 156 |
@@ -197,6 +197,14 @@ corpus that draws text and nothing else), then `gs`, then `Do` with the existing
 CFF follows `glyf` at 56 programs, and 13 fonts will need a substituted face. Stroking is fourth by page count and is a pen-geometry problem —
 join, cap, dash, and a width that is a distance in user space — so it gets its own increment
 rather than an approximation inside this one.
+
+> **Corrected by ADR 0016, on the part of that ranking after `glyf`.** Counting *font
+> dictionaries* put CFF ahead of substitution by more than two to one; counting *pages* reverses it
+> by a factor of eleven, because the 13 fonts needing a face are a specification's running heads
+> and page numbers and so appear on 1,139 pages, against 104 for the 56 CFF programs. Measured
+> greedily, a substituted face plus `gs` draws 72% of the corpus and CFF is fifth, worth 24 pages.
+> A count of definitions is not a count of uses. The ordering above was inferred from the census in
+> this ADR rather than measured, and the measurement is in ADR 0016.
 
 **A native `Rasterizer` reads through `objects.Store`, which is the borrow's other cost
 repaid.** A caller that has already opened a document for text extraction pays for one parse

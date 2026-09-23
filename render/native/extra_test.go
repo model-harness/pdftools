@@ -158,39 +158,46 @@ func absInt(v int) int {
 	return v
 }
 
-// TestShowTextOperatorsAreAllRefused names each of the four.
+// TestEveryShowOperatorDraws reaches each of the four ways a page can show a string.
 //
-// The blocker table ranks TJ first at 1,241 pages and no test named it — both refusal tests used
-// Tj — so dropping "TJ" from the refusal list was a mutation the suite could not see.
-func TestShowTextOperatorsAreAllRefused(t *testing.T) {
-	for _, c := range []struct{ op, operand string }{
-		{"Tj", "(t)"},
-		{"TJ", "[(t)]"},
-		{"'", "(t)"},
-		{`"`, "1 1 (t)"},
+// Named for refusal until text rendered, and inverted rather than deleted: the property was
+// always "each of the four is dispatched", and now that they draw, ink is what proves it. The
+// blocker table ranks TJ first at 1,241 pages and the earlier refusal tests only ever used Tj,
+// so dropping TJ from the dispatch was a mutation the suite could not see — and a dropped
+// operator now shows as a blank page rather than as a missing list entry, which is the failure
+// mode this whole backend exists to make loud.
+//
+// The double-quote operator is here and not in the pdfium comparison, because it is the one of
+// the four that comparison does not reach.
+func TestEveryShowOperatorDraws(t *testing.T) {
+	for _, c := range []struct{ op, stream string }{
+		{"Tj", "BT /F1 48 Tf 20 100 Td (A) Tj ET"},
+		{"TJ", "BT /F1 48 Tf 20 100 Td [(A)] TJ ET"},
+		{"'", "BT /F1 48 Tf 60 TL 20 160 Td (A) ' ET"},
+		{`"`, `BT /F1 48 Tf 60 TL 20 160 Td 0 0 (A) " ET`},
 	} {
 		t.Run(c.op, func(t *testing.T) {
-			stream := "BT /F1 12 Tf 30 30 Td " + c.operand + " " + c.op + " ET"
-			s, err := pcstore.Open(onePagePDF(t, stream, 200, 200))
+			s, err := pcstore.Open(textPDF(t, c.stream, 200))
 			if err != nil {
 				t.Fatalf("open: %v", err)
 			}
 			defer func() { _ = s.Close() }()
 			o := render.DefaultOptions
 			o.DPI = 72
-			_, err = New(s).Page(1, o)
-			var u *Unsupported
-			if !errors.As(err, &u) {
-				t.Fatalf("err = %v, want an *Unsupported", err)
+			got, err := New(s).Page(1, o)
+			if err != nil {
+				t.Fatalf("Page: %v", err)
 			}
-			found := false
-			for _, got := range u.Ops {
-				if got == c.op {
-					found = true
-				}
+			px, _, _ := ink(got.Image)
+			var total float64
+			for _, v := range px {
+				total += float64(v)
 			}
-			if !found {
-				t.Errorf("Ops = %v, want it to name %q", u.Ops, c.op)
+			// The square is 0.3 em on a side at 48pt, so a drawn glyph is about 207 fully
+			// covered pixels: a bound of half that separates "drew the glyph" from both
+			// "drew nothing" and "drew a stray pixel".
+			if want := 100.0 * 255; total < want {
+				t.Errorf("ink %.0f, want at least %.0f — %s drew nothing", total, want, c.op)
 			}
 		})
 	}

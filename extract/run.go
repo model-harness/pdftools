@@ -225,14 +225,14 @@ func (r *run) walkWith(m *content.Machine, data []byte, res objects.Dict, depth 
 		case "TJ":
 			r.showArray(m, res, fonts, op.Arr(0))
 		case "'":
-			m.NextLine()
+			// The line move happened in Apply above, which reported the operator unhandled
+			// because the string is still to be shown. It used to happen here instead, and
+			// that copy was the only reading of §9.4.3 in the repo — so render/native drew
+			// every quote a line too high.
 			r.show(m, res, fonts, op.Str(0))
 		case `"`:
-			// The operands set word and character spacing before showing, and they
-			// persist afterwards (§9.4.3).
-			m.GS.Text.WordSpace = op.Num(0)
-			m.GS.Text.CharSpace = op.Num(1)
-			m.NextLine()
+			// The spacing operands were applied in Apply along with the line move, for the
+			// same reason.
 			r.show(m, res, fonts, op.Str(2))
 		case "Do":
 			r.doXObject(m, res, op.NameAt(0), depth)

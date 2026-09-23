@@ -897,20 +897,44 @@ invites less scrutiny than an empty one.
 draw text with paths or images; 0 are image-only and 0 are path-only. So a rasterizer that starts
 anywhere but text renders no page, and text needs glyph outlines that `font` does not have. Of the
 corpus's 229 fonts, 216 carry an embedded program and **140 of those are TrueType `glyf`** against
-56 CFF and 20 Type 1 — so `glyf` is the next increment, and the other 13 fonts will need a
+56 CFF and 20 Type 1 — so `glyf` was the next increment, and the other 13 fonts will need a
 substituted face. A page is surveyed before it is painted and the survey lists every blocker
-rather than the first, which is what ranks the rest:
+rather than the first, which is what ranks the rest.
 
-| blocked by | pages |
-|---|---|
-| `TJ` / `Tj` | 1,241 / 1,234 |
-| `gs` | 1,184 |
-| `Do` | 173 |
-| `S` | 156 |
-| `cs` / `scn` | 97 / 97 |
-| `sh` | 1 |
+**`glyf` is done — see ADR 0016.** `font.ParseTrueType` reads outlines in 1/1000 em, and
+`render/native` fills them as paths, with the three code-to-glyph routes §9.6.5.4 and §9.7.4.2
+give. It agrees with `render/pdfium` on **seventeen text streams** to a mean of 0.009–1.104 of 255
+with total ink between 0.956 and 1.001 of pdfium's, against a hand-built font in
+`internal/ttfbuild` rather than whatever
+face the machine has. Two findings came out of it that the rasterizer's own work had not:
 
-`gs` at 1,184 is the figure that connects this phase to the last documented hole in `content`:
+- **A page is now refused for the *reason* its font cannot be drawn**, not for using a show
+  operator, and the survey resolves fonts rather than only lexing operator names. "This page draws
+  text" was the same message 1,241 times; the reasons are a census.
+- **§9.4.3's `'` and `"` moved into `content.Machine`.** The line move and the spacing they carry
+  are state and need no font metrics, and leaving the whole operator to the caller meant `extract`
+  held the only copy of that reading — so `render/native` drew every `'` a line too high, by a mean
+  of 2.8 of 255 over 491 pixels, while pdfium draws `'` and `T*` identically.
+
+The worklist, re-measured by page and greedily rather than by counting font dictionaries, which
+reverses the order this phase started with:
+
+| add | pages that draw | of 1,251 |
+|---|---|---|
+| a substituted face | 10 | 1% |
+| **+ `gs`** | **903** | **72%** |
+| + `Do` | 1,029 | 82% |
+| + stroking | 1,113 | 89% |
+| + CFF | 1,137 | 91% |
+| + `cs`/`scn` | 1,233 | 99% |
+| + Type 1 | 1,250 | 100% |
+| + `sh` | 1,251 | 100% |
+
+`gs` blocks 1,184 pages and is the sole blocker on **none** of them, which is why the plan is a
+pair and not a ranking: a substituted face and `gs` together are 72% of the corpus, and CFF — which
+ADR 0015 named second, on a count of font programs — is fifth, worth 24 pages.
+
+`gs` at 1,184 is also the figure that connects this phase to the last documented hole in `content`:
 an ExtGState's `/LW` is unread because applying one needs the page's resource dictionary, which
 `content` does not take. Rendering is the consumer that makes that gap expensive.
 
@@ -949,6 +973,18 @@ OKF-ified spec.
 ---
 
 ## 10. Open questions
+
+- **Vertical writing advances by the horizontal width, and nothing in the corpus can tell.** Both
+  `extract` and `render/native` take a vertical glyph's displacement from `Glyph.Width` with the
+  horizontal scaling `Th` applied. §9.7.4.3 says `w1` comes from `/W2` or `/DW2`, defaulting to one
+  em down rather than to the horizontal width, and §9.4.4 applies `Th` to the horizontal coordinate
+  only — so the reading is wrong twice over. Neither `/W2` nor `/DW2` is parsed anywhere in `font`.
+
+  It stays open rather than being fixed because **all 67 of the corpus's CIDFontType2 fonts are
+  Identity-H**: there is no vertical page to measure a fix against, and a third reading of §9.4.4
+  written blind is worse than a known-wrong one written down. The first vertical document to arrive
+  is what closes this, and `font` needs `/W2`/`/DW2` before `render/native` or `extract` can be
+  corrected — one place, since the arithmetic is deliberately shared. See ADR 0016.
 
 - **~~Table extraction~~ — the tagged half is closed, and re-measuring the debt is what
   moved it.** This bullet used to say the tagged path "can emit real Markdown tables",

@@ -7,6 +7,73 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-09-23
 
+- **`render/native` draws TrueType text, and a page is refused for the *reason* its font cannot be
+  drawn rather than for using a show operator.** ADR 0016. `font.ParseTrueType` reads `head`,
+  `maxp`, `loca`, `glyf` and all four `cmap` subtable formats, handing out outlines in 1/1000 em —
+  the same units as `Glyph.Width`, so a consumer never has to ask what grid the program used.
+  `render/native` fills them as paths: TrueType's quadratics are raised to cubics exactly, so the
+  rasterizer gains no new primitive. Against `render/pdfium` on **seventeen text streams**: mean ink
+  difference **0.009–1.104 of 255**, total ink **0.956–1.001** of pdfium's.
+  - **The refusal is now a census instead of a repeated sentence.** "This page draws text" was the
+    same message 1,241 times; keyed by reason the corpus reads: a **substituted face 1,139 pages**,
+    CFF 104, Type 1 17. `TJ`, `Tj`, `'` and `"` are gone from the table.
+  - **That inverts the order ADR 0015 predicted, and re-measuring at the right layer is what moved
+    it.** Counting *font dictionaries* put CFF ahead of substitution by more than two to one;
+    counting *pages* reverses it elevenfold, because the 13 fonts needing a face are a
+    specification's running heads. Measured greedily — `gs` blocks 1,184 pages and is the sole
+    blocker on **none** of them, so implementing it alone draws nothing — the plan is **a
+    substituted face plus `gs`, together 903 of 1,251 pages (72%)**, then `Do` (82%), stroking
+    (89%), CFF (91%, worth 24 pages), `cs`/`scn` (99%), Type 1, `sh`.
+  - **The survey resolves fonts and glyphs, not just operator names, and without that the census
+    above would have been wrong.** The font reason used to be decided in the paint pass, which never
+    runs when anything else blocked the page — so a page with an ExtGState and a CFF font reported
+    `gs` alone, and with `gs` on 1,184 of 1,251 pages the font figures would have come from the 67
+    pages that happened to have nothing else wrong. The survey runs the graphics state machine too,
+    so a glyph is required only where one would be drawn: §9.3.6's render mode 3 is how a scanned
+    page's invisible OCR layer is written, and demanding a glyph for text nobody draws would refuse
+    a page over characters that mark nothing.
+- **Fixed: `content.Machine` now applies §9.4.3's `'` and `"`, and `render/native` drew every `'` a
+  line too high without it.** `'` is `T*` then `Tj`; `"` sets word and character spacing and then
+  behaves as `'`. `Apply`'s comment said the show operators are left to the caller because they need
+  font metrics — true of the advance, false of the line move and the spacing, which are state. So
+  the state half lived in `extract`'s walker and nowhere else, and `render/native`, written later
+  against that comment, put every quoted line on the previous one: pdfium renders `'` and `T*`
+  identically and this backend differed by a **mean of 2.8 of 255 over 491 pixels**. `Apply` now
+  applies the state and still reports the operator unhandled, because the caller has a string left
+  to draw; `extract`'s copy is deleted.
+- **Fixed: the text acceptance test declared a per-case pixel bound and asserted only the mean.**
+  ADR 0015's tolerance is a mean *and* a count of pixels more than 32 apart; the text comparison
+  carried the count in its table and never checked it, with the mean at 6.0. Three mutations lived
+  there — reversing every one of `TJ`'s kerning adjustments moves the mean to 3.8, under the bound,
+  and the over-32 count to 671. The mean is now 1.5 and the count is asserted per case at its
+  measured value. Those values are **pdfium's grid-fitting, not this package's error**: the same
+  glyph at an integer pen position agrees to a mean of 0.003 with no pixel over 32, and at a
+  half-pixel position to 0.064 with 27 over, so every non-zero allowance belongs to a case whose pen
+  lands between pixels. ADR 0016 declines to hint.
+- **`internal/ttfbuild` builds a TrueType font from nothing, because every real font is someone's
+  copyright and the corpus's are inside gitignored ISO documents.** Two packages need the same
+  bytes. Its glyphs each exist because something survived without them: a square; a diamond of four
+  *off-curve* points, whose implied midpoints a reader misses by treating the list as a polygon; a
+  composite placing the square twice, once scaled; a **ring of two contours wound the same
+  direction**, the only shape where nonzero and even-odd disagree, since a real font winds a counter
+  the opposite way and there both rules agree; and a space, a real glyph with no ink. `hhea`, `hmtx`
+  and `head`'s magic number are there for FreeType, which pdfium reads the font through and which
+  **silently substitutes a font it rejects** — so without them the comparison was against whatever
+  face the machine had. `hmtx`'s left side bearing must equal each glyph's `xMin` or FreeType shifts
+  the outline, which looked exactly like a rasterizer placing glyphs wrongly.
+- **38 mutations, 38 killed — and 8 survived the first run.** Roughly half needed a fixture or an
+  assertion that did not exist yet, and most of those were rules **nothing in the repo reached at
+  all**: three of the four cmap subtable formats, format 4's `idRangeOffset` branch and the
+  `idDelta` addition inside it, a zero glyph read as absence, the symbolic (3,0) route and its
+  0xF000 form, point-matched components, the code-as-glyph-index last resort, the composite
+  `/CIDToGIDMap` route, same-direction nested contours, word spacing on a multi-byte code, and the
+  double quote's spacing operands. A rule with no input is not tested by a passing suite; it is
+  absent from it. The rest were fixtures too loose to discriminate — a 48pt curve cannot tell the
+  quadratic's 2/3 control weight from 1/3, so the table gained a 160pt one; counting a diamond's
+  four quadratics cannot tell a curve through the implied midpoints from one through the control
+  points, so that outline is now compared exactly — and one was equivalent on every input there was,
+  since a composite's offset conversion is a multiplication by one at 1000 units per em.
+
 - **Phase 6 starts: `render/native` rasterizes paths in Go, and refuses any page it cannot draw
   in full.** ADR 0015. A scanline rasterizer — path construction, both fill rules, clipping,
   anti-aliased coverage, `/Rotate`, the device colour spaces — sampled 16× per pixel row and
