@@ -36,15 +36,15 @@ import (
 //
 // This is also the only test in the package that supplies a FaceSource, and so the only one that
 // exercises what cmd/pdfspec actually does: without one the backend refuses every page whose font
-// embeds no program, which is 1,139 of these 1,251.
+// embeds no program, which is 1,140 of these 1,251.
 func TestCorpusCoverage(t *testing.T) {
-	// Skipped under -short, which is how a mutation run stays affordable: this is 92 seconds
-	// against the rest of the package's two, so thirty mutations through it is fifty minutes of
+	// Skipped under -short, which is how a mutation run stays affordable: this is 137 seconds
+	// against the rest of the package's two, so thirty mutations through it is seventy minutes of
 	// mostly re-measuring a number none of them change. A mutation that *only* this test kills
 	// therefore shows up as a survivor under -short and has to be re-checked without it, which is
 	// a real cost of the skip and the reason it is noted here rather than just used.
 	if testing.Short() {
-		t.Skip("corpus coverage takes 92s; run without -short")
+		t.Skip("corpus coverage takes 137s; run without -short")
 	}
 
 	dir := filepath.Join("..", "..", "docs")
@@ -66,7 +66,7 @@ func TestCorpusCoverage(t *testing.T) {
 	// 20 dpi, which is not a resolution anyone would render at and is the right one here: whether
 	// a page is refused is decided by the survey, which never looks at a pixel, so the *count* this
 	// test asserts is resolution-independent while the painting it pays for is not. At the default
-	// 200 dpi the 903 pages that draw cost a Letter page's 3.7 million pixels each and the run
+	// 200 dpi the 1,013 pages that draw cost a Letter page's 3.7 million pixels each and the run
 	// exceeded go test's ten-minute timeout; at 20 dpi it is a hundredth of that and measures
 	// exactly the same set.
 	o := render.DefaultOptions
@@ -125,10 +125,10 @@ func TestCorpusCoverage(t *testing.T) {
 		t.Logf("  blocked by %-34s %4d pages", e.k, e.v)
 	}
 
-	// Measured at 903 with Liberation supplying Sans and Serif. Stated tight, and a *rise* is
+	// Measured at 1,013 with Liberation supplying Sans and Serif, and XObjects drawn. Stated tight, and a *rise* is
 	// not a failure — only a fall is, because the only way this number goes down is a feature
 	// regressing or a refusal widening.
-	const floor = 900
+	const floor = 1013
 	if drawn < floor {
 		t.Errorf("drew %d of %d pages, want at least %d — a refusal widened or a feature regressed",
 			drawn, total, floor)
@@ -147,8 +147,17 @@ func feature(op string) string {
 			return op[:i]
 		}
 		return op
-	case op == "Do":
-		return "Do (XObjects)"
+	case strings.HasPrefix(op, "Do: "):
+		// Every Do reason names its XObject after a ", /"; an image's then says why it cannot be
+		// drawn, and that part is the bucket, so only the name is cut.
+		i := strings.Index(op, ", /")
+		if i < 0 {
+			return op
+		}
+		if j := strings.Index(op[i:], ": "); j > 0 {
+			return op[:i] + op[i+j:]
+		}
+		return op[:i]
 	case op == "cs", op == "scn":
 		return "cs/scn (non-device colour)"
 	case op == "sh":

@@ -196,6 +196,16 @@ func (im *Image) Recoverable() bool {
 	if im.Codec != CodecRaw || im.SMask.Codec != CodecRaw {
 		return false
 	}
+	return im.invertible()
+}
+
+// invertible reports whether the pre-blending on a premultiplied image is defined to invert, once
+// both it and its mask are decoded to samples.
+//
+// Split from Recoverable because the codecs are Encode's constraint and not the arithmetic's:
+// Encode passes a DCT image through undecoded, so it has no samples to invert, while Pixels decodes
+// every codec it accepts and does. The rules below are the arithmetic's, and so both ask them.
+func (im *Image) invertible() bool {
 	if len(im.SMask.Matte) != im.Components {
 		return false
 	}

@@ -65,7 +65,7 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 		"<</Type/Catalog/Pages 2 0 R>>",
 		"<</Type/Pages/Kids[3 0 R]/Count 1>>",
 		fmt.Sprintf("<</Type/Page/Parent 2 0 R/MediaBox[0 0 %d %d]"+
-			"/Resources<</Font<</F1 4 0 R>>>>/Contents 7 0 R>>", size, size),
+			"/Resources<</Font<</F1 4 0 R>>%s>>/Contents 7 0 R>>", size, size, o.xobjects),
 		fontDict,
 		desc,
 		fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(o.prog), o.prog),
@@ -100,7 +100,7 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 		m[2*32+1] = ttfbuild.GIDSquare
 		objs = append(objs, fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(m), m))
 	}
-	return buildPDF(t, objs, "text.pdf")
+	return buildPDF(t, append(objs, o.extra...), "text.pdf")
 }
 
 type textPDFOpts struct {
@@ -112,6 +112,14 @@ type textPDFOpts struct {
 	noDescriptor bool
 	noFontFile   bool
 	composite    bool
+	xobjects     string
+	extra        []string
+}
+
+// withXObjects adds an /XObject resource dictionary to the page, and objects numbered from 8 for
+// it to refer to — which is where they land only without withComposite, and no test needs both.
+func withXObjects(dict string, objs ...string) func(*textPDFOpts) {
+	return func(o *textPDFOpts) { o.xobjects, o.extra = "/XObject<<"+dict+">>", objs }
 }
 
 func withProgram(p []byte) func(*textPDFOpts) { return func(o *textPDFOpts) { o.prog = p } }

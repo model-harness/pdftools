@@ -107,7 +107,12 @@ func renderNative(t *testing.T, path string, dpi float64) *render.Raster {
 // and how many pixels are further apart than tol.
 func compare(t *testing.T, stream string, size int, dpi float64) (mean, worst float64, over int) {
 	t.Helper()
-	path := onePagePDF(t, stream, size, size)
+	return comparePath(t, onePagePDF(t, stream, size, size), dpi)
+}
+
+// comparePath is compare for a page a test built itself, because its content needs resources.
+func comparePath(t *testing.T, path string, dpi float64) (mean, worst float64, over int) {
+	t.Helper()
 
 	// A hard failure, not a skip. Ten of this package's mutation kills come from this
 	// comparison, so a skip would quietly retire them — and render/pdfium is a dependency of
@@ -493,6 +498,36 @@ func TestClipIsRestoredByQ(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestQRestoresTheFillColourAndTheFont pins the two parameters Q restored nowhere until form
+// XObjects needed a real q.
+//
+// §8.4.2 lists the current colour and the text font among what q saves, and content.Machine
+// restored its own copy of the text state while this walker kept the colour and the resolved font
+// outside it. So "q 1 0 0 rg Q … f" filled red and a Tf inside q…Q stayed in force after the Q.
+// Every other test set its colour after its last Q, which is why nothing saw either.
+func TestQRestoresTheFillColourAndTheFont(t *testing.T) {
+	t.Run("fill colour", func(t *testing.T) {
+		mean, worst, over := compare(t, "q 1 0 0 rg Q 20 20 160 160 re f", 200, 72)
+		t.Logf("mean %.3f worst %.0f over-32 %d", mean, worst, over)
+		if mean > 1.0 || over > 0 {
+			t.Errorf("mean %.3f, %d pixels over 32 — the colour set inside q outlived its Q", mean, over)
+		}
+	})
+	t.Run("font", func(t *testing.T) {
+		path := textPDF(t, "q BT /F1 40 Tf ET Q BT 20 60 Td (A) Tj ET", 200)
+		s, err := pcstore.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = s.Close() }()
+		_, err = New(s).Page(1, render.DefaultOptions)
+		var u *Unsupported
+		if !errors.As(err, &u) || !strings.Contains(strings.Join(u.Ops, "|"), "before naming a font") {
+			t.Fatalf("got %v, want the page refused for showing a string with no font — the Tf was inside q…Q", err)
+		}
+	})
 }
 
 // TestHostileCoordinatesDoNotHangOrPanic pins the two ways a content stream stopped this

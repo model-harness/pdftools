@@ -3,6 +3,7 @@ package native
 import (
 	"errors"
 	"fmt"
+	"image"
 	"sort"
 	"strings"
 
@@ -130,14 +131,17 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 
 	res, _ := objects.GetDict(r.s, page, "Resources")
 	w := &walker{
-		s:     r.s,
-		res:   res,
-		w:     pw,
-		h:     ph,
-		base:  pageMatrix(box, dpi/72, rotate),
-		unsup: map[string]bool{},
-		fonts: map[string]*textFont{},
-		faces: r.faces,
+		s:        r.s,
+		res:      res,
+		w:        pw,
+		h:        ph,
+		base:     pageMatrix(box, dpi/72, rotate),
+		unsup:    map[string]bool{},
+		fonts:    map[string]*textFont{},
+		fontRefs: map[objects.Ref]*textFont{},
+		images:   map[objects.Ref]*image.NRGBA{},
+		forms:    map[objects.Ref][]byte{},
+		faces:    r.faces,
 	}
 	w.run(data)
 
@@ -245,13 +249,8 @@ type walker struct {
 	fill paint
 	path path
 
-	// alpha is the constant fill alpha /ca sets, and alphas is the saved value per q.
-	//
-	// Stacked here rather than in content.Machine for the same reason the clip is: it is
-	// graphics state §8.4.2 lists, and the machine does not read ExtGState because resolving
-	// one needs the page's resource dictionary, which content deliberately does not take.
-	alpha  float64
-	alphas []float64
+	// alpha is the constant fill alpha /ca sets.
+	alpha float64
 
 	// pending is a clip the *next* painting operator must apply, and pendingEO the rule it was
 	// marked with. Held rather than applied at W, because §8.5.4 makes the clip the path as it
@@ -259,16 +258,48 @@ type walker struct {
 	pending   bool
 	pendingEO bool
 
-	// clips is the saved clip per q, restored by Q.
-	//
-	// content.Machine stacks the graphics state, and a clip is part of it — §8.4.2 lists the
-	// current clipping path among the parameters q saves. Without this a clip set inside a
-	// q…Q confined everything drawn after the Q as well: measured against pdfium on
-	// "q 0 0 20 20 re W n Q 0 0 200 200 re f", the whole-page fill came out at 1% of its ink.
-	// A clone per q is a page-area copy, taken only when a clip is actually in force.
-	clips []*mask
+	// stack is what q saved and Q restores: the part of §8.4.2's graphics state this walker
+	// holds itself. content.Machine stacks the CTM and the text state; the fill colour, the
+	// resolved font, the alpha and the clip live here, because the machine has no mask, reads no
+	// ExtGState and resolves no font — each of those needs the resource dictionary, which content
+	// deliberately does not take.
+	stack []saved
+
+	// fontRefs caches a parsed font by its indirect reference, across every resource dictionary
+	// the page reaches. fonts is keyed by resource *name*, and a name only means something within
+	// one dictionary — a form's /F1 need not be the page's — so each form gets a fresh name map,
+	// and this is what keeps a form drawn a hundred times from parsing its font a hundred times.
+	fontRefs map[objects.Ref]*textFont
+
+	// images caches decoded pixels by indirect reference, for the same reason, and pixels
+	// counts what has been decoded so far against maxPagePixels.
+	images map[objects.Ref]*image.NRGBA
+	pixels int
+
+	// forms caches a form's decoded content by indirect reference; see formContent for why it is
+	// not simply read off the stream.
+	forms map[objects.Ref][]byte
+
+	// ops counts operators surveyed across the page and every form it reaches, against maxOps.
+	ops int
 
 	unsup map[string]bool
+}
+
+// saved is one q's worth of the state this walker holds.
+//
+// One struct rather than a stack per parameter, which was the shape until form XObjects needed a
+// real q: separate stacks for the clip and the alpha, and none for the colour or the font, so
+// "q 1 0 0 rg Q … f" filled red and a Tf inside q…Q stayed in force after it. A parameter added
+// to the graphics state is now one field here, not one more stack to remember to pop.
+type saved struct {
+	// clip is nil when no clip was in force, so an unclipped q costs no page-area copy. Measured
+	// before it was stacked at all: a clip set inside q…Q confined everything after the Q too, and
+	// "q 0 0 20 20 re W n Q 0 0 200 200 re f" came out at 1% of its ink against pdfium.
+	clip  *mask
+	fill  paint
+	font  *textFont
+	alpha float64
 }
 
 // canvasFor returns the canvas, creating it on first use.
@@ -291,14 +322,20 @@ func (w *walker) canvasFor() *canvas {
 // operator was the previous shape, and no assertion could see it: the image is discarded either
 // way, so the only observable was wall time.
 func (w *walker) run(data []byte) {
-	w.survey(data)
+	w.alpha = 1
+	w.survey(content.NewMachine(geom.Identity), data, 0)
 	if len(w.unsup) > 0 {
 		return
 	}
-	m := content.NewMachine(geom.Identity)
+	// The survey walked the same q/Q and Tf sequence and left its state behind; the paint pass
+	// starts from the page's initial state, not from wherever the survey ended.
+	w.fill, w.alpha, w.font, w.stack = black, 1, nil, nil
+	w.paint(content.NewMachine(geom.Identity), data, 0)
+}
+
+// paint interprets one content stream — the page's, or a form's at depth > 0 — onto the canvas.
+func (w *walker) paint(m *content.Machine, data []byte, depth int) {
 	sc := content.NewScanner(data)
-	w.fill = black
-	w.alpha = 1
 	for {
 		op, ok := sc.Next()
 		if !ok {
@@ -310,7 +347,7 @@ func (w *walker) run(data []byte) {
 		// and a *path* here. Skipping on Apply's word dropped every clip on the page, which the
 		// clip test caught.
 		m.Apply(op)
-		w.op(m, op)
+		w.op(m, op, depth)
 	}
 }
 
@@ -336,12 +373,16 @@ func (w *walker) run(data []byte) {
 // the machine runs here too so that a glyph is only required where it would actually be drawn:
 // §9.3.6's render mode 3 is how a scanned page's invisible OCR layer is written, and demanding a
 // glyph for text nobody draws would refuse a page over characters that mark nothing.
-func (w *walker) survey(data []byte) {
-	m := content.NewMachine(geom.Identity)
+func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 	sc := content.NewScanner(data)
 	for {
 		op, ok := sc.Next()
 		if !ok {
+			return
+		}
+		w.ops++
+		if w.ops > maxOps {
+			w.unsup[fmt.Sprintf("Do: the page and its forms run past %d operators", maxOps)] = true
 			return
 		}
 		m.Apply(op)
@@ -350,6 +391,14 @@ func (w *walker) survey(data []byte) {
 			continue
 		}
 		switch op.Name {
+		case "q":
+			w.save()
+		case "Q":
+			w.restore()
+		case "Do":
+			if len(op.Operands) >= 1 {
+				w.surveyXObject(m, op.NameAt(0), depth)
+			}
 		case "gs":
 			// Resolved and checked here rather than in the paint pass, for the reason the font
 			// reasons are: the paint pass never runs when anything else blocked the page, so a
@@ -358,6 +407,7 @@ func (w *walker) survey(data []byte) {
 				name := objects.Name(op.NameAt(0))
 				if g, ok := w.extGState(name); ok {
 					w.checkExtGState(g)
+					w.setAlpha(g)
 				} else {
 					w.unsup[fmt.Sprintf("gs: /%s is not in the page's /ExtGState resources", name)] = true
 				}
@@ -414,7 +464,18 @@ func (w *walker) checkText(str []byte) {
 	}
 }
 
-// extGState resolves a named ExtGState from the page's resources.
+// setAlpha applies an ExtGState's /ca, the one parameter of it this backend reads.
+//
+// Every other parameter either cannot change a pixel this backend draws or has already refused the
+// page in the survey, so this is the whole of applying an ExtGState — and checkExtGState's comment
+// is where that claim is argued.
+func (w *walker) setAlpha(g objects.Dict) {
+	if v, ok := objects.GetNum(w.s, g, "ca"); ok {
+		w.alpha = v
+	}
+}
+
+// extGState resolves a named ExtGState from the current resources.
 func (w *walker) extGState(name objects.Name) (objects.Dict, bool) {
 	egs, ok := objects.GetDict(w.s, w.res, "ExtGState")
 	if !ok {
@@ -533,7 +594,7 @@ func blendNames(s objects.Store, g objects.Dict) []objects.Name {
 	return out
 }
 
-func (w *walker) op(m *content.Machine, op content.Op) {
+func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 	ctm := w.base.mul(m.GS.CTM)
 	switch op.Name {
 	// Path construction.
@@ -633,50 +694,57 @@ func (w *walker) op(m *content.Machine, op content.Op) {
 		w.endPath()
 
 	case "gs":
-		// Only /ca is read. Every other parameter either cannot change a pixel this backend
-		// draws or has already refused the page in the survey, so this is the whole of applying
-		// an ExtGState here — and checkExtGState's comment is where that claim is argued.
 		if len(op.Operands) >= 1 {
 			if g, ok := w.extGState(objects.Name(op.NameAt(0))); ok {
-				if v, ok := objects.GetNum(w.s, g, "ca"); ok {
-					w.alpha = v
-				}
+				w.setAlpha(g)
 			}
 		}
 
 	case "q":
-		// The clip is saved here and not by content.Machine, which stacks its own state but
-		// has no mask. nil when no clip is in force, so an unclipped q costs nothing.
-		if w.canvas != nil && w.canvas.clipped {
-			w.clips = append(w.clips, w.canvas.clip.clone())
-		} else {
-			w.clips = append(w.clips, nil)
-		}
-		// The alpha is saved with it, in a stack of its own rather than folded into the clip's:
-		// a q that sets no clip pushes nil there, so one slice cannot carry both without making
-		// "no clip" and "alpha 1" the same absent value.
-		w.alphas = append(w.alphas, w.alpha)
+		w.save()
 	case "Q":
-		if n := len(w.alphas); n > 0 {
-			w.alpha = w.alphas[n-1]
-			w.alphas = w.alphas[:n-1]
+		w.restore()
+	case "Do":
+		if len(op.Operands) >= 1 {
+			w.drawXObject(m, op.NameAt(0), depth)
 		}
-		if n := len(w.clips); n > 0 {
-			saved := w.clips[n-1]
-			w.clips = w.clips[:n-1]
-			// Only when something actually has to change. A q…Q pair that set no clip is the
-			// overwhelming majority — a spec page has hundreds — and rebuilding a page-sized
-			// opaque mask for each of them cost more than everything else this walker does put
-			// together: 43 s over the corpus against 6 s for doing nothing.
-			switch {
-			case saved != nil:
-				c := w.canvasFor()
-				c.clip, c.clipped = saved, true
-			case w.canvas != nil && w.canvas.clipped:
-				w.canvas.clip = opaqueMask(w.canvas.clip.w, w.canvas.clip.h)
-				w.canvas.clipped = false
-			}
-		}
+	}
+}
+
+// save pushes the state q saves.
+//
+// Called from the survey as well as the paint pass, because the font and the alpha decide what the
+// survey refuses: a string shown after the Q that ended its Tf has no font, and a transparency group
+// drawn after the Q that ended its /ca is drawn opaque. The clip is only ever non-nil when painting,
+// since the survey creates no canvas.
+func (w *walker) save() {
+	s := saved{fill: w.fill, font: w.font, alpha: w.alpha}
+	if w.canvas != nil && w.canvas.clipped {
+		s.clip = w.canvas.clip.clone()
+	}
+	w.stack = append(w.stack, s)
+}
+
+// restore pops what save pushed. An unbalanced Q is a no-op, as it is in content.Machine.
+func (w *walker) restore() {
+	n := len(w.stack)
+	if n == 0 {
+		return
+	}
+	s := w.stack[n-1]
+	w.stack = w.stack[:n-1]
+	w.fill, w.font, w.alpha = s.fill, s.font, s.alpha
+	// Only when something actually has to change. A q…Q pair that set no clip is the
+	// overwhelming majority — a spec page has hundreds — and rebuilding a page-sized opaque mask
+	// for each of them cost more than everything else this walker does put together: 43 s over
+	// the corpus against 6 s for doing nothing.
+	switch {
+	case s.clip != nil:
+		c := w.canvasFor()
+		c.clip, c.clipped = s.clip, true
+	case w.canvas != nil && w.canvas.clipped:
+		w.canvas.clip = opaqueMask(w.canvas.clip.w, w.canvas.clip.h)
+		w.canvas.clipped = false
 	}
 }
 
@@ -708,6 +776,9 @@ func marks(op string) bool {
 		// nothing by itself, and whether what it *sets* can be drawn is a property of the
 		// ExtGState's keys rather than of the operator. checkExtGState decides it by reason.
 		"q", "Q", "cm", "w", "J", "j", "M", "d", "ri", "i", "gs",
+		// XObjects, for the same reason again: Do marks what the XObject it names marks, so the
+		// survey resolves it and refuses by what it found — see surveyXObject.
+		"Do",
 		// text state, which positions nothing until a show operator
 		"BT", "ET", "Tf", "Tc", "Tw", "Tz", "TL", "Ts", "Tr", "Td", "TD", "Tm", "T*",
 		// marked content, compatibility, and stroke colour

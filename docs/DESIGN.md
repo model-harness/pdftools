@@ -957,8 +957,22 @@ That last point also **retires the `/LW` hole** this section used to name as the
 would make expensive: nothing in the corpus writes one, and `/LW` sets a pen width while every
 stroking operator is refused. It comes back with stroking, not with `gs`.
 
-**The remaining worklist:** `Do` 173 pages, stroking 156, CFF 104, `cs`/`scn` 97, Type 1 17, one
-soft-mask group, one shading. `Do` is next.
+**`Do` is done — see ADR 0019, and `render/native` now draws 1,013 of 1,251 pages (81%).** Images
+are decoded by a new `image.Pixels`, which is stricter than `Encode` on purpose: it refuses a stencil,
+an uninvertible matte, a DCT CMYK image, a DCT `/Decode` and a JPEG header that disagrees with its
+dictionary, where `Encode` degrades. Images are composited bilinearly with up to 4×4 subsamples.
+Forms follow §8.10.1, and a knockout group or a group drawn at alpha below 1 is refused. The
+projection said 1,029, and the 16-page gap is forms whose contents hold other blockers the survey
+could not see while it refused the form unopened. Every form is bounded on three axes: depth 8,
+5,000,000 operators a page, and 64M decoded pixels a page with soft masks counted.
+
+The fixtures found a defect the corpus count could not: **every form painted nothing**. The survey
+decoded form content onto a resolved `*Stream`, and the paint pass read a fresh copy with nothing
+decoded on it. Refusing a page is the survey's job, so every page with a form still counted as
+drawn.
+
+**The remaining worklist:** `S` 180 pages, `B` 3 and `B*` 2, CFF 104, `cs`/`scn` 98,
+Type 1 17, one soft-mask group, one shading. Stroking is next.
 
 **Phase 7 — Rust.** Same architecture, same CLI surface, shared golden corpus. Deferred
 until the Go boundaries have been proven by use, so the Rust port inherits a validated

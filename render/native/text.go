@@ -31,22 +31,39 @@ type textFont struct {
 	substituted bool
 }
 
-// loadFont resolves a /Font resource name once per page.
+// loadFont resolves a /Font resource name once per resource dictionary, and a font program once
+// per page.
 func (w *walker) loadFont(name string) *textFont {
 	if tf, ok := w.fonts[name]; ok {
 		return tf
 	}
-	tf := &textFont{}
-	w.fonts[name] = tf
-
 	fonts, ok := objects.GetDict(w.s, w.res, "Font")
 	if !ok {
-		tf.why = "the page declares no /Font resources"
+		tf := &textFont{why: "the resources declare no /Font"}
+		w.fonts[name] = tf
 		return tf
 	}
+	ref, isRef := fonts[objects.Name(name)].(objects.Ref)
+	if isRef {
+		if tf, ok := w.fontRefs[ref]; ok {
+			w.fonts[name] = tf
+			return tf
+		}
+	}
+	tf := w.parseFont(fonts, name)
+	w.fonts[name] = tf
+	if isRef {
+		w.fontRefs[ref] = tf
+	}
+	return tf
+}
+
+// parseFont resolves one font dictionary and the program behind it.
+func (w *walker) parseFont(fonts objects.Dict, name string) *textFont {
+	tf := &textFont{}
 	dict, ok := objects.GetDict(w.s, fonts, objects.Name(name))
 	if !ok {
-		tf.why = fmt.Sprintf("/Font /%s is not in the page's resources", name)
+		tf.why = fmt.Sprintf("/Font /%s is not in the resources", name)
 		return tf
 	}
 	tf.dict = dict

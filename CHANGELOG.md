@@ -7,6 +7,26 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-09-24
 
+- **`render/native` draws image and form XObjects: 1,013 of the corpus's 1,251 pages (81%), and no
+  page is blocked by `Do`.** ADR 0019.
+  - **`image.Pixels` and `image.Read`** give a renderer non-premultiplied colour with the soft mask
+    as alpha, and the `/Matte` inversion for every codec pairing. `image.Pixels` is **stricter than
+    `Encode`**: it refuses a stencil, an uninvertible matte, a DCT CMYK image, a DCT `/Decode`, and
+    a JPEG header whose size disagrees with its dictionary. `Recoverable` and `Pixels` share
+    `invertible()`, so the rule for which blend can be undone exists once.
+  - **Images** are mapped from the unit square by inverting the CTM, sampled bilinearly with colour
+    weighted by alpha, and anti-aliased by up to 4×4 subsamples. Against pdfium the mean ink
+    difference is 0.000 when a checkerboard is drawn axis-aligned, and 6.7 of 255 when it is
+    rotated, where pdfium's edge filter is softer. On EC3's Figure 12 the difference is 1.14 at
+    72 dpi and 1.82 at 200 dpi.
+  - **Forms** follow §8.10.1: an implicit q/Q, `/Matrix` applied before the CTM, the text state
+    inherited, the form's own resources or the invoking stream's, and a `/BBox` clip. A knockout
+    group and a group drawn at constant alpha below 1 are refused, because drawing either element by
+    element gives a different picture.
+  - **Bounded on every axis:** depth 8, 5,000,000 operators a page (the corpus maximum is 13,733),
+    and 64M decoded pixels a page with soft masks charged (the corpus maximum is 24,740,410).
+    Decoded images, form content and fonts are cached by reference.
+
 - **`render/native` draws 903 of the corpus's 1,251 pages (72%).** ADR 0017. The first time this
   backend renders a real page, and it took the two features ADR 0016's measurement named as a pair:
   a substituted face and `gs`. Neither alone was worth having — `gs` blocks 1,184 pages and is the
@@ -76,6 +96,11 @@ All notable changes to this project are documented here, following
   indistinguishable from real text downstream. Two deterministic routes come first and shrink
   whatever remains: Adobe's CMap resources for CID-to-Unicode by table, and glyph names with the
   Adobe Glyph List.
+
+### Fixed — 2026-09-24
+
+- **`render/native`: Q restored neither the fill colour nor the font.** A colour set inside q…Q
+  outlived the Q, and so did a `Tf`.
 
 ### Added — 2026-09-23
 
