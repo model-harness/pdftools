@@ -1,0 +1,78 @@
+docs/adr/0019-draw-xobjects-and-bound-what-a-form-can-cost.md
+  s_5cd1b28ed520c1::t_0dfb4b35048ea6 68-69
+  s_5cd1b28ed520c1::t_c672f27377629e 116-126
+  s_5cd1b28ed520c1::t_337d5fe2cb8901 127-129
+  s_5cd1b28ed520c1::t_9a3c7ed7faa140 131
+  s_5cd1b28ed520c1::t_58f61ff722e5db 1-67,70-114,130,132-141
+  s_5cd1b28ed520c1::t_2947b565746cb8 115
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_c216c105303ac7 974
+  s_5cd1b28ed520c1::t_cbe8f0acc5fe02 960-973,975
+image/pixels.go
+  s_5cd1b28ed520c1::t_4f5c31fdd5c84f 170
+  s_5cd1b28ed520c1::t_d059a7c94f790b 107-119
+  s_5cd1b28ed520c1::t_18495666446829 1-40,42-71,75-76,97-106,120-169,171-173
+  s_5cd1b28ed520c1::t_671e622e7235a0 41,72-74,77-96
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_01689fbb0544d3 100-104
+  s_5cd1b28ed520c1::t_cd242102a4efb9 10-29
+image/pixels_test.go
+  s_5cd1b28ed520c1::t_04e856a89dfdd6 1-159
+render/native/native_test.go
+  s_5cd1b28ed520c1::t_b332c9cf76404b 110-115
+  s_5cd1b28ed520c1::t_7baf00f2f3abf8 503-532
+image/image.go
+  s_5cd1b28ed520c1::t_671e622e7235a0 199-208
+render/native/text_test.go
+  s_5cd1b28ed520c1::t_c422db6e7182db 68
+  s_5cd1b28ed520c1::t_bdb7a7b8392fa9 103
+  s_5cd1b28ed520c1::t_fffb4264b3e04b 115-122
+render/native/text.go
+  s_5cd1b28ed520c1::t_f2113fcf9ec6c0 34-35,42-43,46-63,66
+render/native/xobject.go
+  s_5cd1b28ed520c1::t_647fd029907991 224-225,227-229
+  s_5cd1b28ed520c1::t_745b6e69afea3b 1-22,24-95,98-122,141-142,144-145,150-200,203-223,226,230-411
+  s_5cd1b28ed520c1::t_e93f4988e48855 96-97,123-140,143,146-149,201-202
+  s_5cd1b28ed520c1::t_81c107ffa697a9 23
+render/native/native.go
+  s_5cd1b28ed520c1::t_e93f4988e48855 143,278-281
+  s_5cd1b28ed520c1::t_f2113fcf9ec6c0 6,140-142,144
+  s_5cd1b28ed520c1::t_221821103173de 252-253,261-277,282-284,289-302
+  s_5cd1b28ed520c1::t_3fa74539a9adef 325-326,330-337,350,376,383-384,386-387,394-401,410,699
+  s_5cd1b28ed520c1::t_f2953bfd81b9a9 385,467-478,779-781
+  s_5cd1b28ed520c1::t_68d876745a3e0a 303,597,704,706-709,714-749
+  s_5cd1b28ed520c1::t_79b17a36a75ede 134-139
+  s_5cd1b28ed520c1::t_26efec868ad55a 304,750
+render/native/faces.go
+  s_5cd1b28ed520c1::t_4d8d27a073f186 12
+render/native/xobject_test.go
+  s_5cd1b28ed520c1::t_86cba866cb684f 235
+  s_5cd1b28ed520c1::t_15ab12a83486b3 230-232,236-237
+  s_5cd1b28ed520c1::t_e0f4682f0bb7cd 301-308
+  s_5cd1b28ed520c1::t_6f68f5c4b394c7 100-102,139,151-155,173-175
+  s_5cd1b28ed520c1::t_351a3f72769aff 488-497
+  s_5cd1b28ed520c1::t_e9573e6ae89934 1-99,103-138,140-150,156-172,176-186,211-229,238-300,309-487,498-504,508-512
+  s_5cd1b28ed520c1::t_34d50bb53ac564 233-234
+  s_5cd1b28ed520c1::t_868a49a866730d 187-210
+  s_5cd1b28ed520c1::t_1403c4136a464c 505-507
+render/native/corpus_test.go
+  s_5cd1b28ed520c1::t_c35129300adc2f 39,41-42,47
+  s_5cd1b28ed520c1::t_0cc02904f9b00c 150-160
+  s_5cd1b28ed520c1::t_01a4a95a4e4a9d 69,128,131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2c7668acb05cc392701bc66106c21c32c4fcbdd0",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
