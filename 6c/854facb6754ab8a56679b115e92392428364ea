@@ -1,0 +1,120 @@
+internal/liberation/faces/AUTHORS
+  s_5cd1b28ed520c1::t_d4cb09edf37d8a 1-16
+render/native/substitute_test.go
+  s_5cd1b28ed520c1::t_9f32a165d1a588 243-245,247
+  s_5cd1b28ed520c1::t_72bb9d6f3d5b1e 9,305-310
+  s_5cd1b28ed520c1::t_78be90e60bb5a0 47-65,239-242
+  s_5cd1b28ed520c1::t_1d42692e06936d 1-8,10-46,66-157,164-220,271-304,311-324,331-341,347-387
+  s_5cd1b28ed520c1::t_64bf829269fa92 158-163
+  s_5cd1b28ed520c1::t_67bd934dc79522 221-238,246,248-270
+  s_5cd1b28ed520c1::t_1fd4d0ee3211fe 325-330,342-346
+cmd/pdfspec/backend.go
+  s_5cd1b28ed520c1::t_2d226ecb32722d 1-107,109-120
+  s_5cd1b28ed520c1::t_1cd682ed621456 108
+render/native/text.go
+  s_5cd1b28ed520c1::t_96d4f3678625ac 23-31
+  s_5cd1b28ed520c1::t_01dc868b81f05a 72-73,76,83-87,92-93
+  s_5cd1b28ed520c1::t_2f1719539613cc 74-75
+  s_5cd1b28ed520c1::t_b2a30ce0b44715 116-126,128-134
+  s_5cd1b28ed520c1::t_c4d575278bb915 127
+  s_5cd1b28ed520c1::t_2cccb91ad201eb 255
+internal/liberation/liberation_test.go
+  s_5cd1b28ed520c1::t_b4ad3089b120ed 1-159
+render/native/corpus_test.go
+  s_5cd1b28ed520c1::t_b47b58bcfbd68c 97-101,103-106
+  s_5cd1b28ed520c1::t_483460d68460b0 1-65,75-86,88-96,102,107-158
+  s_5cd1b28ed520c1::t_72704a877867f3 66-74,87
+internal/liberation/faces/LICENSE
+  s_5cd1b28ed520c1::t_d4cb09edf37d8a 1-102
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_f4baaf1fd2e3a3 44,132
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_4d6b887a3e3431 8-79
+render/native/native_test.go
+  s_5cd1b28ed520c1::t_a13e4d36de6138 403-404,406-414
+render/native/faces.go
+  s_5cd1b28ed520c1::t_be65088bff88ce 10-15,22-23,28
+  s_5cd1b28ed520c1::t_0b50b754168b0b 1-2,4-9,16-21,24-27,29,31-34
+  s_5cd1b28ed520c1::t_f9d8fe006bc12d 3
+  s_5cd1b28ed520c1::t_dca182dd5f46dd 30
+cmd/pdfspec/backend_test.go
+  s_5cd1b28ed520c1::t_fee1b15e250145 1-6,9-11,13-160,166-178
+  s_5cd1b28ed520c1::t_e913e26dc0af98 7-8,12,161-165
+font/substitute.go
+  s_5cd1b28ed520c1::t_be65088bff88ce 129-170
+  s_5cd1b28ed520c1::t_444dfca87e09f2 1-128
+internal/liberation/liberation.go
+  s_5cd1b28ed520c1::t_4a8b4f9aba6b00 1-54,56,72-85,87-93,95-160
+  s_5cd1b28ed520c1::t_fd6df8e8aed064 55,57-67,71
+  s_5cd1b28ed520c1::t_dc13609467c95f 68-70
+  s_5cd1b28ed520c1::t_be65088bff88ce 86,94
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_783dcf88d3173b 999-1029
+  s_5cd1b28ed520c1::t_420269c17bb638 937-961
+render/native/native.go
+  s_5cd1b28ed520c1::t_e5d0e763252baa 417-478,480-488,490-497,499-506,508-509,511-535
+  s_5cd1b28ed520c1::t_2cccb91ad201eb 730
+  s_5cd1b28ed520c1::t_bda8321549a2ce 301,655-658,660,662-663,707-709
+  s_5cd1b28ed520c1::t_d903a00aa03575 498
+  s_5cd1b28ed520c1::t_5b187fe62009e4 248-255
+  s_5cd1b28ed520c1::t_0ab88eb8a7d9d9 479
+  s_5cd1b28ed520c1::t_80ed631b1ee0a2 51-54,71-77,140,238
+  s_5cd1b28ed520c1::t_be65088bff88ce 10,55,239
+  s_5cd1b28ed520c1::t_0627d3319d7cf2 635-646
+  s_5cd1b28ed520c1::t_ba23a6508e1c84 353-364
+  s_5cd1b28ed520c1::t_661dc99bf30a59 661
+  s_5cd1b28ed520c1::t_19408a33df040c 710
+  s_5cd1b28ed520c1::t_fa2655753f8b88 240,489,507,510
+font/font.go
+  s_5cd1b28ed520c1::t_9f5201b180041d 109-115,127,131,180-202
+  s_5cd1b28ed520c1::t_86c935b81851f3 150
+render/native/extra_test.go
+  s_5cd1b28ed520c1::t_e913e26dc0af98 13,27
+docs/adr/0017-substitute-a-face-behind-a-caller-supplied-source.md
+  s_5cd1b28ed520c1::t_b983d1c8452836 1-218
+cmd/pdfspec/render.go
+  s_5cd1b28ed520c1::t_f07f96d5c55d69 30,58,75,112,145
+  s_5cd1b28ed520c1::t_ac56fe5b025cb6 32
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_ac90b83fccc3d5 27
+  s_5cd1b28ed520c1::t_6ee3318797e643 87-95
+  s_5cd1b28ed520c1::t_989d7926f2bf16 11-12
+internal/pdfbuild/pdfbuild.go
+  s_5cd1b28ed520c1::t_f6610a70f3aa38 1-46
+render/native/text_test.go
+  s_5cd1b28ed520c1::t_b94ac383c79a79 111,121-132
+  s_5cd1b28ed520c1::t_20c3b89827b0e5 465
+  s_5cd1b28ed520c1::t_55773335dd8227 24-25,30-33,35,55-63,75-79
+font/font_test.go
+  s_5cd1b28ed520c1::t_932ed9b40015c3 487-492,494-499,501-535
+  s_5cd1b28ed520c1::t_f0f296aaecf7e1 427-486,493,500,536-538
+render/native/paint.go
+  s_5cd1b28ed520c1::t_03adf4c9097e29 128-133
+  s_5cd1b28ed520c1::t_12c5b49c6ef386 145
+docs/adr/0018-record-glyph-inference-do-not-build-it.md
+  s_5cd1b28ed520c1::t_8ede76d629ff58 1-143
+render/native/gs_test.go
+  s_5cd1b28ed520c1::t_8ebcdc73641cc0 60-62,166,198
+  s_5cd1b28ed520c1::t_53d232d5ca918b 1-59,63-165,167-197,199-204
+.gitattributes
+  s_5cd1b28ed520c1::t_7ef5c5dd638e5c 25-33
+font/decode.go
+  s_5cd1b28ed520c1::t_d0964dfd631fd0 31-42,68,70-75,92,94-99,133,136,140-142,144,153,155,158-191
+  s_5cd1b28ed520c1::t_2d6d742e3f674c 108-117,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6c854facb6754ab8a56679b115e92392428364ea",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
