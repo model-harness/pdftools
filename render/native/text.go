@@ -20,6 +20,15 @@ type textFont struct {
 	tt   *font.TrueType
 	why  string // empty when tt is usable
 	dict objects.Dict
+
+	// substituted marks a program that is a stand-in rather than the document's own.
+	//
+	// It changes how a code reaches a glyph. The document's own program was subsetted and
+	// encoded together with the font dictionary, so a code may index it directly; a substitute
+	// knows nothing of that dictionary and can only be reached through a *character*. Without
+	// this flag the code-as-glyph-index last resort would fire on a substitute and draw whatever
+	// glyph happened to sit at that index — arbitrary letters, confidently.
+	substituted bool
 }
 
 // loadFont resolves a /Font resource name once per page.
@@ -60,21 +69,28 @@ func (w *walker) loadFont(name string) *textFont {
 	}
 	fd, ok := objects.GetDict(w.s, desc, "FontDescriptor")
 	if !ok {
-		// A standard-14 font names a face this package does not carry. Substituting one is a
-		// decision about which face, and a wrong substitution is a page that looks right and
-		// is set in the wrong type — so it is a refusal until there is a face to substitute.
-		tf.why = fmt.Sprintf("/Font /%s has no descriptor: a standard-14 face would have to be substituted", name)
+		// A standard-14 font: no descriptor at all, so the name is the only statement of which
+		// face the page wants. Substituted rather than refused, now that a caller can supply one.
+		tt, why := w.substitute(f, fmt.Sprintf(
+			"/Font /%s has no descriptor, so it is a standard-14 face", name))
+		tf.tt, tf.why, tf.substituted = tt, why, tt != nil
 		return tf
 	}
 	data, ok := objects.GetStreamData(w.s, fd, "FontFile2")
 	if !ok {
 		switch {
 		case fd["FontFile3"] != nil:
+			// CFF and Type 1 are refused rather than substituted, and the difference is worth
+			// stating: the document *did* embed a face, so its glyphs are on hand and only the
+			// charstring interpreter is missing. Standing a different face in for one the file
+			// carries would replace a typeface the producer chose and shipped, which is a larger
+			// misrepresentation than declining the page.
 			tf.why = "the font program is FontFile3 (CFF), which needs a charstring interpreter"
 		case fd["FontFile"] != nil:
 			tf.why = "the font program is FontFile (Type 1), which needs a charstring interpreter"
 		default:
-			tf.why = "the font embeds no program and would have to be substituted"
+			tt, why := w.substitute(f, "the font declares a descriptor and embeds no program")
+			tf.tt, tf.why, tf.substituted = tt, why, tt != nil
 		}
 		return tf
 	}
@@ -97,6 +113,25 @@ func (w *walker) loadFont(name string) *textFont {
 // decoded is a refusal rather than a blank: a reader that skipped it would drop a character with
 // nothing to say so.
 func (tf *textFont) gid(g font.Glyph) (uint16, bool) {
+	// A substituted face is reachable only through the character, and this is the whole reason
+	// textFont records that it is one. Every other route below asks the *document* which glyph it
+	// means — /CIDToGIDMap indexes the program the document embedded, a symbolic cmap is the one
+	// the subsetter wrote, and the last resort treats the code itself as an index into it. None of
+	// those indices mean anything in a face the document has never seen: following them would pick
+	// whatever glyph happened to sit at that position and draw it with complete confidence.
+	//
+	// So a code whose text could not be decoded has no substitute glyph, and the page is refused.
+	// That is the honest outcome — it is precisely the case where nothing knows what character the
+	// page draws — and it is why a substituted symbolic font with no /ToUnicode stays refused
+	// rather than becoming a line of arbitrary letters.
+	if tf.substituted {
+		for _, r := range g.Text {
+			if gid, ok := tf.tt.GIDForRune(r); ok {
+				return gid, true
+			}
+		}
+		return 0, false
+	}
 	if tf.f.Kind == font.Composite {
 		return tf.f.GIDForCID(g.CID)
 	}
@@ -217,7 +252,7 @@ func (w *walker) fillGlyph(out font.Outline, trm geom.Matrix) {
 	if p.empty() {
 		return
 	}
-	w.canvasFor().fill(&p, w.fill, false)
+	w.canvasFor().fill(&p, w.fill, false, w.alpha)
 }
 
 // showArray handles TJ, whose array mixes strings to show with kerning adjustments.

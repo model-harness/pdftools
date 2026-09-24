@@ -20,7 +20,6 @@ import (
 	"github.com/model-harness/pdftools/ocr/doctags"
 	"github.com/model-harness/pdftools/ocr/ipc"
 	"github.com/model-harness/pdftools/render"
-	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 	"github.com/model-harness/pdftools/sink/markdown"
 )
 
@@ -42,6 +41,7 @@ func runOCR(args []string) error {
 	force := fs.Bool("force", false, "send every selected page to the model, ignoring coverage")
 	dryRun := fs.Bool("dry-run", false, "report which pages would be sent and exit without loading a model")
 	dpi := fs.Float64("dpi", render.DefaultOptions.DPI, "resolution pages are rasterized at before recognition")
+	backend := fs.String("backend", "pdfium", "rasterizer: "+backendNames)
 	maxTokens := fs.Int("max-tokens", defaultMaxTokens, "token bound per page; 0 means the backend's default")
 	addr := fs.String("addr", "", "IPC address of a running model host (default: run one in-process)")
 	exe := fs.String("exe", "", "llama-server executable (default: look on PATH)")
@@ -129,7 +129,7 @@ func runOCR(args []string) error {
 	}
 	defer closeEngine()
 
-	r, err := renderpdfium.Open(in)
+	r, err := openRasterizer(*backend, in)
 	if err != nil {
 		return err
 	}

@@ -125,7 +125,12 @@ func newCanvas(w, h int) *canvas {
 // colour. Nothing here implements the rest of §11: a page that sets a blend mode or a soft
 // mask is refused, because compositing one wrongly produces an image that looks plausible and
 // is not the page.
-func (c *canvas) fill(p *path, col paint, evenOdd bool) {
+//
+// alpha is the constant fill alpha an ExtGState's /ca sets (§11.6.4.4), multiplied into the
+// coverage. Correct only over an opaque backdrop and under the normal blend mode, which is
+// what this canvas has — a white page and no blend mode, since any other is refused. Passed
+// rather than folded into col, because alpha is graphics state and a later rg must not clear it.
+func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64) {
 	pr, pg, pb := col.r*255, col.g*255, col.b*255
 	w := c.clip.w
 	p.scan(w, c.clip.h, evenOdd, func(py int, row []float64) {
@@ -137,7 +142,7 @@ func (c *canvas) fill(p *path, col paint, evenOdd bool) {
 			if v > 1 {
 				v = 1
 			}
-			al := v
+			al := v * alpha
 			if cl := c.clip.a[base+x]; cl != 255 {
 				if cl == 0 {
 					continue

@@ -28,6 +28,18 @@ type Glyph struct {
 	// and substituting U+FFFD would put noise in the output.
 	Text string
 
+	// Source says how Text was arrived at, which Text itself cannot.
+	//
+	// It answers a question nothing could answer before: how much of a document's text is *known*
+	// rather than assumed. A page whose characters all came from /ToUnicode and one where half came
+	// from a base encoding guessed off the symbolic flag are equally plausible on screen and not
+	// equally trustworthy, and a consumer auditing extraction quality has no other way to tell them
+	// apart. ADR 0018 records why this is here before any inference is: an inference route would
+	// add a value rather than change what an existing one means.
+	//
+	// Empty Text always has SourceNone, and a non-empty Text never does.
+	Source Source
+
 	// Width is the horizontal advance in 1/1000 em, whatever the font's kind. The
 	// caller scales it by font size and any horizontal scaling.
 	//
@@ -53,12 +65,14 @@ func (f *Font) Decode(s []byte) []Glyph {
 		out := make([]Glyph, len(s))
 		for i, b := range s {
 			code := uint32(b)
+			text, src := f.simpleText(b)
 			out[i] = Glyph{
-				Code:  code,
-				Bytes: 1,
-				CID:   code,
-				Text:  f.simpleText(b),
-				Width: f.Width(code, code),
+				Code:   code,
+				Bytes:  1,
+				CID:    code,
+				Text:   text,
+				Source: src,
+				Width:  f.Width(code, code),
 			}
 		}
 		return out
@@ -75,12 +89,14 @@ func (f *Font) Decode(s []byte) []Glyph {
 			// notdef guarantees one.
 			cid = c.Value
 		}
+		text, src := f.compositeText(c.Value)
 		out[i] = Glyph{
-			Code:  c.Value,
-			Bytes: c.Bytes,
-			CID:   cid,
-			Text:  f.compositeText(c.Value),
-			Width: f.Width(c.Value, cid),
+			Code:   c.Value,
+			Bytes:  c.Bytes,
+			CID:    cid,
+			Text:   text,
+			Source: src,
+			Width:  f.Width(c.Value, cid),
 		}
 	}
 	return out
@@ -89,9 +105,19 @@ func (f *Font) Decode(s []byte) []Glyph {
 // Text returns what a character code means, without measuring it. Decode is the
 // normal entry point; this exists for callers that already know the code.
 func (f *Font) Text(code uint32) string {
+	s, _ := f.TextSource(code)
+	return s
+}
+
+// TextSource returns what a code means and how that was determined.
+//
+// The pair rather than a second traversal, because the source falls out of the
+// same lookup: Text is this with the evidence dropped, and a caller that wants
+// both should not decode twice to get them.
+func (f *Font) TextSource(code uint32) (string, Source) {
 	if f.Kind == Simple {
 		if code > 0xFF {
-			return ""
+			return "", SourceNone
 		}
 		return f.simpleText(byte(code))
 	}
@@ -104,16 +130,18 @@ func (f *Font) Text(code uint32) string {
 // its codes, while an encoding is an inference from a name. They usually agree;
 // where they do not, a subset font with a rearranged encoding is the likely reason
 // and /ToUnicode is the one that was written for this document.
-func (f *Font) simpleText(code byte) string {
+func (f *Font) simpleText(code byte) (string, Source) {
 	if f.toUnicode != nil {
 		if s, ok := f.toUnicode.Text(uint32(code)); ok && s != "" {
-			return s
+			return s, SourceToUnicode
 		}
 	}
 	if f.enc != nil {
-		return f.enc.Text(code)
+		if s := f.enc.Text(code); s != "" {
+			return s, SourceEncoding
+		}
 	}
-	return ""
+	return "", SourceNone
 }
 
 // compositeText resolves a composite font's code.
@@ -122,12 +150,45 @@ func (f *Font) simpleText(code byte) string {
 // about it implies a character. This is why 92 of 92 composite fonts in this
 // repo's corpus carry a /ToUnicode stream — without one the text is genuinely
 // unrecoverable from the file, and OCR is the only remaining route.
-func (f *Font) compositeText(code uint32) string {
+func (f *Font) compositeText(code uint32) (string, Source) {
 	if f.toUnicode == nil {
-		return ""
+		return "", SourceNone
 	}
 	s, _ := f.toUnicode.Text(code)
-	return s
+	if s == "" {
+		return "", SourceNone
+	}
+	return s, SourceToUnicode
+}
+
+// Source is how a glyph's text was determined.
+//
+// Ordered by how much the file actually stated, most explicit first, so that a consumer comparing
+// two glyphs can rank them: a /ToUnicode entry was written for this document, where an encoding is
+// a table chosen by name and applies to whatever the font's codes happen to be.
+type Source uint8
+
+const (
+	// SourceNone means the font gave no way to tell, and Text is empty. A real answer, not an
+	// error: a symbolic font with no /ToUnicode has genuinely undecodable codes.
+	SourceNone Source = iota
+	// SourceToUnicode means a /ToUnicode CMap mapped the code. The font's own statement about
+	// what its codes mean, written for this document.
+	SourceToUnicode
+	// SourceEncoding means a simple font's encoding table mapped the code — a named base encoding,
+	// possibly overlaid with /Differences. An inference from a name rather than a statement about
+	// this font, which is why it ranks below /ToUnicode and why the two are worth telling apart.
+	SourceEncoding
+)
+
+func (s Source) String() string {
+	switch s {
+	case SourceToUnicode:
+		return "ToUnicode"
+	case SourceEncoding:
+		return "Encoding"
+	}
+	return "none"
 }
 
 // Width returns a glyph's horizontal advance in glyph space units.

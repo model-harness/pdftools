@@ -106,6 +106,13 @@ type Font struct {
 	bold   bool
 	italic bool
 	mono   bool
+
+	// serif is the fourth axis, and it exists for substitution rather than for
+	// emphasis: choosing a face to stand in for a font with no embedded program
+	// needs to know whether the original had serifs, and nothing else in this
+	// package needed to. Derived the same way as the others, from /Flags bit 2
+	// and the name together.
+	serif bool
 }
 
 // Name returns the /BaseFont name with any subset prefix stripped.
@@ -117,10 +124,11 @@ type Font struct {
 // want the name exactly as written.
 func (f *Font) Name() string { return stripSubsetPrefix(f.BaseFont) }
 
-// Bold, Italic, and Monospaced report the font's typographic traits.
+// Bold, Italic, Monospaced, and Serif report the font's typographic traits.
 func (f *Font) Bold() bool       { return f.bold }
 func (f *Font) Italic() bool     { return f.italic }
 func (f *Font) Monospaced() bool { return f.mono }
+func (f *Font) Serif() bool      { return f.serif }
 
 // traits derives bold, italic, and monospaced from the descriptor and the name.
 //
@@ -139,6 +147,7 @@ func (f *Font) traits(s objects.Store, fd objects.Dict) {
 	if fd != nil {
 		flags, _ := objects.GetInt(s, fd, "Flags")
 		f.mono = flags&(1<<0) != 0
+		f.serif = flags&(1<<1) != 0
 		f.italic = flags&(1<<6) != 0
 
 		// /FontWeight is the direct statement; 600 is the conventional threshold, and
@@ -167,6 +176,29 @@ func (f *Font) traits(s objects.Store, fd objects.Dict) {
 	if strings.Contains(name, "mono") || strings.Contains(name, "courier") ||
 		strings.Contains(name, "consolas") {
 		f.mono = true
+	}
+
+	// Serif from the name, in both directions, because /Flags bit 2 is the one
+	// producers most often leave at zero: 0 means "not stated" far more often than
+	// it means "sans", so a name that says otherwise overrides it either way. The
+	// sans list is checked second so that a face named for both — there is no such
+	// face, but a subset prefix can put any letters in front — resolves to sans.
+	for _, n := range []string{"times", "serif", "roman", "georgia", "garamond",
+		"book", "minion", "cambria", "palatino", "century", "baskerville"} {
+		if strings.Contains(name, n) {
+			f.serif = true
+		}
+	}
+	for _, n := range []string{"arial", "helvetica", "verdana", "tahoma", "calibri",
+		"segoe", "futura", "gothic", "grotesk", "sansserif", "sans-serif"} {
+		if strings.Contains(name, n) {
+			f.serif = false
+		}
+	}
+	// "sans" last and on its own, since it appears inside "sansserif" above and a
+	// name containing it is never a serif face.
+	if strings.Contains(name, "sans") {
+		f.serif = false
 	}
 }
 

@@ -21,17 +21,18 @@ import (
 // Arial the machine has.
 func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) string {
 	t.Helper()
-	o := textPDFOpts{prog: ttfbuild.Builder{UnitsPerEm: 1000}.Build(), fontFile: "FontFile2"}
+	o := textPDFOpts{prog: ttfbuild.Builder{UnitsPerEm: 1000}.Build(), fontFile: "FontFile2",
+		baseFont: "Test"}
 	for _, f := range opts {
 		f(&o)
 	}
 
-	desc := fmt.Sprintf("<</Type/FontDescriptor/FontName/Test/Flags %d/ItalicAngle 0"+
+	// /ItalicAngle is 0 and /StemV 80 so the descriptor states neither italic nor bold: the style
+	// inference reads both, and a fixture that quietly declared one would make every case below
+	// about the fixture rather than about the evidence under test.
+	desc := fmt.Sprintf("<</Type/FontDescriptor/FontName/%s/Flags %d/ItalicAngle 0"+
 		"/Ascent 800/Descent -200/CapHeight 700/StemV 80/FontBBox[0 -200 1000 800]/%s 6 0 R>>",
-		o.flags, o.fontFile)
-	if o.noDescriptor {
-		desc = "<</Type/FontDescriptor/FontName/Test/Flags 32>>"
-	}
+		o.baseFont, o.flags, o.fontFile)
 
 	// /Widths from the space to 'C', in 1/1000 em: 250 for the space, 500 for the square and 600
 	// for the other two, with the unused codes between them zero. Stated in the dictionary rather
@@ -51,8 +52,15 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 			widths = append(widths, "0")
 		}
 	}
-	fontDict := fmt.Sprintf("<</Type/Font/Subtype/TrueType/BaseFont/Test/FirstChar 32/LastChar 68"+
-		"/Widths [%s]/FontDescriptor 5 0 R%s>>", strings.Join(widths, " "), o.encoding)
+	// A standard-14 font has no /FontDescriptor at all, which is the shape 7 of the corpus's fonts
+	// and 1,138 of its pages have — and the case where /BaseFont is the *only* evidence of which
+	// face the page wants.
+	descRef := "/FontDescriptor 5 0 R"
+	if o.noDescriptor {
+		descRef = ""
+	}
+	fontDict := fmt.Sprintf("<</Type/Font/Subtype/TrueType/BaseFont/%s/FirstChar 32/LastChar 68"+
+		"/Widths [%s]%s%s>>", o.baseFont, strings.Join(widths, " "), descRef, o.encoding)
 	objs := []string{
 		"<</Type/Catalog/Pages 2 0 R>>",
 		"<</Type/Pages/Kids[3 0 R]/Count 1>>",
@@ -64,7 +72,11 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 		fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(stream), stream),
 	}
 	if o.noFontFile {
-		objs[4] = "<</Type/FontDescriptor/FontName/Test/Flags 32/ItalicAngle 0>>"
+		// A descriptor that declares a face and embeds no program: the other substitution shape,
+		// and the one that still has /Flags and the metrics to infer a style from.
+		objs[4] = fmt.Sprintf("<</Type/FontDescriptor/FontName/%s/Flags %d/ItalicAngle 0"+
+			"/Ascent 800/Descent -200/CapHeight 700/StemV 80/FontBBox[0 -200 1000 800]>>",
+			o.baseFont, o.flags)
 	}
 	if o.composite {
 		// A Type0 font over a CIDFontType2 descendant, Identity-H encoded: two-byte codes that
@@ -96,6 +108,7 @@ type textPDFOpts struct {
 	flags        int
 	encoding     string
 	fontFile     string
+	baseFont     string
 	noDescriptor bool
 	noFontFile   bool
 	composite    bool
@@ -105,6 +118,18 @@ func withProgram(p []byte) func(*textPDFOpts) { return func(o *textPDFOpts) { o.
 func withComposite() func(*textPDFOpts)       { return func(o *textPDFOpts) { o.composite = true } }
 
 func withFlags(f int) func(*textPDFOpts) { return func(o *textPDFOpts) { o.flags = f } }
+
+// withBaseFont names the face the dictionary claims, which is half of what the style inference
+// reads: /BaseFont is the only evidence a standard-14 font offers, since it has no descriptor.
+func withBaseFont(n string) func(*textPDFOpts) {
+	return func(o *textPDFOpts) { o.baseFont = n }
+}
+
+// withNoDescriptor is the standard-14 shape: a font dictionary with no /FontDescriptor at all,
+// which is how 7 of the corpus's fonts and 1,138 of its pages ask for Helvetica.
+func withNoDescriptor() func(*textPDFOpts) {
+	return func(o *textPDFOpts) { o.noDescriptor = true }
+}
 func withNoFontFile() func(*textPDFOpts) { return func(o *textPDFOpts) { o.noFontFile = true } }
 func withFontFileKey(k string) func(*textPDFOpts) {
 	return func(o *textPDFOpts) { o.fontFile = k }
@@ -437,7 +462,7 @@ func TestFontsWithoutGlyfAreRefusedByReason(t *testing.T) {
 	}{
 		{"a CFF program", withFontFileKey("FontFile3"), "CFF"},
 		{"a Type 1 program", withFontFileKey("FontFile"), "Type 1"},
-		{"no embedded program", withNoFontFile(), "substituted"},
+		{"no embedded program", withNoFontFile(), "no face source was supplied"},
 	} {
 		for _, show := range []struct{ op, operands string }{
 			{"Tj", "(A)"},

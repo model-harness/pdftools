@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/model-harness/pdftools/content"
+	"github.com/model-harness/pdftools/font"
 	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/objects"
 	"github.com/model-harness/pdftools/render"
@@ -47,6 +48,11 @@ func (u *Unsupported) Unwrap() error { return ErrUnsupported }
 // document pays for one parse.
 type rasterizer struct {
 	s objects.Store
+
+	// faces supplies programs for fonts the document did not embed. nil by default, and a page
+	// needing one is then refused with the reason — see FaceSource for why the choice of face is
+	// a caller's and not this package's.
+	faces font.FaceSource
 }
 
 var _ render.Rasterizer = (*rasterizer)(nil)
@@ -62,7 +68,13 @@ var _ render.Rasterizer = (*rasterizer)(nil)
 // implementations are not safe for concurrent use: page-level parallelism needs one Store per
 // worker, which spends back some of the single-parse saving this backend has over the borrowed
 // one.
-func New(s objects.Store) render.Rasterizer { return &rasterizer{s: s} }
+func New(s objects.Store, opts ...Option) render.Rasterizer {
+	r := &rasterizer{s: s}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
+}
 
 func (r *rasterizer) PageCount() int { return r.s.PageCount() }
 
@@ -125,6 +137,7 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		base:  pageMatrix(box, dpi/72, rotate),
 		unsup: map[string]bool{},
 		fonts: map[string]*textFont{},
+		faces: r.faces,
 	}
 	w.run(data)
 
@@ -222,12 +235,23 @@ type walker struct {
 	fonts map[string]*textFont
 	font  *textFont
 
+	// faces is the rasterizer's face source, carried down so loadFont can ask for a substitute.
+	faces font.FaceSource
+
 	// fill is the only colour kept. A stroke colour is accepted and discarded: setting one
 	// marks nothing, so refusing G/RG/K would refuse a page over an operator that changed no
 	// pixel, and storing it would be state no code reads while stroking itself is refused.
 	// It comes back with the stroke.
 	fill paint
 	path path
+
+	// alpha is the constant fill alpha /ca sets, and alphas is the saved value per q.
+	//
+	// Stacked here rather than in content.Machine for the same reason the clip is: it is
+	// graphics state §8.4.2 lists, and the machine does not read ExtGState because resolving
+	// one needs the page's resource dictionary, which content deliberately does not take.
+	alpha  float64
+	alphas []float64
 
 	// pending is a clip the *next* painting operator must apply, and pendingEO the rule it was
 	// marked with. Held rather than applied at W, because §8.5.4 makes the clip the path as it
@@ -274,6 +298,7 @@ func (w *walker) run(data []byte) {
 	m := content.NewMachine(geom.Identity)
 	sc := content.NewScanner(data)
 	w.fill = black
+	w.alpha = 1
 	for {
 		op, ok := sc.Next()
 		if !ok {
@@ -325,6 +350,18 @@ func (w *walker) survey(data []byte) {
 			continue
 		}
 		switch op.Name {
+		case "gs":
+			// Resolved and checked here rather than in the paint pass, for the reason the font
+			// reasons are: the paint pass never runs when anything else blocked the page, so a
+			// reason decided there is missing from the worklist exactly when the worklist matters.
+			if len(op.Operands) >= 1 {
+				name := objects.Name(op.NameAt(0))
+				if g, ok := w.extGState(name); ok {
+					w.checkExtGState(g)
+				} else {
+					w.unsup[fmt.Sprintf("gs: /%s is not in the page's /ExtGState resources", name)] = true
+				}
+			}
 		case "Tf":
 			if len(op.Operands) >= 1 {
 				w.font = w.loadFont(string(op.NameAt(0)))
@@ -375,6 +412,125 @@ func (w *walker) checkText(str []byte) {
 			w.refuseText(fmt.Sprintf("no glyph for code %d in /%s", g.Code, tf.f.BaseFont))
 		}
 	}
+}
+
+// extGState resolves a named ExtGState from the page's resources.
+func (w *walker) extGState(name objects.Name) (objects.Dict, bool) {
+	egs, ok := objects.GetDict(w.s, w.res, "ExtGState")
+	if !ok {
+		return nil, false
+	}
+	return objects.GetDict(w.s, egs, name)
+}
+
+// checkExtGState records every parameter of an ExtGState this backend cannot honour.
+//
+// # Why an allow-list of keys rather than a list of refusals
+//
+// The same reason ADR 0015 inverted the operator list after an inline image was drawn as nothing:
+// an enumeration of what to refuse is wrong the first time a key appears that nobody enumerated,
+// and it is wrong *silently*, by drawing a page whose graphics state it did not understand. So a
+// key this function has not been taught is a refusal, and every acceptance below carries the
+// reason it is safe.
+//
+// # What is honoured, and what marks nothing
+//
+// /ca is honoured: it is the constant alpha a fill composites with (§11.6.4.4), and multiplying it
+// into coverage is exact over an opaque backdrop under the normal blend mode, which is what this
+// canvas has.
+//
+// The rest are accepted because they cannot change a pixel this backend draws, and each is a
+// distinct argument rather than one waved at the group:
+//
+//   - /CA, /LW, /LC, /LJ, /ML, /D, /SA set stroke alpha and pen geometry, and every stroking
+//     operator is refused. This is ADR 0015's reasoning for accepting G, RG and K — refusing a
+//     page over state no drawn pixel reads would refuse it over nothing.
+//   - /OP, /op, /OPM are overprint, which controls how colorants combine on a device that has
+//     separations (§11.7.4.5). This backend composites RGB and has none.
+//   - /BG, /BG2, /UCR, /UCR2 are black generation and undercolour removal, which apply when a
+//     device converts to CMYK. This backend emits RGB.
+//   - /HT, /FL, /SM are a halftone screen and flatness and smoothness tolerances: hints for a
+//     device that screens or flattens, with no required effect on a continuous-tone raster.
+//   - /RI is a rendering intent, which selects a gamut mapping. Only device colour spaces are
+//     supported here, and ADR 0015 already declines to colour-manage.
+//   - /TK is text knockout, which changes how glyphs composite *against each other* inside a
+//     transparency group. With alpha 1 and the normal blend mode there is nothing to knock out,
+//     and a non-normal blend mode is refused below, so the case where it matters cannot arrive.
+//   - /AIS makes alpha come from a soft mask's shape instead of its alpha, and a soft mask is
+//     refused below, so it likewise cannot matter here.
+//   - /Type is /ExtGState.
+func (w *walker) checkExtGState(g objects.Dict) {
+	refuse := func(f string, a ...any) { w.unsup["gs: "+fmt.Sprintf(f, a...)] = true }
+
+	for k := range g {
+		switch k {
+		case "Type", "CA", "LW", "LC", "LJ", "ML", "D", "SA",
+			"OP", "op", "OPM", "BG", "BG2", "UCR", "UCR2",
+			"HT", "FL", "SM", "RI", "TK", "AIS":
+			// Accepted; see the comment above for the argument per key.
+
+		case "ca":
+			// Any value in 0..1 is honoured. Outside that range is a producer error with no
+			// reading — §11.6.4.4 defines it as a number in that interval — and clamping it
+			// silently would make a malformed page indistinguishable from a valid one.
+			v, ok := objects.GetNum(w.s, g, "ca")
+			if !ok {
+				refuse("/ca is not a number")
+			} else if v < 0 || v > 1 {
+				refuse("/ca is %g, outside 0..1", v)
+			}
+
+		case "BM":
+			// A blend mode is a per-pixel function of backdrop and source (§11.3.5). Normal is
+			// the identity this canvas already implements; Compatible is Normal under another
+			// name, kept for PDF 1.3 files. An array picks the first supported entry, which for
+			// this backend is the first that is one of those two.
+			for _, nm := range blendNames(w.s, g) {
+				if nm != "Normal" && nm != "Compatible" {
+					refuse("/BM is /%s, and only /Normal is implemented", nm)
+				}
+			}
+
+		case "SMask":
+			// /None is the absence of a soft mask. A dictionary is a luminosity or alpha group
+			// that has to be rendered and then used as a per-pixel mask — a page of its own —
+			// and compositing one wrongly produces an image that looks plausible.
+			if nm, ok := objects.GetName(w.s, g, "SMask"); !ok || nm != "None" {
+				refuse("/SMask is a soft mask group")
+			}
+
+		case "Font":
+			// An ExtGState can set the font and size, which every show operator after it then
+			// uses (§8.4.5). Nothing reads it here, so honouring the page would need the same
+			// resolution Tf does; refused rather than ignored, because ignoring it draws the
+			// page in whatever font Tf last named.
+			refuse("/Font sets the text font from the graphics state")
+
+		default:
+			refuse("/%s is not a parameter this backend reads", k)
+		}
+	}
+}
+
+// blendNames reads /BM, which is a name or an array of names in preference order (§11.6.3).
+func blendNames(s objects.Store, g objects.Dict) []objects.Name {
+	if nm, ok := objects.GetName(s, g, "BM"); ok {
+		return []objects.Name{nm}
+	}
+	arr, ok := objects.GetArray(s, g, "BM")
+	if !ok {
+		return []objects.Name{"(not a name)"}
+	}
+	var out []objects.Name
+	for _, o := range arr {
+		if nm, ok := o.(objects.Name); ok {
+			out = append(out, nm)
+		}
+	}
+	if len(out) == 0 {
+		return []objects.Name{"(an array of no names)"}
+	}
+	return out
 }
 
 func (w *walker) op(m *content.Machine, op content.Op) {
@@ -476,6 +632,18 @@ func (w *walker) op(m *content.Machine, op content.Op) {
 		w.unsup[op.Name] = true
 		w.endPath()
 
+	case "gs":
+		// Only /ca is read. Every other parameter either cannot change a pixel this backend
+		// draws or has already refused the page in the survey, so this is the whole of applying
+		// an ExtGState here — and checkExtGState's comment is where that claim is argued.
+		if len(op.Operands) >= 1 {
+			if g, ok := w.extGState(objects.Name(op.NameAt(0))); ok {
+				if v, ok := objects.GetNum(w.s, g, "ca"); ok {
+					w.alpha = v
+				}
+			}
+		}
+
 	case "q":
 		// The clip is saved here and not by content.Machine, which stacks its own state but
 		// has no mask. nil when no clip is in force, so an unclipped q costs nothing.
@@ -484,7 +652,15 @@ func (w *walker) op(m *content.Machine, op content.Op) {
 		} else {
 			w.clips = append(w.clips, nil)
 		}
+		// The alpha is saved with it, in a stack of its own rather than folded into the clip's:
+		// a q that sets no clip pushes nil there, so one slice cannot carry both without making
+		// "no clip" and "alpha 1" the same absent value.
+		w.alphas = append(w.alphas, w.alpha)
 	case "Q":
+		if n := len(w.alphas); n > 0 {
+			w.alpha = w.alphas[n-1]
+			w.alphas = w.alphas[:n-1]
+		}
 		if n := len(w.clips); n > 0 {
 			saved := w.clips[n-1]
 			w.clips = w.clips[:n-1]
@@ -528,8 +704,10 @@ func marks(op string) bool {
 		"Tj", "TJ", "'", "\"",
 		// fill colour in the device spaces
 		"g", "rg", "k",
-		// graphics state
-		"q", "Q", "cm", "w", "J", "j", "M", "d", "ri", "i",
+		// graphics state. gs is here for the same reason the show operators are: it marks
+		// nothing by itself, and whether what it *sets* can be drawn is a property of the
+		// ExtGState's keys rather than of the operator. checkExtGState decides it by reason.
+		"q", "Q", "cm", "w", "J", "j", "M", "d", "ri", "i", "gs",
 		// text state, which positions nothing until a show operator
 		"BT", "ET", "Tf", "Tc", "Tw", "Tz", "TL", "Ts", "Tr", "Td", "TD", "Tm", "T*",
 		// marked content, compatibility, and stroke colour
@@ -549,7 +727,7 @@ func marks(op string) bool {
 // seconds.
 func (w *walker) paintPath(evenOdd bool) {
 	if !w.path.empty() {
-		w.canvasFor().fill(&w.path, w.fill, evenOdd)
+		w.canvasFor().fill(&w.path, w.fill, evenOdd, w.alpha)
 	}
 	w.endPath()
 }

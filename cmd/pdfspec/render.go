@@ -15,7 +15,6 @@ import (
 
 	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/render"
-	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
 
 func runRender(args []string) error {
@@ -28,8 +27,9 @@ func runRender(args []string) error {
 	jobs := fs.Int("jobs", 0, "pages to render in parallel (default: min(4, NumCPU))")
 	annots := fs.Bool("annots", false, "render annotations and form fields")
 	maxPx := fs.Int("maxpixels", render.DefaultOptions.MaxPixels, "reduce DPI to keep a page under this many pixels")
+	backend := fs.String("backend", "pdfium", "rasterizer: "+backendNames)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: pdfspec render -o dir [-dpi n] [-pages 1,4-9] [-format png|jpeg] [-jobs n] <file.pdf>\n\n")
+		fmt.Fprint(os.Stderr, "usage: pdfspec render -o dir [-dpi n] [-pages 1,4-9] [-format png|jpeg] [-jobs n] [-backend pdfium|native|auto] <file.pdf>\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -55,7 +55,7 @@ func runRender(args []string) error {
 	}
 
 	in := fs.Arg(0)
-	r, err := renderpdfium.Open(in)
+	r, err := openRasterizer(*backend, in)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func runRender(args []string) error {
 	if err := os.MkdirAll(*out, 0o750); err != nil {
 		return err
 	}
-	return renderPages(in, r, want, opt, *out, ext, enc, *jobs)
+	return renderPages(in, *backend, r, want, opt, *out, ext, enc, *jobs)
 }
 
 // letterBox is US Letter in points, used only to validate flags before opening
@@ -109,7 +109,7 @@ func encoder(format string, quality int) (encodeFunc, string, error) {
 // images verb: a 151-page scan with one broken page should still yield 150 images.
 // The count of what failed is reported and the exit status reflects it, because a
 // silent partial render is indistinguishable from a complete one.
-func renderPages(in string, r render.Rasterizer, want []int, opt render.Options, dir, ext string, enc encodeFunc, jobs int) error {
+func renderPages(in, backend string, r render.Rasterizer, want []int, opt render.Options, dir, ext string, enc encodeFunc, jobs int) error {
 	start := time.Now()
 	width := len(fmt.Sprint(r.PageCount()))
 
@@ -142,7 +142,7 @@ func renderPages(in string, r render.Rasterizer, want []int, opt render.Options,
 			ras := r
 			if j > 0 {
 				var err error
-				ras, err = renderpdfium.Open(in)
+				ras, err = openRasterizer(backend, in)
 				if err != nil {
 					// One worker failing to start is not fatal: the others cover its
 					// pages more slowly. Recorded against its first page so the run

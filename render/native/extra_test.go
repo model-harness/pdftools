@@ -1,7 +1,6 @@
 package native
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/model-harness/pdftools/internal/pdfbuild"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/render"
 	"github.com/model-harness/pdftools/render/pdfium"
@@ -23,22 +23,8 @@ import (
 // tests that need a page dictionary of their own need *different* ones.
 func buildPDF(t *testing.T, objs []string, name string) string {
 	t.Helper()
-	var b bytes.Buffer
-	b.WriteString("%PDF-1.7\n")
-	off := make([]int, len(objs))
-	for i, o := range objs {
-		off[i] = b.Len()
-		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", i+1, o)
-	}
-	start := b.Len()
-	fmt.Fprintf(&b, "xref\n0 %d\n0000000000 65535 f \n", len(objs)+1)
-	for _, o := range off {
-		fmt.Fprintf(&b, "%010d 00000 n \n", o)
-	}
-	fmt.Fprintf(&b, "trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, start)
-
 	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, b.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(path, pdfbuild.Bytes(objs), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path

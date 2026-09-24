@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+
+	"github.com/model-harness/pdftools/internal/liberation"
 )
 
 const usage = `pdfspec - PDF tooling that does not fight you
@@ -22,6 +24,7 @@ commands:
   ocr      convert a PDF to Markdown, recognizing pages that carry no text
   probe    report what a PDF contains and which extraction path it will take
   version  print version
+  licenses print the licences of fonts embedded in this binary
 
 run "pdfspec <command> -h" for command flags
 `
@@ -81,6 +84,15 @@ func main() {
 		err = runProbe(args)
 	case "version", "-v", "--version":
 		fmt.Printf("pdfspec %s\n", buildVersion())
+		// Named here and printed by "licenses", because the notice is four kilobytes and this is
+		// the line people read. The OFL obligation is that the licence accompany the Font Software
+		// wherever it is redistributed, and a static binary with the faces compiled in is a
+		// redistribution — so what matters is that the text is *reachable* from the binary, which a
+		// file in the source tree does not achieve for someone who downloaded only the binary.
+		fmt.Print("embeds Liberation fonts 2.1.5 under the SIL Open Font License 1.1;" +
+			" run \"pdfspec licenses\" for the text\n")
+	case "licenses", "license":
+		fmt.Print(liberation.Notice())
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

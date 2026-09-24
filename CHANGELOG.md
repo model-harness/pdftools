@@ -5,6 +5,78 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-24
+
+- **`render/native` draws 903 of the corpus's 1,251 pages (72%).** ADR 0017. The first time this
+  backend renders a real page, and it took the two features ADR 0016's measurement named as a pair:
+  a substituted face and `gs`. Neither alone was worth having — `gs` blocks 1,184 pages and is the
+  sole blocker on **zero** of them.
+  - **`gs` is honoured parameter by parameter, and turned out nearly free.** A spike over all 1,251
+    pages found 2,680 `gs` operators on 1,184 pages where `/ca` and `/CA` are 1 on all but one each,
+    `/BM` is `/Normal` on 2,668, `/SMask` is `/None` on 1,625 with a single group, and there is **no
+    `/LW` anywhere**. Constant alpha is implemented — coverage times alpha, exact over an opaque
+    backdrop under the normal blend mode — and every other key is either inert with its own stated
+    reason or refused. The classification is an **allow-list of keys**, for the reason ADR 0015
+    inverted the operator list: an enumeration of refusals is wrong the first time an unenumerated
+    key arrives, and wrong silently. **`gs` went from blocking 1,184 pages to blocking 1.**
+  - **A substitute face comes from the caller, through `font.FaceSource`.** Which face stands in for
+    Helvetica is policy rather than parsing — a proofing tool wants metric compatibility, an archival
+    pipeline may need a licensed face — so the library refuses without one and says so in the
+    refusal. The interface lives in `font` rather than the renderer because a substitute font is font
+    data, and because putting it in `render/native` made the one implementation import the renderer,
+    which turned the corpus-coverage test into an import cycle. The cycle was the symptom; the
+    misplaced boundary was the defect.
+  - **Typeface inference is deterministic and has no outlines to read.** All 1,139 pages needing a
+    substitute need one because the program is *absent*. So the evidence is the `/BaseFont` name, the
+    descriptor's `/Flags`, `/StemV`, `/FontWeight` and `/ItalicAngle`, reduced to a `font.Style` of
+    four families plus bold and italic. **No confidence score**: every branch is a rule over stated
+    evidence, and a probability beside a determined answer reads as humility and acts as noise.
+    `font.Font` gains a `Serif` trait, from `/Flags` bit 2 and the name, because nothing needed it
+    before.
+  - **A substituted face is reachable only through the character.** `/CIDToGIDMap`, a symbolic cmap
+    and the code-as-glyph-index last resort all index the program the *document* embedded, and none
+    of those indices mean anything in a face it has never seen — following them would draw whatever
+    glyph sits at that position, confidently. So a code whose text cannot be decoded refuses the page,
+    and a substituted symbolic font with no `/ToUnicode` stays refused rather than becoming a line of
+    arbitrary letters. CFF and Type 1 are refused rather than substituted, because the document *did*
+    embed a face and only the charstring interpreter is missing.
+  - **`FamilySymbol` exists so a request can be declined.** Symbol and ZapfDingbats are serif-less
+    and would otherwise resolve to sans, and a page of mathematics set in Liberation Sans draws Latin
+    letters where the page shows operators. Recognised by name, not by `/Flags` bit 3 — that flag is
+    set on most ordinary text subsets.
+- **`cmd/pdfspec` embeds eight Liberation 2.1.5 faces and gains `-backend pdfium|native|auto`.**
+  `internal/liberation` carries Sans and Serif in four styles, gzipped to **1.69 MB** from 3.17 MB
+  and inflated on first use; the binary goes from 25.24 MB to 27.12 MB. `internal/` so no external
+  importer pays for the bytes. Gzipped rather than subsetted because the OFL reserves the name, so
+  subsetting would force a rename and lose traceability upstream; the licence and AUTHORS travel with
+  the faces. Mono is omitted — Courier is requested on **0** corpus pages and costs 686 KB.
+  - **`auto` is the per-page fallback ADR 0015 described and declined to build**, which said
+    `ErrUnsupported` was "what a fallback will be built on, not something one already uses". Native
+    first, pdfium for the pages it refuses, so a mixed document gets native renderings where it can
+    and correct ones everywhere else. Only `ErrUnsupported` falls through.
+  - **pdfium stays the default**, because the backends differ by design — CMYK, grid-fitting, and
+    which typeface a substitution uses — so switching would silently change every rendered page.
+  - One constructor now serves both `render` and `ocr`, which each had `renderpdfium.Open` written
+    out; adding a backend to one would have left the other behind with nothing to say so.
+- **Corrected before anything was built on it: the Liberation figure.** 573 KB for four faces came
+  from `pdfjs-dist`'s trimmed copies. The official faces carry full Unicode coverage and weigh 4.36
+  MB raw, 2.38 MB gzipped for all twelve — which is what moved the decision to Sans and Serif only.
+- **`font.Glyph.Source` records how a character was determined** — `/ToUnicode`, an encoding table,
+  or nothing. ADR 0018. It answers a question nothing could answer before: how much of a document's
+  text is *known* rather than assumed, since a page whose characters all came from `/ToUnicode` and
+  one where half came from a base encoding guessed off the symbolic flag look identical and are not
+  equally trustworthy.
+- **ADR 0018 records a glyph-inference architecture and declines to build it, with the criteria that
+  would justify it.** Measured over the corpus: **2,935,462 glyphs drawn, 51 undecodable (0.0017%)**
+  — and the 51 did not survive inspection. Both fonts carry `/ToUnicode` and embed a program; the
+  codes spelled ordinary words and the real extractor produces them correctly. They were an artefact
+  of the measuring probe, which resolved `Tf` names against the page's resources while the strings
+  came from form XObjects and annotation appearances with resources of their own. A heuristic fitted
+  to zero samples cannot be falsified, and a wrong codepoint is worse than an empty one because it is
+  indistinguishable from real text downstream. Two deterministic routes come first and shrink
+  whatever remains: Adobe's CMap resources for CID-to-Unicode by table, and glyph names with the
+  Adobe Glyph List.
+
 ### Added — 2026-09-23
 
 - **`render/native` draws TrueType text, and a page is refused for the *reason* its font cannot be

@@ -424,6 +424,118 @@ func TestToUnicodeOverridesEncoding(t *testing.T) {
 	}
 }
 
+// TestGlyphSourceNamesTheEvidence pins where each glyph's meaning came from.
+//
+// Text says what a code means and not how that was known, and the two are different questions: a
+// document whose characters all came from /ToUnicode and one where half came from a base encoding
+// guessed off the symbolic flag are equally plausible on screen and not equally trustworthy. ADR
+// 0018 records why this is recorded on the deterministic path before any inference exists.
+//
+// The invariant is asserted as well as the values, because it is the property a consumer will rely
+// on: empty text always has SourceNone, and non-empty text never does.
+func TestGlyphSourceNamesTheEvidence(t *testing.T) {
+	s := newStore()
+
+	// /ToUnicode covers 'A' only; WinAnsi covers the rest of Latin.
+	both := Load(s, objects.Dict{
+		"Subtype":   objects.Name("TrueType"),
+		"BaseFont":  objects.Name("Subset"),
+		"Encoding":  objects.Name("WinAnsiEncoding"),
+		"ToUnicode": toUnicodeStream([2]string{"0041", "03B1"}),
+	})
+	// Symbolic with no encoding and no /ToUnicode resolves nothing at all.
+	neither := Load(s, objects.Dict{
+		"Subtype":        objects.Name("TrueType"),
+		"BaseFont":       objects.Name("Dingbats"),
+		"FontDescriptor": objects.Dict{"Flags": objects.Int(4)},
+	})
+
+	for _, c := range []struct {
+		name string
+		f    *Font
+		code byte
+		text string
+		src  Source
+	}{
+		{"a code /ToUnicode maps", both, 'A', "α", SourceToUnicode},
+		{"a code only the encoding maps", both, 'B', "B", SourceEncoding},
+		{"a code neither maps", neither, 'A', "", SourceNone},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			gs := c.f.Decode([]byte{c.code})
+			if len(gs) != 1 {
+				t.Fatalf("Decode gave %d glyphs, want 1", len(gs))
+			}
+			if gs[0].Text != c.text || gs[0].Source != c.src {
+				t.Errorf("Decode: text %q source %v; want %q, %v",
+					gs[0].Text, gs[0].Source, c.text, c.src)
+			}
+			// TextSource is the same lookup by another door, so the two must not disagree —
+			// one of them being right is how a second traversal drifts from the first.
+			text, src := c.f.TextSource(uint32(c.code))
+			if text != c.text || src != c.src {
+				t.Errorf("TextSource: %q, %v; want %q, %v", text, src, c.text, c.src)
+			}
+			if (gs[0].Text == "") != (gs[0].Source == SourceNone) {
+				t.Errorf("text %q with source %v breaks the invariant that empty text means"+
+					" SourceNone and nothing else does", gs[0].Text, gs[0].Source)
+			}
+		})
+	}
+
+	// A composite font's only route is /ToUnicode, so a CID it does not cover has no source —
+	// nothing about a CID implies a character. Both shapes are here because they reach different
+	// branches: a font with no /ToUnicode at all returns early, and one that *has* a /ToUnicode
+	// which simply does not cover the code has to notice that the lookup came back empty. Only the
+	// first was covered at first, and reinstating a source on the empty answer passed every test.
+	descendant := objects.Array{objects.Dict{
+		"Subtype":  objects.Name("CIDFontType2"),
+		"BaseFont": objects.Name("Sub"),
+	}}
+	noToUni := Load(s, objects.Dict{
+		"Subtype":         objects.Name("Type0"),
+		"BaseFont":        objects.Name("Sub"),
+		"Encoding":        objects.Name("Identity-H"),
+		"DescendantFonts": descendant,
+	})
+	// Covers CID 0x0041 and nothing else, so 0x0042 is a mapped font with an unmapped code.
+	partial := Load(s, objects.Dict{
+		"Subtype":         objects.Name("Type0"),
+		"BaseFont":        objects.Name("Sub"),
+		"Encoding":        objects.Name("Identity-H"),
+		"DescendantFonts": descendant,
+		"ToUnicode":       toUnicodeStream([2]string{"0041", "03B1"}),
+	})
+	for _, c := range []struct {
+		name string
+		f    *Font
+		code []byte
+		text string
+		src  Source
+	}{
+		{"no /ToUnicode at all", noToUni, []byte{0, 'A'}, "", SourceNone},
+		{"a /ToUnicode that covers the CID", partial, []byte{0, 'A'}, "α", SourceToUnicode},
+		{"a /ToUnicode that does not cover it", partial, []byte{0, 'B'}, "", SourceNone},
+	} {
+		t.Run("composite, "+c.name, func(t *testing.T) {
+			gs := c.f.Decode(c.code)
+			if len(gs) != 1 {
+				t.Fatalf("Decode gave %d glyphs, want 1", len(gs))
+			}
+			if gs[0].Text != c.text || gs[0].Source != c.src {
+				t.Errorf("Decode: %q, %v; want %q, %v", gs[0].Text, gs[0].Source, c.text, c.src)
+			}
+			// TextSource through the composite branch, which the simple cases above cannot
+			// reach: without this, returning nothing from it at all went unnoticed.
+			code := uint32(c.code[0])<<8 | uint32(c.code[1])
+			text, src := c.f.TextSource(code)
+			if text != c.text || src != c.src {
+				t.Errorf("TextSource(%#x): %q, %v; want %q, %v", code, text, src, c.text, c.src)
+			}
+		})
+	}
+}
+
 func TestCompositeFontSplitsTwoByteCodes(t *testing.T) {
 	// Identity-H means two-byte codes. A reader that splits per byte doubles the
 	// glyph count and produces text that looks like interleaved noise.

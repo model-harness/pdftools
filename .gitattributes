@@ -22,3 +22,12 @@ go.sum text eol=lf
 *.gguf binary
 *.png binary
 *.jpg binary
+
+# Embedded font assets, for the same reason and with a sharper consequence: a .ttf.gz that gets
+# line-ending converted on checkout does not inflate, so every substituted page in that clone is
+# refused with a reason naming a face the binary is in fact carrying. internal/liberation's
+# load-and-parse test catches it, which is why that test reads all eight faces rather than trusting
+# the embed.
+*.ttf binary
+*.ttf.gz binary
+*.gz binary

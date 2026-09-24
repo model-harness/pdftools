@@ -400,13 +400,18 @@ func TestRefusalListsEveryMissingFeature(t *testing.T) {
 	for _, op := range u.Ops {
 		got[op] = true
 	}
-	for _, want := range []string{"gs", "S"} {
-		if !got[want] {
-			t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, want)
-		}
+	if !got["S"] {
+		t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, "S")
 	}
-	if !strings.Contains(strings.Join(u.Ops, " | "), "text:") {
-		t.Errorf("Ops = %v, missing the text reason", u.Ops)
+	// The other two are keyed by reason rather than by operator, so they are matched by prefix:
+	// one operator name stands for one missing feature, where one *reason* is the thing a caller
+	// can act on. Both must be present, which is the property this test exists for.
+	joined := strings.Join(u.Ops, " | ")
+	for _, want := range []string{"gs:", "text:"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("Ops = %v, missing a %q reason — the walk stopped at the first blocker",
+				u.Ops, want)
+		}
 	}
 	// Sorted, so the message reads the same way every run and a diff of two logs is about the
 	// features rather than about map order.

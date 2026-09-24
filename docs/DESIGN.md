@@ -934,9 +934,31 @@ reverses the order this phase started with:
 pair and not a ranking: a substituted face and `gs` together are 72% of the corpus, and CFF — which
 ADR 0015 named second, on a count of font programs — is fifth, worth 24 pages.
 
-`gs` at 1,184 is also the figure that connects this phase to the last documented hole in `content`:
-an ExtGState's `/LW` is unread because applying one needs the page's resource dictionary, which
-`content` does not take. Rendering is the consumer that makes that gap expensive.
+**That pair is done — see ADR 0017, and `render/native` now draws 903 of 1,251 pages (72%)** when a
+caller supplies substitute faces. A corpus test asserts the count at a floor rather than an ADR
+stating it, because a figure in prose drifts.
+
+- **`gs` is honoured parameter by parameter** and turned out nearly free: over 2,680 `gs` operators
+  on 1,184 pages, `/ca` and `/CA` are 1 on all but one each, `/BM` is `/Normal`, `/SMask` is
+  `/None` bar a single group, and there is **no `/LW` anywhere**. Constant alpha is implemented;
+  everything else is either inert with a stated reason or refused. `gs` went from blocking 1,184
+  pages to blocking **1**.
+- **A substitute face comes from the caller**, through `font.FaceSource`. Which face stands in for
+  Helvetica is policy rather than parsing, so the library refuses without one and `cmd/pdfspec`
+  supplies eight Liberation 2.1.5 faces from `internal/liberation` — 1.69 MB gzipped, taking the
+  CLI from 25.24 to 27.12 MB. A substituted face is reachable **only** through the character:
+  `/CIDToGIDMap`, a symbolic cmap and the code-as-index last resort all index a program the
+  document embedded, and none of those indices mean anything in a face it has never seen.
+- **`cmd/pdfspec` gains `-backend pdfium|native|auto`**, where `auto` is the per-page fallback ADR
+  0015 described and declined to build. pdfium stays the default, because the two backends differ
+  by design on CMYK, on grid-fitting, and on which typeface a substitution uses.
+
+That last point also **retires the `/LW` hole** this section used to name as the next thing rendering
+would make expensive: nothing in the corpus writes one, and `/LW` sets a pen width while every
+stroking operator is refused. It comes back with stroking, not with `gs`.
+
+**The remaining worklist:** `Do` 173 pages, stroking 156, CFF 104, `cs`/`scn` 97, Type 1 17, one
+soft-mask group, one shading. `Do` is next.
 
 **Phase 7 — Rust.** Same architecture, same CLI surface, shared golden corpus. Deferred
 until the Go boundaries have been proven by use, so the Rust port inherits a validated
@@ -973,6 +995,37 @@ OKF-ified spec.
 ---
 
 ## 10. Open questions
+
+- **Character inference from glyph outlines — recorded, not built, and the measurement is why.**
+  A PDF can draw a glyph and give no reliable way to say which character it is: no `/ToUnicode`, a
+  custom or damaged encoding, a symbolic cmap keyed by codes meaningless outside the subset. The
+  architecture for answering it is in ADR 0018, separated from *typeface* inference because the two
+  have opposite inputs — a font needing a substitute has **no outlines at all**, which is why ADR
+  0017 could build that half from a name and a descriptor.
+
+  **Over the corpus: 2,935,462 glyphs drawn, 51 undecodable — 0.0017% — and the 51 did not survive
+  inspection.** Both fonts involved carry `/ToUnicode` *and* embed a program; tracing the codes
+  showed they spelled ordinary words and that the real extractor produces them correctly. They were
+  an artefact of the measuring probe, which resolved `Tf` names against the page's resources while
+  the strings came from form XObjects and annotation appearances with resources of their own. The
+  genuine count is at or near **zero**.
+
+  That is a fact about *this* corpus and not about PDFs. Twelve well-made modern specifications plus
+  an arXiv paper exclude precisely the population that needs this — scanned-then-OCR'd pages, custom
+  encodings, pre-1.4 producers, damaged files — while §9 above says thirty years of bad producer
+  engines is the problem this repo exists to absorb.
+
+  **Two deterministic routes come first and shrink whatever remains.** Adobe's CMap resources
+  (`adobe-type-tools/cmap-resources`, BSD-3) map CID to Unicode *by table* for CID-keyed fonts;
+  today `font/cmap` carries only Identity, and `cmap.TwoByte` splits codes correctly for any other
+  predefined CMap while mapping nothing. And glyph names — `uni0041`, `afii10017`, `Alpha` — state
+  the character outright, with the Adobe Glyph List for the rest. Both are data rather than
+  heuristics. The population has to be re-measured *after* them; a number taken before would
+  overstate the case, possibly by all of it.
+
+  What is built now is the seam: `font.Glyph.Source` records whether a character came from
+  `/ToUnicode`, from an encoding table, or from nothing — which answers "how much of this document's
+  text is known rather than assumed", a question nothing could answer before.
 
 - **Vertical writing advances by the horizontal width, and nothing in the corpus can tell.** Both
   `extract` and `render/native` take a vertical glyph's displacement from `Glyph.Width` with the
