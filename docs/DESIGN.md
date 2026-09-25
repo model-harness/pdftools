@@ -1009,8 +1009,13 @@ Stroking also exposed two defects:
 - one soft-mask group
 - one shading
 
-Next is a separate fix to the page scale. At 200 dpi a 200pt page is 555.56 pixels, pdfium maps it
-onto 556, and every edge disagrees by a fraction of a pixel.
+**The page scale is pdfium's.** The page is mapped to fill the image exactly, with the image's
+size over the box's on each axis, and not by dpi/72. The image is a whole number of pixels and the
+page usually is not: at 200 dpi a 200pt page is 555.56 pixels, pdfium maps it onto 556, and dpi/72
+left every edge a fraction of a pixel away. On a test page at 100 to 300 dpi, up to 2,294 pixels
+were more than 32 apart, and now none is. Sampling every fourth drawn corpus page at 72 dpi, where
+A4's 595.32 points become 595 pixels, 265 of 279 pages moved closer to pdfium and 14 moved further,
+by at most 0.062. The mean fell from 5.34 to 5.10.
 
 **Phase 7 — Rust.** Same architecture, same CLI surface, shared golden corpus. Deferred
 until the Go boundaries have been proven by use, so the Rust port inherits a validated

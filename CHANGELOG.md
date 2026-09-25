@@ -30,6 +30,13 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-09-25
 
+- **`render/native` scaled the page by dpi/72, and pdfium scales it to fill the image.** The image
+  is a whole number of pixels and the page usually is not: an A4 page at 72 dpi is 595.32 points
+  across and 595 pixels, and a 200pt page at 200 dpi is 555.56 onto 556. Every edge was a fraction
+  of a pixel from pdfium's. The scale is now the image's size over the box's, per axis, swapped
+  under a quarter turn. On a test page at 100 to 300 dpi and every rotation, up to 2,294 pixels
+  were more than 32 apart and now none is. On every fourth drawn corpus page at 72 dpi, 265 of 279
+  moved closer to pdfium and 14 further, by at most 0.062. The mean fell from 5.34 to 5.10.
 - **`render/native` drew text in every render mode as a fill.** Outline text (modes 1 and 2) came
   out solid, and clipping text (modes 4 to 7) drew where it should have clipped. Every mode but 0
   and 3 is now refused as `text: render mode n strokes or clips with the glyphs`.

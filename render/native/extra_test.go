@@ -101,6 +101,31 @@ func TestRotateMatchesTheBorrowedBackend(t *testing.T) {
 	}
 }
 
+// TestThePageFillsTheImageAtEveryScale pins the page scale to pdfium's, which is the image's size
+// over the box's and not dpi/72.
+//
+// The image is a whole number of pixels and the page usually is not: at 150 dpi this 200×100 page is
+// 416.67×208.33, and both backends render it at 417×208. pdfium maps the page onto exactly that, so
+// its scale differs a little per axis and from dpi/72. Scaling by dpi/72 left every edge a fraction
+// of a pixel off, which put up to 2,294 pixels more than 32 apart here, and 1,277 on a plain
+// triangle at 200 dpi. At 72 dpi the page is whole and the two agree, which is why that case is in.
+//
+// Each rotation is tried, because a quarter turn puts the image's width along the page's height and
+// the two scales have to swap with it. Measured: the mean is at most 0.028 and no pixel is over 32.
+func TestThePageFillsTheImageAtEveryScale(t *testing.T) {
+	for _, rot := range []int{0, 90, 180, 270} {
+		path := buildPDF(t, pageObjs(
+			fmt.Sprintf("<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]/Rotate %d/Resources<<>>/Contents 4 0 R>>", rot),
+			"0 g 10 10 m 150 20 l 60 90 l f 0 G 3 w 1 J 20 80 m 190 60 l S"), "scale.pdf")
+		for _, dpi := range []float64{72, 100, 150, 200, 300} {
+			mean, worst, over := comparePath(t, path, dpi)
+			if mean > 0.03 || over > 0 {
+				t.Errorf("/Rotate %d at %g dpi: mean %.3f, %d pixels over 32 (worst %.0f)", rot, dpi, mean, over, worst)
+			}
+		}
+	}
+}
+
 // TestCMYKIsThisPackagesConversionAndNotPdfiums records a divergence rather than hiding it.
 //
 // §8.6.4.4's subtractive formula makes pure K black: 1 − min(1, 0+1) = 0 on every channel.

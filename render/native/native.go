@@ -124,6 +124,15 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		return nil, fmt.Errorf("render/native: page %d: %w", n, err)
 	}
 
+	// The page fills the image exactly, one scale per axis, rather than dpi/72 on both. The image
+	// is a whole number of pixels and the page generally is not: at 200 dpi a 200pt page is 555.56
+	// pixels, and pdfium maps it onto all 556. Scaling by dpi/72 left every edge a fraction of a
+	// pixel away from pdfium's, which put 1,277 pixels of a plain triangle more than 32 apart.
+	sx, sy := float64(pw)/fitBox.Width(), float64(ph)/fitBox.Height()
+	if rotate == 90 || rotate == 270 {
+		sx, sy = sy, sx
+	}
+
 	data, err := r.s.PageContent(n)
 	if err != nil {
 		return nil, fmt.Errorf("render/native: page %d content: %w", n, err)
@@ -135,7 +144,7 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		res:      res,
 		w:        pw,
 		h:        ph,
-		base:     pageMatrix(box, dpi/72, rotate),
+		base:     pageMatrix(box, sx, sy, rotate),
 		unsup:    map[string]bool{},
 		fonts:    map[string]*textFont{},
 		fontRefs: map[objects.Ref]*textFont{},

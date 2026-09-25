@@ -15,14 +15,14 @@ import (
 // them: each cap and join style on its own, a miter over its limit, a subpath closed by h and by s,
 // a curve, a pen made elliptical by the CTM, the fill-and-stroke operators, and lines below a pixel.
 //
-// At 72 and 144 dpi because a 200pt page is a whole number of pixels there. At 200 dpi it is 555.56,
-// pdfium maps the page onto 556, and every edge then disagrees by a fraction of a pixel whatever is
-// drawn — a plain triangle fill included — which is a difference in page scale and not in stroking.
+// At 72 and 144 dpi, where a 200pt page is a whole number of pixels, and at 200, where it is 555.56
+// and both backends map it onto 556. That third one is TestThePageFillsTheImageAtEveryScale's case:
+// it put hundreds of each shape's edge pixels over 32 until the page scale was pdfium's.
 //
 // Measured, with the bounds set from it: every mean is at most 0.024 of 255 and no pixel differs by
 // more than 32, except where a case's comment says otherwise; a curve's flattening, which puts the
-// mean near 0.1 and a few edge pixels at 144 dpi just past 32 (worst 42, as for the filled curves in
-// TestFillsAgreeWithPdfium); and the CMYK stroke, whose mean is 0.444 because pdfium does not
+// mean near 0.1 and a few edge pixels past 32 on the inside of a tight bend (worst 42 at 144 dpi, as
+// for the filled curves in TestFillsAgreeWithPdfium, and 78 at 200); and the CMYK stroke, whose mean is 0.444 because pdfium does not
 // convert CMYK by §8.6.4.4's naive formula. A wrong cap, join, width or pen shape moves the mean by
 // whole units and puts hundreds of pixels over 32.
 func TestStrokesAgreeWithPdfium(t *testing.T) {
@@ -44,11 +44,13 @@ func TestStrokesAgreeWithPdfium(t *testing.T) {
 		// After h the current point is the subpath's start, so what follows begins there. pdfium
 		// differs by 3 pixels at that corner, where its new subpath's cap meets the closed one's miter.
 		{"a segment after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 160 160 l S", 0.03, 3},
-		{"a curve after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 40 160 40 160 160 160 c S", 0.12, 2},
+		// At 200 dpi, 6: two at that corner and four inside the curve's tightest bend, as for "a curve".
+		{"a curve after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 40 160 40 160 160 160 c S", 0.12, 6},
 		{"a segment with no current point", "0 G 10 w 40 150 m 160 150 l S 100 100 l 150 150 l S", 0.03, 0},
 		{"a curve", "0 G 6 w 30 30 m 60 190 140 190 170 30 c S", 0.12, 6},
 		{"non-uniform ctm", "q 3 0 0 1 0 0 cm 0 G 4 w 1 J 20 40 m 50 160 l S Q", 0.03, 0},
-		{"rotated non-uniform ctm", "q 2 1 -0.5 1 100 20 cm 0 G 4 w 0 0 m 0 60 l 40 60 l S Q", 0.03, 0},
+		// At 200 dpi, one pixel at the miter's tip, which pdfium covers whole and this backend at 198.
+		{"rotated non-uniform ctm", "q 2 1 -0.5 1 100 20 cm 0 G 4 w 0 0 m 0 60 l 40 60 l S Q", 0.03, 1},
 		{"B fills then strokes", "0 0 1 rg 1 0 0 RG 8 w 50 50 100 100 re B", 0.03, 0},
 		{"b* closes and fills even-odd",
 			"0 0 1 rg 0 1 0 RG 3 w 150 150 m 168 105 l 123 133 l 177 133 l 132 105 l b*", 0.03, 0},
@@ -57,7 +59,7 @@ func TestStrokesAgreeWithPdfium(t *testing.T) {
 		{"a zero-width line", "0 G 0 w 20 50 m 180 150 l S", 0.03, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			for _, dpi := range []float64{72, 144} {
+			for _, dpi := range []float64{72, 144, 200} {
 				mean, worst, over := compare(t, c.stream, 200, dpi)
 				t.Logf("%g dpi: mean %.3f worst %.0f over-32 %d", dpi, mean, worst, over)
 				if mean > c.mean {

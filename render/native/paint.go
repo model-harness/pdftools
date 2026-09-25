@@ -24,24 +24,24 @@ func (t matrix) apply(p point) point {
 
 func (t matrix) mul(n geom.Matrix) matrix { return matrix{n.Mul(t.m)} }
 
-// pageMatrix maps a page's user space to device pixels at a scale.
+// pageMatrix maps a page's user space to device pixels, at a scale per axis.
 //
 // The y flip is the whole of it: PDF user space has y increasing up the page and an image has
 // row 0 at the top, so the device matrix negates y and offsets by the box's top edge. Getting
 // this wrong renders a page upside down, which is the one rasterizer defect that cannot hide.
-func pageMatrix(box geom.Rect, scale float64, rotate int) matrix {
+func pageMatrix(box geom.Rect, sx, sy float64, rotate int) matrix {
 	// Unrotated: x grows right from the box's left edge, y grows down from its top.
 	m := geom.Matrix{
-		A: scale, B: 0,
-		C: 0, D: -scale,
-		E: -box.X0 * scale,
-		F: box.Y1 * scale,
+		A: sx, B: 0,
+		C: 0, D: -sy,
+		E: -box.X0 * sx,
+		F: box.Y1 * sy,
 	}
 	// /Rotate turns the page clockwise when displayed (§7.7.3.3), so the device transform is
 	// that rotation applied after the flip above, with the translation chosen to bring the
 	// rotated box back to the origin. Written out per case rather than composed from a general
 	// rotation, because only four are legal and the constants are checkable by eye.
-	w, h := box.Width()*scale, box.Height()*scale
+	w, h := box.Width()*sx, box.Height()*sy
 	switch rotate {
 	case 90:
 		// (x, y) -> (h - y, x): the top edge becomes the right edge.
