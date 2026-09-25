@@ -1,0 +1,79 @@
+render/native/gs_test.go
+  s_5cd1b28ed520c1::t_6c4e8077a3c675 54-55
+  s_5cd1b28ed520c1::t_64719926eceb5d 50
+  s_5cd1b28ed520c1::t_2afeb826ab4475 51-53
+  s_5cd1b28ed520c1::t_ab595adf14c1e9 72-74
+render/native/fill.go
+  s_5cd1b28ed520c1::t_11922b45cb1bbb 58-62,66-75,79-80,128-137,141-146,149-150,153
+  s_5cd1b28ed520c1::t_33991ca0d01672 88-94
+  s_5cd1b28ed520c1::t_d1dbf47b4708c4 147-148
+render/native/corpus_test.go
+  s_5cd1b28ed520c1::t_1beee8e0e96eac 129-130
+  s_5cd1b28ed520c1::t_5e2c8828c24f22 69,128,131,163-165
+docs/adr/0020-stroke-in-pen-space-and-refuse-the-dash.md
+  s_5cd1b28ed520c1::t_9227588e3a417d 156-160
+  s_5cd1b28ed520c1::t_32ff18fc6d893d 162-163,176-178
+  s_5cd1b28ed520c1::t_2d0785ce5e74c9 1-155,161,164-175,179-201
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_a60d8d2d1ed51c 974-1013
+render/native/native.go
+  s_5cd1b28ed520c1::t_59126e5d104c3e 811-814
+  s_5cd1b28ed520c1::t_9ebe8819b4d706 819-821
+  s_5cd1b28ed520c1::t_2a740ec2daa1c7 570,574,576,578
+  s_5cd1b28ed520c1::t_30060d3926695c 411
+  s_5cd1b28ed520c1::t_37ca7d24f18051 786
+  s_5cd1b28ed520c1::t_9245e09b03d00b 853-857,861-867
+  s_5cd1b28ed520c1::t_a9e933065a6b4a 245-246,248-252
+  s_5cd1b28ed520c1::t_d464b8300ae4ca 325
+  s_5cd1b28ed520c1::t_56bed747c63c43 420-433
+  s_5cd1b28ed520c1::t_7c1d68d59c3a1f 333
+  s_5cd1b28ed520c1::t_12ffdf1f6618aa 565
+  s_5cd1b28ed520c1::t_85fa89b54124f0 769-770
+  s_5cd1b28ed520c1::t_402d7b04fd0cee 509-510
+  s_5cd1b28ed520c1::t_19fcbbfda33f36 298-302
+  s_5cd1b28ed520c1::t_9a6cb5024fbebf 725-739,741-742,747
+  s_5cd1b28ed520c1::t_8c7b16adfe6d22 482-483,487-489,493-508,511-512
+render/native/faces.go
+  s_5cd1b28ed520c1::t_1beee8e0e96eac 12
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_9227588e3a417d 28-29
+  s_5cd1b28ed520c1::t_dd0e0fe99eea1e 8-27,30-38
+render/native/native_test.go
+  s_5cd1b28ed520c1::t_8592a1de62db93 389,408-409
+render/native/stroke.go
+  s_5cd1b28ed520c1::t_c16f0fc23c3f51 221,276
+  s_5cd1b28ed520c1::t_8907e2ced1ee80 4,7
+  s_5cd1b28ed520c1::t_1e5367ad826741 1-3,5-6,8-28,121-152,162-220,222-275,277-332
+  s_5cd1b28ed520c1::t_55b879928f9901 29-120
+  s_5cd1b28ed520c1::t_2230e9d5781915 153-161
+render/native/stroke_test.go
+  s_5cd1b28ed520c1::t_07b2eecbfd7351 98-99,115-116,118,126,137-138,148,174,228,277
+  s_5cd1b28ed520c1::t_340d9f89328ddc 87-88,110,112,114,120,122,124,128,139,142,144,149,156,234-235,238-240,283,288
+  s_5cd1b28ed520c1::t_714f8471b8df8d 207,236
+  s_5cd1b28ed520c1::t_f6fe20844530a3 4,6,8-11,14-21,32-33,53,63-86,89-97,100-109,111,113,117,119,121,123,125,127,135-136,140-141,143,145-147,150-155,173,175-206,208-227,229-233,237,245-276,278-282,284-285,289-348,355-359,361-402,404-441
+  s_5cd1b28ed520c1::t_16f4abd4615ae8 23-27
+  s_5cd1b28ed520c1::t_96ec599c04fefd 47
+  s_5cd1b28ed520c1::t_102ce513689276 22,35-43,49-52,54-57
+  s_5cd1b28ed520c1::t_b228b728ecc47d 5,129-134,157-159,241-244,286-287,349-354,442-462
+  s_5cd1b28ed520c1::t_dc8352a6b814cc 44-46
+  s_5cd1b28ed520c1::t_d1dbf47b4708c4 48,160-161,163-172,463-483
+  s_5cd1b28ed520c1::t_211369bf264d25 60
+  s_5cd1b28ed520c1::t_6184fa0d7cc71b 162
+  s_5cd1b28ed520c1::t_a76487640e9b5a 1-3,7,12-13,28-31,34,58-59,61-62,360,403,484-485
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "23eda1b8593c2749980fd79f35e9ffcca471cbdb",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
