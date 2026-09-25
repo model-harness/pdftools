@@ -63,12 +63,14 @@ type paint struct{ r, g, b float64 }
 
 var black = paint{0, 0, 0}
 
-// gray, rgb and cmyk are §8.6.4's three device colour spaces.
+// gray, rgb and cmyk are §8.6.4's three device colour spaces, converted by formula rather than
+// through a profile.
 //
-// Only the device spaces, and that is a stated limit rather than an oversight: an ICCBased or
-// Separation colour requires a colour-management decision — which profile, which rendering
-// intent — that a rasterizer cannot make on the caller's behalf, and guessing sRGB for one is
-// how a proofing tool comes to disagree with a printer. A page that sets one is refused.
+// An ICCBased colour goes through its own profile instead (colour.go's space.colour), because a
+// device space has no profile to go through in the first place. Separation, DeviceN, Lab,
+// CalGray, CalRGB and Indexed over any of those still need a colour-management decision this
+// package cannot make on the caller's behalf — which alternate, which tint transform — and stay
+// refused; colour.go's colourSpace is where the list of what stays refused actually lives.
 func gray(v float64) paint { return paint{v, v, v} }
 
 func rgb(r, g, b float64) paint { return paint{r, g, b} }

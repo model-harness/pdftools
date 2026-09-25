@@ -140,17 +140,18 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 
 	res, _ := objects.GetDict(r.s, page, "Resources")
 	w := &walker{
-		s:        r.s,
-		res:      res,
-		w:        pw,
-		h:        ph,
-		base:     pageMatrix(box, sx, sy, rotate),
-		unsup:    map[string]bool{},
-		fonts:    map[string]*textFont{},
-		fontRefs: map[objects.Ref]*textFont{},
-		images:   map[objects.Ref]*image.NRGBA{},
-		forms:    map[objects.Ref][]byte{},
-		faces:    r.faces,
+		s:         r.s,
+		res:       res,
+		w:         pw,
+		h:         ph,
+		base:      pageMatrix(box, sx, sy, rotate),
+		unsup:     map[string]bool{},
+		fonts:     map[string]*textFont{},
+		fontRefs:  map[objects.Ref]*textFont{},
+		images:    map[objects.Ref]*image.NRGBA{},
+		forms:     map[objects.Ref][]byte{},
+		iccSpaces: map[objects.Ref]space{},
+		faces:     r.faces,
 	}
 	w.run(data)
 
@@ -252,7 +253,10 @@ type walker struct {
 	faces font.FaceSource
 
 	fill, stroke paint
-	path         path
+	// fillSpace and strokeSpace are the colour spaces fill and stroke were last set in — cs and
+	// CS's target and sc/scn/SC/SCN's reading — which is what checkFill and checkStroke refuse by.
+	fillSpace, strokeSpace space
+	path                   path
 
 	// alpha and strokeAlpha are the constant alphas /ca and /CA set, for fills and strokes.
 	alpha, strokeAlpha float64
@@ -284,6 +288,12 @@ type walker struct {
 	images map[objects.Ref]*image.NRGBA
 	pixels int
 
+	// iccSpaces caches a resolved ICCBased space by the profile stream's reference: a page selects
+	// the same space at every cs, and parsing a profile each time is the fonts cache's problem
+	// again. Keyed by reference rather than by the resolved *Stream, because a Store may hand back
+	// a new copy on every Resolve, and decoded bytes do not persist on a copy.
+	iccSpaces map[objects.Ref]space
+
 	// forms caches a form's decoded content by indirect reference; see formContent for why it is
 	// not simply read off the stream.
 	forms map[objects.Ref][]byte
@@ -304,11 +314,12 @@ type saved struct {
 	// clip is nil when no clip was in force, so an unclipped q costs no page-area copy. Measured
 	// before it was stacked at all: a clip set inside q…Q confined everything after the Q too, and
 	// "q 0 0 20 20 re W n Q 0 0 200 200 re f" came out at 1% of its ink against pdfium.
-	clip               *mask
-	fill, stroke       paint
-	font               *textFont
-	alpha, strokeAlpha float64
-	pen                pen
+	clip                   *mask
+	fill, stroke           paint
+	fillSpace, strokeSpace space
+	font                   *textFont
+	alpha, strokeAlpha     float64
+	pen                    pen
 }
 
 // canvasFor returns the canvas, creating it on first use.
@@ -332,6 +343,7 @@ func (w *walker) canvasFor() *canvas {
 // way, so the only observable was wall time.
 func (w *walker) run(data []byte) {
 	w.alpha, w.strokeAlpha, w.pen = 1, 1, defaultPen
+	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
 	w.survey(content.NewMachine(geom.Identity), data, 0)
 	if len(w.unsup) > 0 {
 		return
@@ -340,6 +352,7 @@ func (w *walker) run(data []byte) {
 	// starts from the page's initial state, not from wherever the survey ended.
 	w.fill, w.alpha, w.font, w.stack = black, 1, nil, nil
 	w.stroke, w.strokeAlpha, w.pen = black, 1, defaultPen
+	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
 	w.paint(content.NewMachine(geom.Identity), data, 0)
 }
 
@@ -426,10 +439,17 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 			if len(op.Operands) >= 1 {
 				w.font = w.loadFont(string(op.NameAt(0)))
 			}
-		case "S", "s", "B", "B*", "b", "b*":
+		case "f", "F", "f*":
+			w.checkFill()
+		case "S", "s":
 			w.checkStroke(m)
-		case "J", "j", "M", "d", "G", "RG", "K", "CS", "SC", "SCN":
+		case "B", "B*", "b", "b*":
+			w.checkFill()
+			w.checkStroke(m)
+		case "J", "j", "M", "d":
 			w.setPen(op)
+		case "g", "rg", "k", "cs", "sc", "scn", "G", "RG", "K", "CS", "SC", "SCN":
+			w.setColour(op)
 		}
 		switch op.Name {
 		case "Tj", "'", "\"", "TJ":
@@ -442,14 +462,17 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 		switch op.Name {
 		case "Tj", "'":
 			if len(op.Operands) >= 1 && m.Visible() {
+				w.checkFill() // glyphs are filled with the fill colour (text.go's showText).
 				w.checkText(op.Str(0))
 			}
 		case "\"":
 			if len(op.Operands) >= 3 && m.Visible() {
+				w.checkFill()
 				w.checkText(op.Str(2))
 			}
 		case "TJ":
 			if len(op.Operands) >= 1 && m.Visible() {
+				w.checkFill()
 				for _, item := range op.Arr(0) {
 					if s, ok := item.(objects.String); ok {
 						w.checkText(s)
@@ -558,8 +581,12 @@ func (w *walker) extGState(name objects.Name) (objects.Dict, bool) {
 //     device converts to CMYK. This backend emits RGB.
 //   - /HT, /FL, /SM are a halftone screen and flatness and smoothness tolerances: hints for a
 //     device that screens or flattens, with no required effect on a continuous-tone raster.
-//   - /RI is a rendering intent, which selects a gamut mapping. Only device colour spaces are
-//     supported here, and ADR 0015 already declines to colour-manage.
+//   - /RI is a rendering intent, which selects a gamut mapping. Accepted and not honoured:
+//     pdfium converts every ICC colour at the perceptual intent whatever the PDF asks for, and
+//     /Perceptual, /RelativeColorimetric and /AbsoluteColorimetric were measured drawing
+//     identically, so icc (colour.go's CMM) converts perceptually, black point compensation
+//     included, always (ADR 0021). The ri operator, in marks' allow-list, is accepted for the
+//     same reason.
 //   - /TK is text knockout, which changes how glyphs composite *against each other* inside a
 //     transparency group. With alpha 1 and the normal blend mode there is nothing to knock out,
 //     and a non-normal blend mode is refused below, so the case where it matters cannot arrive.
@@ -706,19 +733,10 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 			w.path.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm)
 		}
 
-	// Colour. Only the device spaces; see paint.go for why the rest are refused.
-	case "g":
-		if len(op.Operands) >= 1 {
-			w.fill = gray(clamp01(op.Num(0)))
-		}
-	case "rg":
-		if len(op.Operands) >= 3 {
-			w.fill = rgb(clamp01(op.Num(0)), clamp01(op.Num(1)), clamp01(op.Num(2)))
-		}
-	case "k":
-		if len(op.Operands) >= 4 {
-			w.fill = cmyk(op.Num(0), op.Num(1), op.Num(2), op.Num(3))
-		}
+	// Colour: every operator that sets a fill or stroke colour or colour space, in one place —
+	// see colour.go for what each space converts through and what it refuses.
+	case "g", "rg", "k", "cs", "sc", "scn", "G", "RG", "K", "CS", "SC", "SCN":
+		w.setColour(op)
 
 	// Clipping. W and W* mark the path; the paint operator that follows establishes it.
 	case "W", "W*":
@@ -747,7 +765,7 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 		w.fillPath(op.Name == "b*")
 		w.strokePath(m)
 		w.endPath()
-	case "J", "j", "M", "d", "G", "RG", "K", "CS", "SC", "SCN":
+	case "J", "j", "M", "d":
 		w.setPen(op)
 
 	case "gs":
@@ -775,8 +793,8 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 // drawn after the Q that ended its /ca is drawn opaque. The clip is only ever non-nil when painting,
 // since the survey creates no canvas.
 func (w *walker) save() {
-	s := saved{fill: w.fill, stroke: w.stroke, font: w.font, alpha: w.alpha,
-		strokeAlpha: w.strokeAlpha, pen: w.pen}
+	s := saved{fill: w.fill, stroke: w.stroke, fillSpace: w.fillSpace, strokeSpace: w.strokeSpace,
+		font: w.font, alpha: w.alpha, strokeAlpha: w.strokeAlpha, pen: w.pen}
 	if w.canvas != nil && w.canvas.clipped {
 		s.clip = w.canvas.clip.clone()
 	}
@@ -793,6 +811,7 @@ func (w *walker) restore() {
 	w.stack = w.stack[:n-1]
 	w.fill, w.font, w.alpha = s.fill, s.font, s.alpha
 	w.stroke, w.strokeAlpha, w.pen = s.stroke, s.strokeAlpha, s.pen
+	w.fillSpace, w.strokeSpace = s.fillSpace, s.strokeSpace
 	// Only when something actually has to change. A q…Q pair that set no clip is the
 	// overwhelming majority — a spec page has hundreds — and rebuilding a page-sized opaque mask
 	// for each of them cost more than everything else this walker does put together: 43 s over
@@ -817,10 +836,13 @@ func (w *walker) restore() {
 // entry had never been reachable. A list of what is safe is the only shape that survives an
 // operator this package has not heard of.
 //
-// The stroke colour operators are safe because what they set is checked where it is used: a stroke
-// in a colour space this backend cannot draw is refused at the stroke, by checkStroke, and setting
-// one that is never stroked changes no pixel. The *fill* colour space operators are refused here —
-// a Pattern fill colour changes what f paints — so cs and scn are refusals.
+// Every colour operator marks nothing itself, and for one reason common to all twelve: what it
+// sets is checked where it is used, not where it was set. A fill, a stroke, a glyph (filled with
+// the fill colour) or an image in a colour space this backend cannot draw is refused at the
+// operator that paints it — checkFill, checkStroke and imagePixels, by reason — and a colour or a
+// colour space that nothing ever paints in changes no pixel. That covers cs and scn as much as
+// it covers G and SCN: this used to refuse the fill pair here on the theory that a Pattern fill
+// colour changes what f paints, and the fix is the same one stroking already had, not a new rule.
 func marks(op string) bool {
 	switch op {
 	case // path construction and the painting operators this backend implements
@@ -832,8 +854,8 @@ func marks(op string) bool {
 		// glyf program is drawn and a CFF one is refused, and only the paint pass can tell
 		// which a page holds. The survey lets these through and showText refuses by reason.
 		"Tj", "TJ", "'", "\"",
-		// fill colour in the device spaces
-		"g", "rg", "k",
+		// fill colour, in the device spaces and through cs and scn's colour space
+		"g", "rg", "k", "cs", "sc", "scn",
 		// graphics state. gs is here for the same reason the show operators are: it marks
 		// nothing by itself, and whether what it *sets* can be drawn is a property of the
 		// ExtGState's keys rather than of the operator. checkExtGState decides it by reason.

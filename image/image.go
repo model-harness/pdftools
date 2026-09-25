@@ -125,6 +125,10 @@ type Image struct {
 	Base    objects.Name
 	HiVal   int
 
+	// BaseComponents is the /Indexed base space's component count, which is the
+	// palette's stride — one entry is BaseComponents bytes, not Components'.
+	BaseComponents int
+
 	// Stencil reports /ImageMask true: a 1-bit mask that paints the current colour
 	// through its unmasked samples rather than carrying colour of its own.
 	Stencil bool

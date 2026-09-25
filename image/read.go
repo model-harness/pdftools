@@ -260,7 +260,6 @@ func (r *Reader) colorSpace(st *objects.Stream, im *Image) {
 	switch cs := v.(type) {
 	case objects.Name:
 		im.ColorSpaceFamily = cs
-		im.Components = componentsOf(cs)
 	case objects.Array:
 		if len(cs) == 0 {
 			return
@@ -270,19 +269,7 @@ func (r *Reader) colorSpace(st *objects.Stream, im *Image) {
 			return
 		}
 		im.ColorSpaceFamily = fam
-		switch fam {
-		case "ICCBased":
-			// An ICCBased space carries its component count in the stream's /N,
-			// which is mandatory (§8.6.5.5) and is the only place it is stated.
-			if len(cs) < 2 {
-				return
-			}
-			if str, ok := r.stream(cs[1]); ok {
-				if n, ok := objects.GetInt(r.s, str.Dict, "N"); ok && (n == 1 || n == 3 || n == 4) {
-					im.Components = int(n)
-				}
-			}
-		case "Indexed", "I":
+		if fam == "Indexed" || fam == "I" {
 			// [/Indexed base hival lookup]. An indexed sample is one component —
 			// an index — and the palette expands it to the base space's components.
 			if len(cs) < 4 {
@@ -292,29 +279,67 @@ func (r *Reader) colorSpace(st *objects.Stream, im *Image) {
 			im.ColorSpaceFamily = "Indexed"
 			if b, err := r.s.Resolve(cs[1]); err == nil {
 				im.Base, im.HiVal = baseFamily(b), 0
+				im.BaseComponents = r.spaceComponents(b)
 			}
 			if n, ok := objects.AsNum(mustResolve(r.s, cs[2])); ok {
 				im.HiVal = int(n)
 			}
 			im.Palette = r.lookup(cs[3])
+			return
+		}
+	}
+	im.Components = r.spaceComponents(v)
+}
+
+// spaceComponents returns the component count of a resolved colour space —
+// either a device name or a family array such as [/ICCBased stream] or
+// [/DeviceN names alternate tint]. Shared by an image's own /ColorSpace and an
+// /Indexed space's base, so the same array is counted the same way in both.
+func (r *Reader) spaceComponents(v objects.Object) int {
+	switch cs := v.(type) {
+	case objects.Name:
+		return componentsOf(cs)
+	case objects.Array:
+		if len(cs) == 0 {
+			return 0
+		}
+		fam, isName := cs[0].(objects.Name)
+		if !isName {
+			return 0
+		}
+		switch fam {
+		case "ICCBased":
+			// An ICCBased space carries its component count in the stream's /N,
+			// which is mandatory (§8.6.5.5) and is the only place it is stated.
+			if len(cs) < 2 {
+				return 0
+			}
+			if str, ok := r.stream(cs[1]); ok {
+				if n, ok := objects.GetInt(r.s, str.Dict, "N"); ok && (n == 1 || n == 3 || n == 4) {
+					return int(n)
+				}
+			}
+			return 0
 		case "DeviceN":
 			// [/DeviceN names alternate tint]. The name array's length is the
 			// component count.
 			if len(cs) > 1 {
 				if arr, ok := mustResolve(r.s, cs[1]).(objects.Array); ok {
-					im.Components = len(arr)
+					return len(arr)
 				}
 			}
+			return 0
 		case "Separation":
-			im.Components = 1
+			return 1
 		case "CalRGB", "Lab":
-			im.Components = 3
+			return 3
 		case "CalGray":
-			im.Components = 1
+			return 1
 		default:
-			im.Components = componentsOf(fam)
+			return componentsOf(fam)
 		}
 	}
+	return 0
 }
 
 // lookup reads an /Indexed palette, which may be a string or a stream.

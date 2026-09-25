@@ -7,6 +7,28 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-09-25
 
+- **`render/native` draws ICC colour: 1,129 of the corpus's 1,251 pages (90%).** ADR 0021.
+  `cs`, `sc`, `scn` and their stroke counterparts are drawn in the device spaces and in ICCBased
+  spaces, and an ICCBased image is converted through its profile.
+  - **A new `icc` package** reads matrix/TRC profiles, gray or RGB, which is every profile the
+    corpus carries. It converts as pdfium does: at the perceptual intent into sRGB, with lcms's
+    black point compensation and lcms's guards on parametric curves. A LUT profile is refused, and
+    `FuzzParse` ran 31.4 million inputs without a crash.
+  - **sRGB is recognised by content.** A profile that moves no colour by a whole level on a
+    17-point grid per axis passes through unchanged. pdfium matches the stock sRGB profile by its
+    bytes, and the two agree on it exactly. The nearest non-sRGB profile Windows ships is 48 levels
+    off.
+  - **The ICCBased fallback** follows §8.6.5.5 and pdfium: the profile, then `/Alternate`, then the
+    device space for `/N`.
+  - **Refused by reason, where the colour is painted:**
+    - Separation, DeviceN, Indexed, Lab, CalGray and CalRGB as a fill or stroke space
+    - Pattern colour
+    - a colour space missing from the resources
+    - a `/Default…` resource
+  - **Against pdfium**, a fill agrees to within a level through every test profile but a linear
+    gray, which is up to 6 off near black because pdfium truncates `scn` to a byte first. The 16
+    pages gained are identical with the conversion on and off. Every page drawn before is
+    byte-identical.
 - **`render/native` strokes: 1,113 of the corpus's 1,251 pages (89%).** ADR 0020. `S`, `s`, `B`,
   `B*`, `b` and `b*` are drawn, and so are all three caps and all three joins, with the miter limit.
   - **Stroked in pen space.** Each point is taken back through the inverse of the CTM's linear part,
@@ -30,6 +52,12 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-09-25
 
+- **`image` read an `/Indexed` palette over an ICCBased base at a stride of 3.** It guessed the
+  palette's stride from the base space's family name. `ICCBased` names no count, so a gray or CMYK
+  profile's palette was misread. The stride is now `Image.BaseComponents`, counted from the base's
+  `/N`, and `Encode` and `Pixels` both use it. No corpus image is Indexed.
+- **`render/native` read `k`'s operands unclamped**, while `K` clamped them. `-0.5 0 0 0.7 k`
+  drew 204 instead of 77. Every colour operator now clamps its components to 0..1.
 - **`render/native` scaled the page by dpi/72, and pdfium scales it to fill the image.** The image
   is a whole number of pixels and the page usually is not: an A4 page at 72 dpi is 595.32 points
   across and 595 pixels, and a 200pt page at 200 dpi is 555.56 onto 556. Every edge was a fraction

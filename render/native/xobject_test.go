@@ -208,6 +208,98 @@ func TestDownscaleAveragesRatherThanAliases(t *testing.T) {
 	checkPixels(t, ra, []pixel{{10, 190, 191, 191, 191}}, 2)
 }
 
+// TestStencilExemptionIgnoresAMalformedColourSpace pins §8.9.6.2: a stencil mask has no colour
+// space of its own, so imageSpace must skip /ColorSpace entirely for one — checked with a mask
+// that carries one anyway, /Separation, which is not a colour space this backend can resolve. A
+// mask that read it would be refused for that; a mask that does not read it is refused for being
+// a stencil at all, which is the one Pixels gives ("a stencil mask paints the fill colour and
+// has none of its own") since drawing one is not implemented — measured against pdfium, which
+// paints the mask in the current fill colour and ignores /Separation too (a 200×200 page, blue
+// background, green fill, drawn all green).
+//
+// /IM is the same exemption under its inline-image abbreviation (§8.9.7's Table 91), spelled on an
+// ordinary image XObject, where §8.9.7 says the abbreviations "shall not be used". image.Read
+// (image/read.go) honours it identically to /ImageMask anyway, so imageSpace has to as well, or
+// the two would disagree about what the image is. pdfium was measured not treating /IM as a
+// stencil on an XObject; refusing is the safer side of that divergence, and ADR 0021 records it.
+func TestStencilExemptionIgnoresAMalformedColourSpace(t *testing.T) {
+	const wantStencilRefusal = "Do: an image that cannot be drawn, /Im1: " +
+		"image: unsupported codec: a stencil mask paints the fill colour and has none of its own"
+	for _, c := range []struct {
+		name, key string
+	}{
+		{"ImageMask", "ImageMask"},
+		{"IM", "IM"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			mask := fmt.Sprintf("<</Type/XObject/Subtype/Image/Width 1/Height 1/%s true"+
+				"/ColorSpace/Separation/Length 1>>\nstream\n\x00\nendstream", c.key)
+			got := refusal(t, xoPDF(t, "/Im1 5 0 R", "/Im1 Do", mask))
+			if got != wantStencilRefusal {
+				t.Errorf("Ops = %q, want %q", got, wantStencilRefusal)
+			}
+		})
+	}
+}
+
+// TestImageColorSpaceAbbreviationIsRead pins the /CS abbreviation for /ColorSpace (§8.9.7's
+// Table 91, for inline images) on an image XObject, the same one image.Read (image/read.go)
+// already accepts there. /Lab is a colour space
+// this backend does not convert — nothing in the corpus needs it — so an image naming it under
+// /CS must be refused the same way one naming it under /ColorSpace would be, by imageSpace
+// resolving /CS and reporting why: if it were not read at all, the image would instead reach
+// Pixels with a colour space of zero components and fail there instead, with a different reason.
+func TestImageColorSpaceAbbreviationIsRead(t *testing.T) {
+	im := "<</Type/XObject/Subtype/Image/Width 1/Height 1/CS/Lab/Length 1>>\nstream\n\x00\nendstream"
+	want := "Do: an image that cannot be drawn, /Im1: the colour space is /Lab"
+	if got := refusal(t, xoPDF(t, "/Im1 5 0 R", "/Im1 Do", im)); got != want {
+		t.Errorf("Ops = %q, want %q", got, want)
+	}
+}
+
+// TestIndexedImageAbbreviationAgreesWithPdfium pins the /I abbreviation for /Indexed (§8.9.7's
+// Table 92) on an image XObject:
+// imageSpace must special-case it exactly as it does the full spelling, resolving the palette's
+// base space rather than refusing "the colour space is /I" as an unrecognised family. A 2×1
+// image, blue then red through a two-entry DeviceRGB palette, scaled to fill the page — measured
+// against pdfium, which also honours /I here and draws the same two colours on either side of
+// the page's centre.
+func TestIndexedImageAbbreviationAgreesWithPdfium(t *testing.T) {
+	im := "<</Type/XObject/Subtype/Image/Width 2/Height 1/ColorSpace[/I/DeviceRGB 1<0000FFFF0000>]" +
+		"/BitsPerComponent 8/Filter/ASCIIHexDecode/Length 5>>\nstream\n0001>\nendstream"
+	ra, err := renderAt72(t, xoPDF(t, "/Im1 5 0 R", "q 200 0 0 200 0 0 cm /Im1 Do Q", im))
+	if err != nil {
+		t.Fatalf("Page: %v, want drawn", err)
+	}
+	checkPixels(t, ra, []pixel{
+		{5, 5, 0, 0, 255},
+		{50, 50, 0, 0, 255},
+		{150, 150, 255, 0, 0},
+	}, 2)
+}
+
+// TestImageColorSpaceNameIsNotAResource pins that an image XObject's /ColorSpace names a family
+// directly (§8.6.3), never a resource: §7.8.3 has objects outside a content stream refer to each
+// other by indirect reference "rather than named resources", and §8.9.7 grants the resource
+// lookup to inline images alone — unlike cs's operand, which the /ColorSpace resource dictionary
+// can hold. /CS0 is not a family this backend knows, so it must be refused by that name even
+// though the page defines /CS0 as /DeviceRGB in its own resources.
+//
+// pdfium was measured resolving it through the resources anyway — a single green sample scaled
+// to fill the page drew all green rather than being left unpainted — which is a divergence this
+// backend does not follow.
+func TestImageColorSpaceNameIsNotAResource(t *testing.T) {
+	im := "<</Type/XObject/Subtype/Image/Width 1/Height 1/ColorSpace/CS0/BitsPerComponent 8" +
+		"/Length 3>>\nstream\n\x00\xff\x00\nendstream"
+	page := "<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Resources<</XObject<</Im1 5 0 R>>" +
+		"/ColorSpace<</CS0/DeviceRGB>>>>/Contents 4 0 R>>"
+	path := buildPDF(t, append(pageObjs(page, "q 200 0 0 200 0 0 cm /Im1 Do Q\n"), im), "cs0img.pdf")
+	want := "Do: an image that cannot be drawn, /Im1: the colour space is /CS0"
+	if got := refusal(t, path); got != want {
+		t.Errorf("Ops = %q, want %q", got, want)
+	}
+}
+
 // TestSoftMaskAlphaAndClipApplyToImages pins the three things that make an image less than
 // opaque, each against the arithmetic rather than a direction: a mask of 0x80 over black is
 // 127 of 255, half /ca is 128, and a clip is all or nothing.

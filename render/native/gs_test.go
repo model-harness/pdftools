@@ -75,7 +75,7 @@ func TestExtGStateAcceptsWhatCannotMarkAndRefusesWhatCan(t *testing.T) {
 		{"overprint, which needs separations this backend has not got", "<</OP true/op true/OPM 1>>", ""},
 		{"black generation and undercolour removal, for a CMYK device", "<</BG2/Default/UCR2/Default>>", ""},
 		{"screening and tolerance hints", "<</HT/Default/FL 1/SM 0.02>>", ""},
-		{"a rendering intent, while only device spaces are supported", "<</RI/RelativeColorimetric>>", ""},
+		{"a rendering intent, which pdfium does not honour either", "<</RI/RelativeColorimetric>>", ""},
 		{"text knockout and alpha-is-shape, both inert without a mask", "<</TK true/AIS false>>", ""},
 		// A partial alpha is honoured rather than refused, so it draws.
 		{"partial alpha", "<</ca 0.5>>", ""},

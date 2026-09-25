@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"compress/zlib"
+	"image/color"
 	"testing"
 
 	"github.com/model-harness/pdftools/objects"
@@ -341,6 +342,12 @@ func TestColorSpaceComponentCounts(t *testing.T) {
 		// A space this package does not recognize yields 0, which blocks
 		// re-encoding rather than guessing a stride.
 		{objects.Name("VendorSpace"), "VendorSpace", 0},
+		// /CalGray as a family array rather than a bare name — spaceComponents'
+		// own "CalGray" case, not componentsOf's.
+		{objects.Array{objects.Name("CalGray"), objects.Dict{}}, "CalGray", 1},
+		// A one-element array names its family and nothing else, so it falls to
+		// spaceComponents' default case, which defers to componentsOf.
+		{objects.Array{objects.Name("DeviceRGB")}, "DeviceRGB", 3},
 	} {
 		st := img(2, 2, objects.Dict{"ColorSpace": tc.cs})
 		s := &memStore{
@@ -424,6 +431,118 @@ func TestIndexedPaletteFromStringOrStream(t *testing.T) {
 		if string(im.Palette) != string(palette) {
 			t.Errorf("palette = %v, want %v", im.Palette, palette)
 		}
+	}
+}
+
+// An /Indexed base drawn from /ICCBased has no family name of its own — read.go
+// sees "ICCBased", not "DeviceGray" or "DeviceCMYK" — so its stride has to come
+// from the stream's /N, not from a guess keyed on the name.
+func TestIndexedPaletteOverICCBasedBase(t *testing.T) {
+	iccGray := &objects.Stream{Dict: objects.Dict{"N": objects.Int(1)}, Raw: nil}
+	st := img(2, 1, objects.Dict{
+		"BitsPerComponent": objects.Int(8),
+		"ColorSpace": objects.Array{
+			objects.Name("Indexed"),
+			objects.Array{objects.Name("ICCBased"), objects.Ref{Num: 2}},
+			objects.Int(1),
+			objects.String([]byte{0x00, 0xFF}),
+		},
+	})
+	st.Raw = []byte{0, 1}
+	s := &memStore{
+		objs: map[objects.Ref]objects.Object{
+			{Num: 1}: st,
+			{Num: 2}: iccGray,
+		},
+		pages: []objects.Dict{pageWith(objects.Dict{"Im0": objects.Ref{Num: 1}})},
+	}
+	ims, err := NewReader(s).Images()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ims) != 1 {
+		t.Fatalf("got %d images, want 1", len(ims))
+	}
+	im := ims[0]
+	if im.BaseComponents != 1 {
+		t.Errorf("BaseComponents = %d, want 1", im.BaseComponents)
+	}
+	gotImg := pixels(t, im)
+	if got := rgba(t, gotImg, 0, 0); got != (color.NRGBA{A: 255}) {
+		t.Errorf("sample 0 = %v, want black", got)
+	}
+	if got := rgba(t, gotImg, 1, 0); got != (color.NRGBA{R: 255, G: 255, B: 255, A: 255}) {
+		t.Errorf("sample 1 = %v, want white", got)
+	}
+
+	// The same base family, but /N 4: a CMYK palette, two entries, read at the
+	// stride /N gives rather than the 3 componentsOf(im.Base) falls back to for a
+	// base name it does not recognize.
+	iccCMYK := &objects.Stream{Dict: objects.Dict{"N": objects.Int(4)}, Raw: nil}
+	cmykSt := img(2, 1, objects.Dict{
+		"BitsPerComponent": objects.Int(8),
+		"ColorSpace": objects.Array{
+			objects.Name("Indexed"),
+			objects.Array{objects.Name("ICCBased"), objects.Ref{Num: 4}},
+			objects.Int(1),
+			objects.String([]byte{255, 0, 0, 0, 0, 0, 0, 255}),
+		},
+	})
+	cmykSt.Raw = []byte{0, 1}
+	s2 := &memStore{
+		objs: map[objects.Ref]objects.Object{
+			{Num: 3}: cmykSt,
+			{Num: 4}: iccCMYK,
+		},
+		pages: []objects.Dict{pageWith(objects.Dict{"Im0": objects.Ref{Num: 3}})},
+	}
+	ims2, err := NewReader(s2).Images()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ims2) != 1 {
+		t.Fatalf("got %d images, want 1", len(ims2))
+	}
+	cmykIm := ims2[0]
+	if cmykIm.BaseComponents != 4 {
+		t.Errorf("BaseComponents = %d, want 4", cmykIm.BaseComponents)
+	}
+	cmykImg := pixels(t, cmykIm)
+	// Entry 0: C=255, M=Y=K=0 — cyan. Entry 1: K=255 — black. What the existing
+	// CMYK palette branch in paletteLookup computes for those bytes.
+	if got := rgba(t, cmykImg, 0, 0); got != (color.NRGBA{G: 255, B: 255, A: 255}) {
+		t.Errorf("sample 0 = %v, want cyan", got)
+	}
+	if got := rgba(t, cmykImg, 1, 0); got != (color.NRGBA{A: 255}) {
+		t.Errorf("sample 1 = %v, want black", got)
+	}
+}
+
+// An /Indexed base that is itself an empty array — [/Indexed [] 1 <0000>] — has
+// no family name to read cs[0] from. spaceComponents must decline at the same
+// len(cs)==0 guard it uses for any other array, not index into it.
+func TestIndexedBaseEmptyArrayComponentsZero(t *testing.T) {
+	st := img(2, 1, objects.Dict{
+		"ColorSpace": objects.Array{
+			objects.Name("Indexed"),
+			objects.Array{},
+			objects.Int(1),
+			objects.String([]byte{0x00, 0x00}),
+		},
+	})
+	s := &memStore{
+		objs:  map[objects.Ref]objects.Object{{Num: 1}: st},
+		pages: []objects.Dict{pageWith(objects.Dict{"Im0": objects.Ref{Num: 1}})},
+	}
+	ims, err := NewReader(s).Images()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ims) != 1 {
+		t.Fatalf("got %d images, want 1", len(ims))
+	}
+	if got := ims[0].BaseComponents; got != 0 {
+		t.Errorf("BaseComponents = %d, want 0 for an empty base array", got)
 	}
 }
 

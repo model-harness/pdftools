@@ -299,7 +299,15 @@ func paletteLookup(im *Image, norm float64) (uint8, uint8, uint8) {
 	if idx < 0 {
 		idx = 0
 	}
-	n := componentsOf(im.Base)
+	// BaseComponents is the base space's stride as read.go's spaceComponents
+	// counted it, including an /ICCBased base that componentsOf cannot name from
+	// its family alone. componentsOf is the fallback for an Image built by hand
+	// in a test, which sets only Base; 3 below that, for a Base this package does
+	// not recognize at all.
+	n := im.BaseComponents
+	if n == 0 {
+		n = componentsOf(im.Base)
+	}
 	if n == 0 {
 		n = 3
 	}

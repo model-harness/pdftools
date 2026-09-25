@@ -999,15 +999,42 @@ Stroking also exposed two defects:
 - **The current point after `h` was dropped.** A segment after `h` is now drawn from the subpath's
   start, as §8.5.2.1 and pdfium have it.
 
+**Non-device colour is done — see ADR 0021, and `render/native` now draws 1,129 of 1,251 pages
+(90%).** Colour alone blocked 16 of its 98 pages. CFF also blocks 80 of the other 82. How it works:
+
+- A new `icc` package reads the one kind of profile the corpus carries, matrix/TRC, gray or RGB.
+  It converts at pdfium's perceptual intent into sRGB, with lcms's black point compensation and
+  lcms's guards on parametric curves. A LUT profile is refused.
+- A profile that converts every colour to within a level of itself is sRGB and passes through
+  unchanged. pdfium recognises the stock sRGB profile by its bytes. This backend recognises it by
+  what it does, and on the corpus's profile the two agree.
+- An ICCBased space falls back to its `/Alternate`, and then to the device space for `/N`, as
+  pdfium does. Images convert through the same profile, and an `/Indexed` image does so after its
+  palette lookup.
+
+What is refused, each by name:
+
+- Separation, DeviceN, Indexed as a fill or stroke space, Lab, CalGray and CalRGB
+- Pattern colour
+- a `/Default…` resource, because the specification and pdfium disagree on which operators it
+  replaces and no corpus page has one
+
+Against pdfium, a fill agrees to within a level through every profile but a linear gray, which is
+up to 6 off near black because pdfium truncates `scn` to a byte first. The 16 pages gained are
+identical with the conversion on and off.
+
 **The remaining worklist:**
 
 - CFF: 104 pages
-- `cs`/`scn`: 98
-- a named stroke colour space: 68, the same increment as `cs`/`scn`
 - Type 1: 17
 - a dash: 2
 - one soft-mask group
 - one shading
+
+Two accuracy items affect no page count:
+
+- pdfium's own CMYK-to-sRGB table
+- an image `/ColorSpace` that names a resource, which no corpus image uses
 
 **The page scale is pdfium's.** The page is mapped to fill the image exactly, with the image's
 size over the box's on each axis, and not by dpi/72. The image is a whole number of pixels and the

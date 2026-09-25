@@ -1,6 +1,7 @@
 package native
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -210,7 +211,18 @@ func (w *walker) drawXObject(m *content.Machine, name objects.Name, depth int) {
 // half drawn. The cache is what makes that free for the paint pass. counted is true in the survey,
 // which is where the page's pixel budget is spent: a direct image — no reference to cache by — is
 // decoded again when painted, and charging it twice would refuse a page the survey had accepted.
+//
+// The colour space is resolved before the cache lookup rather than folded into what gets cached,
+// because the refusal it can carry has to answer the same way on every call regardless of whether
+// this is the first: a stream's own dictionary does not change page to page, so resolving it again
+// is a handful of dict lookups and not a reason to complicate the cache.
 func (w *walker) imagePixels(x xobject, counted bool) (*image.NRGBA, error) {
+	sp, hasSpace := w.imageSpace(x.st)
+	if hasSpace {
+		if r := w.refusal(sp); r != "" {
+			return nil, errors.New(r)
+		}
+	}
 	if x.isRef {
 		if px, ok := w.images[x.ref]; ok {
 			return px, nil
@@ -236,10 +248,47 @@ func (w *walker) imagePixels(x xobject, counted bool) (*image.NRGBA, error) {
 	if err != nil {
 		return nil, err
 	}
+	if hasSpace && sp.profile != nil {
+		sp.profile.Image(px)
+	}
 	if x.isRef {
 		w.images[x.ref] = px
 	}
 	return px, nil
+}
+
+// imageSpace resolves an image XObject's /ColorSpace (§8.9.5), or reports false when there is
+// none to resolve.
+//
+// An /ImageMask (or /IM) true paints through the current fill colour rather than one of its own,
+// and an image with no /ColorSpace key is left to Pixels' own reading — both as today, since
+// neither is a colour space this backend has to convert.
+func (w *walker) imageSpace(st *objects.Stream) (space, bool) {
+	if v, ok := objects.GetBool(w.s, st.Dict, "ImageMask"); ok && v {
+		return space{}, false
+	}
+	if v, ok := objects.GetBool(w.s, st.Dict, "IM"); ok && v {
+		return space{}, false
+	}
+	raw, ok := st.Dict["ColorSpace"]
+	if !ok {
+		raw, ok = st.Dict["CS"]
+	}
+	if !ok {
+		return space{}, false
+	}
+	if v, err := w.s.Resolve(raw); err == nil {
+		if arr, isArr := v.(objects.Array); isArr && len(arr) >= 2 {
+			if fam, isName := arr[0].(objects.Name); isName && (fam == "Indexed" || fam == "I") {
+				// The palette expansion is Pixels' job; only the base space decides colour
+				// management, and this is Pixels' own reading of which value that is.
+				return w.colourSpace(arr[1], false), true
+			}
+		}
+	}
+	// An image XObject's /ColorSpace names a family directly, not a resource: §8.9.7 grants the
+	// resource lookup to inline images alone.
+	return w.colourSpace(raw, false), true
 }
 
 // numMatrix reads a six-number array as a matrix.

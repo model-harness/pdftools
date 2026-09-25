@@ -9,7 +9,10 @@ import (
 )
 
 // pen is the part of §8.4.3's graphics state that shapes a stroke and that content.Machine does
-// not carry: the machine has the line width, and this has the rest.
+// not carry: the machine has the line width, and this has the rest. The stroke colour and colour
+// space live on the walker instead — colour.go's setColour sets them for both g/rg/k's stroke
+// counterparts and cs/sc/scn's — because a fill needs the identical state and one copy answers
+// both.
 type pen struct {
 	cap, join int
 	miter     float64
@@ -17,25 +20,15 @@ type pen struct {
 	// dashed is set by a non-empty dash array, which the survey refuses at the stroke: no page the
 	// corpus draws sets one, so a dasher here would be code with nothing to measure it against.
 	dashed bool
-
-	// space is the stroke colour space's name when it is not one of the three device spaces, and
-	// empty when it is; n is the device space's component count, which is what SC and SCN read.
-	space string
-	n     int
 }
 
-var defaultPen = pen{miter: 10, n: 1}
+var defaultPen = pen{miter: 10}
 
-// setPen applies an operator that sets stroke state, in both passes: the survey needs the colour
-// space and the dash to decide what it refuses, and the paint pass needs all of it.
+// setPen applies J, j, M or d, the pen geometry that is not a colour: content.Machine carries the
+// line width, and colour.go's setColour carries every colour operator. Called from both passes,
+// because the survey needs the dash to decide what checkStroke refuses and the paint pass needs
+// the geometry itself.
 func (w *walker) setPen(op content.Op) {
-	nums := func() []float64 {
-		v := make([]float64, 0, len(op.Operands))
-		for i := range op.Operands {
-			v = append(v, clamp01(op.Num(i)))
-		}
-		return v
-	}
 	switch op.Name {
 	case "J":
 		if len(op.Operands) >= 1 {
@@ -53,44 +46,7 @@ func (w *walker) setPen(op content.Op) {
 		if len(op.Operands) >= 1 {
 			w.pen.dashed = len(op.Arr(0)) > 0
 		}
-	case "G", "RG", "K":
-		// Each sets the space along with the colour (§8.6.8).
-		w.pen.space, w.pen.n = "", map[string]int{"G": 1, "RG": 3, "K": 4}[op.Name]
-		w.stroke = deviceColour(nums(), w.pen.n, w.stroke)
-	case "CS":
-		if len(op.Operands) < 1 {
-			return
-		}
-		// A device space's initial colour is black in all three (§8.6.5.2 and following).
-		name := string(op.NameAt(0))
-		n := map[string]int{"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4}[name]
-		w.pen.space, w.pen.n = "", n
-		if n == 0 {
-			w.pen.space = name
-		}
-		w.stroke = black
-	case "SC", "SCN":
-		if w.pen.space == "" {
-			w.stroke = deviceColour(nums(), w.pen.n, w.stroke)
-		}
 	}
-}
-
-// deviceColour reads n components as a device colour, or keeps the colour it had when the
-// operator carried too few, which is a malformed stream with no better reading.
-func deviceColour(v []float64, n int, was paint) paint {
-	if len(v) < n {
-		return was
-	}
-	switch n {
-	case 1:
-		return gray(v[0])
-	case 3:
-		return rgb(v[0], v[1], v[2])
-	case 4:
-		return cmyk(v[0], v[1], v[2], v[3])
-	}
-	return was
 }
 
 // checkStroke refuses a stroke this backend cannot draw, by reason.
@@ -99,8 +55,8 @@ func deviceColour(v []float64, n int, was paint) paint {
 // allowed at all: setting a dash or a colour space that no stroke uses changes no pixel.
 func (w *walker) checkStroke(m *content.Machine) {
 	refuse := func(f string, a ...any) { w.unsup["stroke: "+fmt.Sprintf(f, a...)] = true }
-	if w.pen.space != "" {
-		refuse("the colour space is /%s, and only the device spaces are implemented", w.pen.space)
+	if r := w.refusal(w.strokeSpace); r != "" {
+		refuse("%s", r)
 	}
 	if w.pen.dashed {
 		// None of the pages the corpus draws sets a dash, so a dasher would have nothing to be
