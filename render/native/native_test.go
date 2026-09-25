@@ -386,7 +386,7 @@ func (b *boxStore) Resolve(o objects.Object) (objects.Object, error) {
 // stream is cheap, rasterizing into an image nobody will receive is not.
 func TestRefusalListsEveryMissingFeature(t *testing.T) {
 	stream := "0 g 20 20 100 100 re f BT /F1 12 Tf 30 30 Td (text) Tj ET " +
-		"/GS0 gs 40 40 m 80 80 l S"
+		"/GS0 gs /Sh0 sh"
 	path := onePagePDF(t, stream, 200, 200)
 	s, err := pcstore.Open(path)
 	if err != nil {
@@ -405,8 +405,8 @@ func TestRefusalListsEveryMissingFeature(t *testing.T) {
 	for _, op := range u.Ops {
 		got[op] = true
 	}
-	if !got["S"] {
-		t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, "S")
+	if !got["sh"] {
+		t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, "sh")
 	}
 	// The other two are keyed by reason rather than by operator, so they are matched by prefix:
 	// one operator name stands for one missing feature, where one *reason* is the thing a caller

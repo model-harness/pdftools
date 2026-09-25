@@ -971,8 +971,46 @@ decoded form content onto a resolved `*Stream`, and the paint pass read a fresh 
 decoded on it. Refusing a page is the survey's job, so every page with a form still counted as
 drawn.
 
-**The remaining worklist:** `S` 180 pages, `B` 3 and `B*` 2, CFF 104, `cs`/`scn` 98,
-Type 1 17, one soft-mask group, one shading. Stroking is next.
+**Stroking is done — see ADR 0020, and `render/native` now draws 1,113 of 1,251 pages (89%)**, as
+projected. How it works:
+
+- Each point is taken back through the inverse of the CTM's linear part and stroked there with a
+  round pen, then mapped forward again. The ellipse a non-uniform CTM makes of the pen is therefore
+  exact, and 289 of the corpus's strokes are under one.
+- Every segment, join and cap is a convex piece, and the nonzero fill takes their union.
+- No line is thinner than one device pixel, which is how pdfium reads a width of 0 and every width
+  below a pixel. 612 of the corpus's strokes are 0.5pt or less.
+
+What is refused, each checked at the stroke rather than where its state was set:
+
+- a dash
+- a named stroke colour space
+- a cap or join outside 0..2
+- a negative width
+
+Against pdfium the mean ink difference is at most 0.024 of 255 on every shape but curves and CMYK.
+On the 100 corpus pages stroking unlocked, painting the strokes brings every page closer to pdfium,
+from a mean of 3.58 to 2.96.
+
+Stroking also exposed two defects:
+
+- **Text render modes other than 3 were drawn as fills.** Outline text came out solid, and clipping
+  text drew. They are now refused.
+- **The current point after `h` was dropped.** A segment after `h` is now drawn from the subpath's
+  start, as §8.5.2.1 and pdfium have it.
+
+**The remaining worklist:**
+
+- CFF: 104 pages
+- `cs`/`scn`: 98
+- a named stroke colour space: 68, the same increment as `cs`/`scn`
+- Type 1: 17
+- a dash: 2
+- one soft-mask group
+- one shading
+
+Next is a separate fix to the page scale. At 200 dpi a 200pt page is 555.56 pixels, pdfium maps it
+onto 556, and every edge disagrees by a fraction of a pixel.
 
 **Phase 7 — Rust.** Same architecture, same CLI surface, shared golden corpus. Deferred
 until the Go boundaries have been proven by use, so the Rust port inherits a validated

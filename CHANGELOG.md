@@ -5,6 +5,37 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-25
+
+- **`render/native` strokes: 1,113 of the corpus's 1,251 pages (89%).** ADR 0020. `S`, `s`, `B`,
+  `B*`, `b` and `b*` are drawn, and so are all three caps and all three joins, with the miter limit.
+  - **Stroked in pen space.** Each point is taken back through the inverse of the CTM's linear part,
+    stroked with a round pen, and brought forward again. That makes the ellipse a non-uniform CTM
+    makes of the pen exact.
+  - **Convex pieces.** Every segment, join and cap is one, and the nonzero fill takes their union.
+    10,000 segments with round joins stroke in 0.16 s.
+  - **No line thinner than one device pixel**, as pdfium draws them. That also covers a width of 0.
+  - **The stroke's state** is the walker's pen and the machine's line width. It is saved by q and
+    restored by Q, set by `w`/`J`/`j`/`M`/`d` and by an ExtGState's `/LW`, `/LC`, `/LJ`, `/ML` and
+    `/D`, and the stroke's alpha is `/CA`.
+  - **Refused by reason, at the stroke:**
+    - a dash
+    - a named stroke colour space
+    - a cap or join outside 0..2
+    - a negative width
+    - a `/CA` outside 0..1
+  - **Against pdfium**, on 19 shapes at 72 and 144 dpi, the mean ink difference is at most 0.024 of
+    255, except that curves reach about 0.1 and a CMYK stroke 0.44. On the 100 corpus pages stroking unlocked, painting the strokes brings every page closer to
+    pdfium, and none further: the mean falls from 3.58 to 2.96, and what remains is substituted text.
+
+### Fixed — 2026-09-25
+
+- **`render/native` drew text in every render mode as a fill.** Outline text (modes 1 and 2) came
+  out solid, and clipping text (modes 4 to 7) drew where it should have clipped. Every mode but 0
+  and 3 is now refused as `text: render mode n strokes or clips with the glyphs`.
+- **`render/native` dropped a segment drawn after `h`.** §8.5.2.1 makes the closed subpath's start
+  the current point, and a segment after `h` now begins there, as pdfium draws it.
+
 ### Added — 2026-09-24
 
 - **`render/native` draws image and form XObjects: 1,013 of the corpus's 1,251 pages (81%), and no

@@ -242,15 +242,14 @@ type walker struct {
 	// faces is the rasterizer's face source, carried down so loadFont can ask for a substitute.
 	faces font.FaceSource
 
-	// fill is the only colour kept. A stroke colour is accepted and discarded: setting one
-	// marks nothing, so refusing G/RG/K would refuse a page over an operator that changed no
-	// pixel, and storing it would be state no code reads while stroking itself is refused.
-	// It comes back with the stroke.
-	fill paint
-	path path
+	fill, stroke paint
+	path         path
 
-	// alpha is the constant fill alpha /ca sets.
-	alpha float64
+	// alpha and strokeAlpha are the constant alphas /ca and /CA set, for fills and strokes.
+	alpha, strokeAlpha float64
+
+	// pen is the stroke state the machine does not carry; its width is m.GS.LineWidth.
+	pen pen
 
 	// pending is a clip the *next* painting operator must apply, and pendingEO the rule it was
 	// marked with. Held rather than applied at W, because §8.5.4 makes the clip the path as it
@@ -296,10 +295,11 @@ type saved struct {
 	// clip is nil when no clip was in force, so an unclipped q costs no page-area copy. Measured
 	// before it was stacked at all: a clip set inside q…Q confined everything after the Q too, and
 	// "q 0 0 20 20 re W n Q 0 0 200 200 re f" came out at 1% of its ink against pdfium.
-	clip  *mask
-	fill  paint
-	font  *textFont
-	alpha float64
+	clip               *mask
+	fill, stroke       paint
+	font               *textFont
+	alpha, strokeAlpha float64
+	pen                pen
 }
 
 // canvasFor returns the canvas, creating it on first use.
@@ -322,7 +322,7 @@ func (w *walker) canvasFor() *canvas {
 // operator was the previous shape, and no assertion could see it: the image is discarded either
 // way, so the only observable was wall time.
 func (w *walker) run(data []byte) {
-	w.alpha = 1
+	w.alpha, w.strokeAlpha, w.pen = 1, 1, defaultPen
 	w.survey(content.NewMachine(geom.Identity), data, 0)
 	if len(w.unsup) > 0 {
 		return
@@ -330,6 +330,7 @@ func (w *walker) run(data []byte) {
 	// The survey walked the same q/Q and Tf sequence and left its state behind; the paint pass
 	// starts from the page's initial state, not from wherever the survey ended.
 	w.fill, w.alpha, w.font, w.stack = black, 1, nil, nil
+	w.stroke, w.strokeAlpha, w.pen = black, 1, defaultPen
 	w.paint(content.NewMachine(geom.Identity), data, 0)
 }
 
@@ -407,7 +408,7 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 				name := objects.Name(op.NameAt(0))
 				if g, ok := w.extGState(name); ok {
 					w.checkExtGState(g)
-					w.setAlpha(g)
+					w.applyExtGState(m, g)
 				} else {
 					w.unsup[fmt.Sprintf("gs: /%s is not in the page's /ExtGState resources", name)] = true
 				}
@@ -416,6 +417,20 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 			if len(op.Operands) >= 1 {
 				w.font = w.loadFont(string(op.NameAt(0)))
 			}
+		case "S", "s", "B", "B*", "b", "b*":
+			w.checkStroke(m)
+		case "J", "j", "M", "d", "G", "RG", "K", "CS", "SC", "SCN":
+			w.setPen(op)
+		}
+		switch op.Name {
+		case "Tj", "'", "\"", "TJ":
+			// Checked for every show and not only a visible one, because mode 7 draws nothing
+			// and still clips.
+			if r := m.GS.Text.Render; r != 0 && r != 3 {
+				w.refuseText(fmt.Sprintf("render mode %d strokes or clips with the glyphs", r))
+			}
+		}
+		switch op.Name {
 		case "Tj", "'":
 			if len(op.Operands) >= 1 && m.Visible() {
 				w.checkText(op.Str(0))
@@ -464,14 +479,36 @@ func (w *walker) checkText(str []byte) {
 	}
 }
 
-// setAlpha applies an ExtGState's /ca, the one parameter of it this backend reads.
+// applyExtGState applies the parameters of an ExtGState this backend reads: the two alphas and the
+// stroke geometry.
 //
 // Every other parameter either cannot change a pixel this backend draws or has already refused the
 // page in the survey, so this is the whole of applying an ExtGState — and checkExtGState's comment
-// is where that claim is argued.
-func (w *walker) setAlpha(g objects.Dict) {
+// is where that claim is argued. /LW is written into the machine, which is where w keeps it and
+// where q and Q stack it, so there is one line width rather than a second copy that gs sets.
+func (w *walker) applyExtGState(m *content.Machine, g objects.Dict) {
 	if v, ok := objects.GetNum(w.s, g, "ca"); ok {
 		w.alpha = v
+	}
+	if v, ok := objects.GetNum(w.s, g, "CA"); ok {
+		w.strokeAlpha = v
+	}
+	if v, ok := objects.GetNum(w.s, g, "LW"); ok {
+		m.GS.LineWidth = v
+	}
+	if v, ok := objects.GetNum(w.s, g, "LC"); ok {
+		w.pen.cap = int(v)
+	}
+	if v, ok := objects.GetNum(w.s, g, "LJ"); ok {
+		w.pen.join = int(v)
+	}
+	if v, ok := objects.GetNum(w.s, g, "ML"); ok {
+		w.pen.miter = v
+	}
+	if d, ok := objects.GetArray(w.s, g, "D"); ok && len(d) > 0 {
+		o, _ := w.s.Resolve(d[0])
+		a, _ := o.(objects.Array)
+		w.pen.dashed = len(a) > 0
 	}
 }
 
@@ -525,20 +562,20 @@ func (w *walker) checkExtGState(g objects.Dict) {
 
 	for k := range g {
 		switch k {
-		case "Type", "CA", "LW", "LC", "LJ", "ML", "D", "SA",
+		case "Type", "LW", "LC", "LJ", "ML", "D", "SA",
 			"OP", "op", "OPM", "BG", "BG2", "UCR", "UCR2",
 			"HT", "FL", "SM", "RI", "TK", "AIS":
 			// Accepted; see the comment above for the argument per key.
 
-		case "ca":
+		case "ca", "CA":
 			// Any value in 0..1 is honoured. Outside that range is a producer error with no
 			// reading — §11.6.4.4 defines it as a number in that interval — and clamping it
 			// silently would make a malformed page indistinguishable from a valid one.
-			v, ok := objects.GetNum(w.s, g, "ca")
+			v, ok := objects.GetNum(w.s, g, k)
 			if !ok {
-				refuse("/ca is not a number")
+				refuse("/%s is not a number", k)
 			} else if v < 0 || v > 1 {
-				refuse("/ca is %g, outside 0..1", v)
+				refuse("/%s is %g, outside 0..1", k, v)
 			}
 
 		case "BM":
@@ -685,18 +722,29 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 		w.paintPath(true)
 	case "n":
 		w.endPath()
-	case "b", "b*", "B", "B*", "s", "S":
-		// Stroking is a pen geometry problem — join style, cap style, dash phase, and a
-		// width that is a distance in user space — and none of it is this rasterizer's yet.
-		// A filled-and-stroked operator is refused rather than filled, because the fill
-		// alone is a different mark from the one the page makes.
-		w.unsup[op.Name] = true
+	case "S":
+		w.strokePath(m)
 		w.endPath()
+	case "s":
+		w.path.close()
+		w.strokePath(m)
+		w.endPath()
+	case "B", "B*":
+		w.fillPath(op.Name == "B*")
+		w.strokePath(m)
+		w.endPath()
+	case "b", "b*":
+		w.path.close()
+		w.fillPath(op.Name == "b*")
+		w.strokePath(m)
+		w.endPath()
+	case "J", "j", "M", "d", "G", "RG", "K", "CS", "SC", "SCN":
+		w.setPen(op)
 
 	case "gs":
 		if len(op.Operands) >= 1 {
 			if g, ok := w.extGState(objects.Name(op.NameAt(0))); ok {
-				w.setAlpha(g)
+				w.applyExtGState(m, g)
 			}
 		}
 
@@ -718,7 +766,8 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 // drawn after the Q that ended its /ca is drawn opaque. The clip is only ever non-nil when painting,
 // since the survey creates no canvas.
 func (w *walker) save() {
-	s := saved{fill: w.fill, font: w.font, alpha: w.alpha}
+	s := saved{fill: w.fill, stroke: w.stroke, font: w.font, alpha: w.alpha,
+		strokeAlpha: w.strokeAlpha, pen: w.pen}
 	if w.canvas != nil && w.canvas.clipped {
 		s.clip = w.canvas.clip.clone()
 	}
@@ -734,6 +783,7 @@ func (w *walker) restore() {
 	s := w.stack[n-1]
 	w.stack = w.stack[:n-1]
 	w.fill, w.font, w.alpha = s.fill, s.font, s.alpha
+	w.stroke, w.strokeAlpha, w.pen = s.stroke, s.strokeAlpha, s.pen
 	// Only when something actually has to change. A q…Q pair that set no clip is the
 	// overwhelming majority — a spec page has hundreds — and rebuilding a page-sized opaque mask
 	// for each of them cost more than everything else this walker does put together: 43 s over
@@ -758,14 +808,17 @@ func (w *walker) restore() {
 // entry had never been reachable. A list of what is safe is the only shape that survives an
 // operator this package has not heard of.
 //
-// The stroke colour operators are safe: a stroke colour marks nothing while every operator that
-// would use it is refused, so refusing a page for setting one would refuse it over a change no
-// pixel can see. The *fill* colour space operators are not — a Pattern fill colour changes what
-// f paints — so cs and scn are refusals.
+// The stroke colour operators are safe because what they set is checked where it is used: a stroke
+// in a colour space this backend cannot draw is refused at the stroke, by checkStroke, and setting
+// one that is never stroked changes no pixel. The *fill* colour space operators are refused here —
+// a Pattern fill colour changes what f paints — so cs and scn are refusals.
 func marks(op string) bool {
 	switch op {
 	case // path construction and the painting operators this backend implements
 		"m", "l", "c", "v", "y", "h", "re", "f", "F", "f*", "n", "W", "W*",
+		// stroking, whose refusal is a property of the pen — a dash, a colour space — and which
+		// checkStroke decides by reason
+		"S", "s", "B", "B*", "b", "b*",
 		// text, whose refusal is a property of the *font* rather than of the operator: a
 		// glyf program is drawn and a CFF one is refused, and only the paint pass can tell
 		// which a page holds. The survey lets these through and showText refuses by reason.
@@ -797,10 +850,21 @@ func marks(op string) bool {
 // the expensive half, and skipping it took the corpus-wide refusal pass from minutes to
 // seconds.
 func (w *walker) paintPath(evenOdd bool) {
+	w.fillPath(evenOdd)
+	w.endPath()
+}
+
+func (w *walker) fillPath(evenOdd bool) {
 	if !w.path.empty() {
 		w.canvasFor().fill(&w.path, w.fill, evenOdd, w.alpha)
 	}
-	w.endPath()
+}
+
+// strokePath strokes the current path under the CTM in force at the painting operator, which
+// §8.5.3.1 makes the one that shapes the pen, whatever CTM the path's points were given under.
+func (w *walker) strokePath(m *content.Machine) {
+	out := stroke(&w.path, m.GS.LineWidth, w.base.mul(m.GS.CTM).m, w.pen)
+	w.canvasFor().fill(out, w.stroke, false, w.strokeAlpha)
 }
 
 // endPath clears the path and installs a pending clip.

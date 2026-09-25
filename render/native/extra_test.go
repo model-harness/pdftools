@@ -284,31 +284,6 @@ func TestGeometryCasesNoOtherFixtureReaches(t *testing.T) {
 	}
 }
 
-// TestEveryStrokingOperatorIsRefused names all six, because only S was tested and each of the
-// others would otherwise be silently part-drawn: b, b*, B and B* fill as well as stroke, so
-// filling them and dropping the stroke is a different mark from the one the page makes.
-func TestEveryStrokingOperatorIsRefused(t *testing.T) {
-	for _, op := range []string{"S", "s", "B", "B*", "b", "b*"} {
-		t.Run(op, func(t *testing.T) {
-			s, err := pcstore.Open(onePagePDF(t, "0 g 20 20 m 180 20 l 180 180 l "+op, 200, 200))
-			if err != nil {
-				t.Fatalf("open: %v", err)
-			}
-			defer func() { _ = s.Close() }()
-			o := render.DefaultOptions
-			o.DPI = 72
-			_, err = New(s).Page(1, o)
-			var u *Unsupported
-			if !errors.As(err, &u) {
-				t.Fatalf("err = %v, want an *Unsupported for %q", err, op)
-			}
-			if len(u.Ops) != 1 || u.Ops[0] != op {
-				t.Errorf("Ops = %v, want exactly [%q]", u.Ops, op)
-			}
-		})
-	}
-}
-
 // TestIntersectRoundsRatherThanTruncates is a unit test because no page can show it.
 //
 // Two coverages of 200 multiply to 156 truncated and 157 rounded, one level apart — invisible in

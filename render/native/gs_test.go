@@ -47,10 +47,12 @@ func renderGS(t *testing.T, extg string) (*render.Raster, error) {
 // # Why every accepted key needs its own case
 //
 // Because accepting one is a claim — "this parameter cannot change a pixel this backend draws" —
-// and the claims are not interchangeable. `/LW` is inert because stroking is refused; `/OP` because
-// this backend has no separations; `/TK` because it only matters under a blend mode that is itself
-// refused. A test that accepted them as a group would pass if the group were replaced by "accept
-// everything", which is the exact mutation this table exists to kill.
+// and the claims are not interchangeable. `/SA` is inert because stroke adjustment is a hint a
+// device may decline; `/OP` because this backend has no separations; `/TK` because it only matters
+// under a blend mode that is itself refused. (`/LW` and the rest of the stroke geometry are not
+// inert at all but applied, which TestExtGStateSetsTheStrokeGeometry shows.) A test that accepted
+// them as a group would pass if the group were replaced by "accept everything", which is the exact
+// mutation this table exists to kill.
 //
 // The refusals matter more. An ExtGState this backend does not understand and accepts anyway draws
 // a page whose graphics state it guessed at — the silent-omission failure the whole backend is
@@ -67,7 +69,9 @@ func TestExtGStateAcceptsWhatCannotMarkAndRefusesWhatCan(t *testing.T) {
 		{"normal blend", "<</BM/Normal>>", ""},
 		{"compatible blend, which is Normal under its 1.3 name", "<</BM/Compatible>>", ""},
 		{"no soft mask", "<</SMask/None>>", ""},
-		{"stroke geometry, while stroking is refused", "<</LW 4/LC 1/LJ 2/ML 8/D[[2 2]0]/SA true>>", ""},
+		// Applied rather than inert, and accepted on a page that strokes nothing: a dash is refused only
+		// at a stroke, as TestUndrawableStrokesAreRefusedByReason shows.
+		{"stroke geometry, with nothing stroked", "<</LW 4/LC 1/LJ 2/ML 8/D[[2 2]0]/SA true>>", ""},
 		{"overprint, which needs separations this backend has not got", "<</OP true/op true/OPM 1>>", ""},
 		{"black generation and undercolour removal, for a CMYK device", "<</BG2/Default/UCR2/Default>>", ""},
 		{"screening and tolerance hints", "<</HT/Default/FL 1/SM 0.02>>", ""},

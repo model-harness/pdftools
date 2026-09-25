@@ -66,7 +66,7 @@ func TestCorpusCoverage(t *testing.T) {
 	// 20 dpi, which is not a resolution anyone would render at and is the right one here: whether
 	// a page is refused is decided by the survey, which never looks at a pixel, so the *count* this
 	// test asserts is resolution-independent while the painting it pays for is not. At the default
-	// 200 dpi the 1,013 pages that draw cost a Letter page's 3.7 million pixels each and the run
+	// 200 dpi the 1,113 pages that draw cost a Letter page's 3.7 million pixels each and the run
 	// exceeded go test's ten-minute timeout; at 20 dpi it is a hundredth of that and measures
 	// exactly the same set.
 	o := render.DefaultOptions
@@ -125,10 +125,10 @@ func TestCorpusCoverage(t *testing.T) {
 		t.Logf("  blocked by %-34s %4d pages", e.k, e.v)
 	}
 
-	// Measured at 1,013 with Liberation supplying Sans and Serif, and XObjects drawn. Stated tight, and a *rise* is
-	// not a failure — only a fall is, because the only way this number goes down is a feature
-	// regressing or a refusal widening.
-	const floor = 1013
+	// Measured at 1,113 with Liberation supplying Sans and Serif, XObjects drawn, and strokes
+	// drawn. Stated tight, and a *rise* is not a failure — only a fall is, because the only way
+	// this number goes down is a feature regressing or a refusal widening.
+	const floor = 1113
 	if drawn < floor {
 		t.Errorf("drew %d of %d pages, want at least %d — a refusal widened or a feature regressed",
 			drawn, total, floor)
@@ -160,6 +160,9 @@ func feature(op string) string {
 		return op[:i]
 	case op == "cs", op == "scn":
 		return "cs/scn (non-device colour)"
+	case strings.HasPrefix(op, "stroke: the colour space is /"):
+		// Named by its resource, /CS0 or /CS1, which is the page's choice and not the feature.
+		return "stroke: non-device colour"
 	case op == "sh":
 		return "sh (shadings)"
 	}

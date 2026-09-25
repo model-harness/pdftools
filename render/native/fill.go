@@ -55,14 +55,29 @@ type edge struct{ x0, y0, x1, y1 float64 }
 type path struct {
 	edges []edge
 
+	// subs records each finished subpath's run of edges, which stroking needs and filling does
+	// not: a stroke has caps where an open subpath ends and a join where a closed one meets
+	// itself, and the edge a fill adds to close an open subpath is not a segment the stream drew.
+	subs []subpath
+
 	cur   point // where the pen is
 	start point // where the current subpath began, for h and for the implicit close
 	open  bool  // a subpath is being built
+	from  int   // the current subpath's first edge
+}
+
+// subpath is edges[from:to] of its path. A subpath the fill closed implicitly ends before the
+// closing edge; one the stream closed with h includes it. at is where it began, which is the
+// only geometry a subpath with no edges has.
+type subpath struct {
+	from, to int
+	closed   bool
+	at       point
 }
 
 func (p *path) moveTo(to point) {
-	p.close()
-	p.cur, p.start, p.open = to, to, true
+	p.end(false)
+	p.cur, p.start, p.open, p.from = to, to, true, len(p.edges)
 }
 
 func (p *path) lineTo(to point) {
@@ -70,6 +85,13 @@ func (p *path) lineTo(to point) {
 	// emit one after a paint operator cleared the path — and the segment has no start, so
 	// there is nothing to add. Silently ignoring it is what every reader does and what the
 	// alternative would cost: refusing the page over a stray operator.
+	//
+	// After h or re there is a current point, the closed subpath's start (§8.5.2.1), and a segment
+	// from it begins a new subpath there. pdfium draws that one, and ignoring it too left 791
+	// pixels of a stroked `h l` undrawn.
+	if !p.open && len(p.subs) > 0 {
+		p.moveTo(p.cur)
+	}
 	if p.open {
 		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, to.x, to.y})
 	}
@@ -103,15 +125,32 @@ func (p *path) curveTo(c1, c2, to point) {
 	}
 }
 
-// close ends the current subpath, adding the edge back to its start.
+// close is h: it ends the current subpath with a segment back to its start, which is then the
+// current point (§8.5.2.1).
+func (p *path) close() {
+	if p.open {
+		p.end(true)
+		p.cur = p.start
+	}
+}
+
+// end finishes the current subpath, adding the edge back to its start.
 //
 // Every subpath is closed for filling whether the stream said so or not, which is §8.5.3.3's
 // rule and not a convenience: an unclosed subpath has no interior to fill, so a reader that
-// honoured the omission would drop the shape rather than draw a different one.
-func (p *path) close() {
-	if p.open && p.cur != p.start {
+// honoured the omission would drop the shape rather than draw a different one. closed says
+// whether the stream asked for it, which only a stroke can see.
+func (p *path) end(closed bool) {
+	if !p.open {
+		return
+	}
+	// The subpath's edges stop short of the closing one, which is for the fill: a stroke draws the
+	// closing segment from the subpath's own points when closed says so, and never otherwise.
+	to := len(p.edges)
+	if p.cur != p.start {
 		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, p.start.x, p.start.y})
 	}
+	p.subs = append(p.subs, subpath{from: p.from, to: to, closed: closed, at: p.start})
 	p.open = false
 }
 
