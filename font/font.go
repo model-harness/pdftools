@@ -69,6 +69,29 @@ type Font struct {
 	// enc resolves single-byte codes to text, for simple fonts.
 	enc *encoding.Encoding
 
+	// baseName is the base encoding a simple font names, in /Encoding or its /BaseEncoding, as
+	// written, and baseKnown is whether this package carries that table. differed marks the
+	// codes /Differences assigns. Selecting a glyph from an embedded program needs to tell the
+	// names the font stated from the ones enc inferred, and these are what tell them apart.
+	baseName  string
+	baseKnown bool
+	differed  [4]uint64
+
+	// hasDifferences is whether the /Encoding dictionary has a /Differences array, whether or not
+	// it assigns any code. See HasDifferences.
+	hasDifferences bool
+
+	// encoded is whether /Encoding is a name or a dictionary. §9.6.5.4 gives a TrueType font with
+	// neither a route of its own, so "no encoding" and "an encoding naming no base" differ.
+	encoded bool
+
+	// irregular names the first entry of the dictionary that Load read one way and pdfium reads
+	// another, or "" when there is none. See Irregular.
+	irregular string
+
+	// flaggedSymbolic and flaggedNonsymbolic are what flags reports for a simple font, read once.
+	flaggedSymbolic, flaggedNonsymbolic bool
+
 	// cmap splits codes and maps them to CIDs, for composite fonts.
 	cmap *cmap.CMap
 
@@ -123,6 +146,57 @@ type Font struct {
 // paragraph at every subset boundary. BaseFont keeps the prefix for callers that
 // want the name exactly as written.
 func (f *Font) Name() string { return stripSubsetPrefix(f.BaseFont) }
+
+// StatedGlyphName returns the glyph name a simple font's encoding states for code: the one
+// /Differences assigns, or the one in the base encoding the font names when this package carries
+// that table.
+//
+// It differs from GlyphName where the name is this package's inference rather than the font's
+// statement — the StandardEncoding assumed for a font that names no base, most of all — and is
+// empty there. Text extraction can live with that guess; selecting a glyph by it draws the wrong
+// glyph wherever the program's built-in encoding differs, so a renderer has to know which it has.
+func (f *Font) StatedGlyphName(code byte) string {
+	if f.enc == nil || (!f.baseKnown && f.differed[code/64]&(1<<(code%64)) == 0) {
+		return ""
+	}
+	return f.enc.Glyph(code)
+}
+
+// BaseEncoding returns the base encoding a simple font names, as written, or "" when it names
+// none.
+func (f *Font) BaseEncoding() string { return f.baseName }
+
+// Symbolic reports a simple font's symbolic flag: bit 3 of the descriptor's /Flags, or for a font
+// with no descriptor, whether it is Symbol or ZapfDingbats.
+func (f *Font) Symbolic() bool { return f.flaggedSymbolic }
+
+// Nonsymbolic reports a simple font's nonsymbolic flag: bit 6 of the descriptor's /Flags, set when
+// /Flags is absent, or for a font with no descriptor, whether it is not Symbol or ZapfDingbats.
+func (f *Font) Nonsymbolic() bool { return f.flaggedNonsymbolic }
+
+// HasEncoding reports whether a simple font's /Encoding is a name or a dictionary.
+func (f *Font) HasEncoding() bool { return f.encoded }
+
+// HasDifferences reports whether a simple font's /Encoding dictionary has a /Differences array,
+// whether or not it assigns any code.
+//
+// Assignment used to be the test, and it is wrong for §9.6.5.4's TrueType route (C21):
+// CPDF_SimpleFont::LoadDifferences (cpdf_simplefont.cpp) resizes its char_names_ table to 256 for
+// any /Differences array before reading it, and cpdf_truetypefont.cpp's by-name test reads
+// char_names_.empty() — so an array that assigns nothing still moves pdfium off the by-code route
+// this package would otherwise take. ttRoute reads this method to refuse that font instead of
+// drawing it by the wrong route.
+func (f *Font) HasDifferences() bool { return f.hasDifferences }
+
+// Irregular names the first entry of a simple font's dictionaries that pdfium reads under a
+// looser type or a wider range than this package does, or "" when there is none.
+//
+// Load stays lenient regardless: this only records the entry, and never fails Load over it. It
+// exists because render/native's survey has to refuse a page wherever the two readers would
+// select a different glyph, and a value pdfium reads that this package's stricter getters silently
+// drop is exactly that case — the getters answer "what did the font state", not "did this and
+// pdfium state the same thing".
+func (f *Font) Irregular() string { return f.irregular }
 
 // Bold, Italic, Monospaced, and Serif report the font's typographic traits.
 func (f *Font) Bold() bool       { return f.bold }
@@ -244,6 +318,8 @@ func Load(s objects.Store, d objects.Dict) *Font {
 // loadSimple reads the parts specific to a single-byte font: /Encoding with its
 // /Differences, and /Widths with /FirstChar.
 func (f *Font) loadSimple(s objects.Store, d objects.Dict) {
+	f.irregular = f.checkIrregular(s, d)
+	f.flaggedSymbolic, f.flaggedNonsymbolic = f.flags(s, d)
 	f.enc = f.baseEncoding(s, d)
 	f.applyDifferences(s, d)
 
@@ -354,15 +430,19 @@ func (f *Font) baseEncoding(s objects.Store, d objects.Dict) *encoding.Encoding 
 	if enc, ok := objects.Get(s, d, "Encoding"); ok {
 		switch e := enc.(type) {
 		case objects.Name:
+			f.encoded = true
 			named = string(e)
 		case objects.Dict:
+			f.encoded = true
 			if b, ok := objects.GetName(s, e, "BaseEncoding"); ok {
 				named = string(b)
 			}
 		}
 	}
 	if named != "" {
+		f.baseName = named
 		if base, ok := encoding.Base(named); ok {
+			f.baseKnown = true
 			return base
 		}
 		// A named encoding this package does not carry — MacExpertEncoding is the
@@ -373,25 +453,46 @@ func (f *Font) baseEncoding(s objects.Store, d objects.Dict) *encoding.Encoding 
 	}
 
 	// No encoding named: the symbolic flag decides.
-	if f.symbolic(s, d) {
+	if f.flaggedSymbolic {
 		return encoding.Empty()
 	}
 	return encoding.Standard()
 }
 
-// symbolic reports the descriptor's symbolic flag (bit 3 of /Flags, Table 123).
+// flags reads the descriptor's symbolic and nonsymbolic flags (bits 3 and 6 of /Flags, Table 121).
+//
+// A descriptor with no /Flags reads as nonsymbolic, which is pdfium's default. Table 121 requires
+// the entry, so what its absence means is a reader's choice, and the choice matters to a TrueType
+// font with no /Encoding: the nonsymbolic flag is what makes §9.6.5.4's two routes both apply.
 //
 // A font with no descriptor is one of the standard 14, which are non-symbolic
 // except Symbol and ZapfDingbats — and those two are symbolic in the sense that
 // matters here, since their codes mean what their built-in encodings say.
-func (f *Font) symbolic(s objects.Store, d objects.Dict) bool {
+func (f *Font) flags(s objects.Store, d objects.Dict) (symbolic, nonsymbolic bool) {
 	fd, ok := objects.GetDict(s, d, "FontDescriptor")
 	if !ok {
 		base := stripSubsetPrefix(f.BaseFont)
-		return base == "Symbol" || base == "ZapfDingbats"
+		sym := base == "Symbol" || base == "ZapfDingbats"
+		return sym, !sym
 	}
-	flags, _ := objects.GetInt(s, fd, "Flags")
-	return flags&(1<<2) != 0
+	flags, ok := objects.GetInt(s, fd, "Flags")
+	if !ok {
+		if _, present := fd["Flags"]; present {
+			// C21 / R#2: present but not a number GetInt accepts — a string, a name, an array,
+			// null, or a reference to nothing. pdfium's GetIntegerFor (cpdf_font.cpp) reads a
+			// present key as 0 in every one of those cases; its default argument applies only
+			// when the key itself is absent. The raw map is read here rather than objects.Get,
+			// because Get also treats a null value and a dangling reference as absent (ISO
+			// 32000-2 §7.3.9, §7.3.10) and would push both into the branch below meant for a
+			// key that is not there at all.
+			flags = 0
+		} else {
+			// Absent: Table 121 requires the entry, so what it means is the reader's own choice,
+			// and GetIntegerFor's default argument here is kFontStyleNonSymbolic.
+			flags = 1 << 5
+		}
+	}
+	return flags&(1<<2) != 0, flags&(1<<5) != 0
 }
 
 // applyDifferences overlays an /Encoding dictionary's /Differences array.
@@ -408,6 +509,11 @@ func (f *Font) applyDifferences(s objects.Store, d objects.Dict) {
 	if !ok {
 		return
 	}
+	// See HasDifferences: pdfium treats the array's presence, not what it assigns, as what moves
+	// a TrueType font off the by-code route, so this is set here regardless of what the loop below
+	// finds.
+	f.hasDifferences = true
+
 	// Cloned so a shared base table is never mutated. Base already returns a copy,
 	// but Empty and Standard may not, and a /Differences array writing through to
 	// a package-level table would corrupt every other font in the document.
@@ -435,6 +541,7 @@ func (f *Font) applyDifferences(s objects.Store, d objects.Dict) {
 			continue
 		}
 		f.enc.Set(byte(code), string(name))
+		f.differed[code/64] |= 1 << (code % 64)
 		if code == 255 {
 			// Further names would run past the encoding.
 			code = -1
@@ -442,6 +549,257 @@ func (f *Font) applyDifferences(s objects.Store, d objects.Dict) {
 		}
 		code++
 	}
+}
+
+// checkIrregular finds the first entry of a simple font's dictionaries that pdfium reads under a
+// looser type or a wider range than the getters above do. See Irregular for what this is for.
+//
+// The order matches the order Irregular documents: /BaseFont, then /Encoding's own shape, then
+// its /BaseEncoding and /Differences, then the descriptor's /Flags. It is read independently of
+// baseEncoding, applyDifferences, and flags above — those already tolerate every one of these
+// shapes by reading past them — so this makes one more pass over the same keys with a stricter
+// question: not "what does the font state", but "would pdfium state the same thing".
+//
+// One gap is not caught here: a reference to a reference. objects.Store's Resolve follows such a
+// chain to its end (objects/pdfcpu/pdfcpu.go), where pdfium follows only the first level, and
+// every check below inherits that gap along with every other dictionary the renderer reads
+// through Resolve. Closing it needs a change to Store itself, not to this function.
+func (f *Font) checkIrregular(s objects.Store, d objects.Dict) string {
+	if why := checkIsName(s, d, "BaseFont"); why != "" {
+		// C15: pdfium's cpdf_font.cpp GetByteStringFor reads a string here too, and
+		// CPDF_Type1Font::Load then matches (Symbol) or (ZapfDingbats) against the base-14 faces.
+		// GetName above returns nothing for a string, so nothing here ever notices.
+		return why
+	}
+	encDict, why := checkEncodingShape(s, d)
+	if why != "" {
+		return why
+	}
+	if encDict != nil {
+		if why := checkIsName(s, encDict, "BaseEncoding"); why != "" {
+			// C16: pdfium's cpdf_simplefont.cpp reads /BaseEncoding with GetByteStringFor as
+			// well, so a string here still names a base encoding to pdfium while baseEncoding
+			// above leaves f.baseName empty.
+			return why
+		}
+		if why := checkDifferences(s, encDict); why != "" {
+			return why
+		}
+	}
+	if fd, ok := objects.GetDict(s, d, "FontDescriptor"); ok {
+		if why := checkFlags(s, fd); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
+// checkIsName reports whether d[key] is present and not a name.
+func checkIsName(s objects.Store, d objects.Dict, key objects.Name) string {
+	v, ok := objects.Get(s, d, key)
+	if !ok {
+		return ""
+	}
+	if _, ok := v.(objects.Name); ok {
+		return ""
+	}
+	return "/" + string(key) + " present and not a name"
+}
+
+// checkEncodingShape reports d's /Encoding as a dictionary when it is one, or the reason it is
+// irregular when it is present and neither a name nor a dictionary.
+func checkEncodingShape(s objects.Store, d objects.Dict) (objects.Dict, string) {
+	v, ok := objects.Get(s, d, "Encoding")
+	if !ok {
+		return nil, ""
+	}
+	switch e := v.(type) {
+	case objects.Name:
+		return nil, ""
+	case objects.Dict:
+		return e, ""
+	}
+	return nil, "/Encoding present and neither a name nor a dictionary"
+}
+
+// checkDifferences reports the first entry of encDict's /Differences that is outside §9.6.5.1's
+// grammar — a code is a literal PDF integer, and a simple font's codes are 0..255 — plus a
+// /Differences present and not an array at all.
+//
+// Every one of those is a grammar error, and pdfium's LoadDifferences (cpdf_simplefont.cpp)
+// repairs it by a rule of its own rather than rejecting it: cur_code starts at 0, not -1; every
+// entry that is not a name is read through GetInteger, so a string, an array, a null, or a real is
+// read as whatever GetInteger returns for it (0 for the first three, the real truncated); and
+// cur_code is declared uint32_t, so a negative GetInteger() result wraps to a large positive
+// number rather than the drop applyDifferences performs by setting code to -1.
+//
+// A code of 256 or above is one grammar error whose repair still drops the same names as
+// applyDifferences at first, but not for long, for a code below 2^32. char_names_ is sized to
+// 256, so "if (cur_code < char_names_.size())" (cpdf_simplefont.cpp:56) is false for cur_code at
+// 256 or above, and every name up to the next literal integer is silently unassigned there — the
+// same drop applyDifferences' code = -1 performs. But cur_code (:47) is a uint32_t, and the
+// cur_code++ that follows each dropped name (:59) wraps it back to 0 after exactly 2^32-c
+// increments for a starting code c, at which point LoadDifferences resumes assigning names from
+// code 0 while applyDifferences leaves every one of them dropped. The two repairs part as soon as
+// more than 2^32-c names follow a code 256 ≤ c < 2^32, which for a code this close to 2^32 is not
+// many: two names are the fewest that can do it, at c = 4294967295 ([4294967295 /A /B] gives
+// pdfium the name B at code 0, where applyDifferences drops both), and three at c = 4294967294
+// ([4294967294 /A /B /C] gives pdfium the name C at code 0, where applyDifferences drops all
+// three).
+//
+// At c = 4294967296 (2^32) the first name lands at code 0 at once, with no names dropped waiting
+// for a wrap: [4294967296 /A] gives pdfium the name A at code 0, where applyDifferences still
+// drops it. That is measured at this one value, not modelled — GetInteger's parsing of the
+// token (cur_code = element->GetInteger(), cpdf_simplefont.cpp:61) is not vendored here — so
+// nothing below relies on what pdfium does with a larger code.
+//
+// It is refused all the same, on a 64-bit build, by the 0..255 check below: every code above 255
+// is refused outright here, so neither repair ever has a chance to reach a page regardless of how
+// many names follow it. On a 32-bit build, pdfcpu's own parser reads a code outside int32 as 0
+// before this package ever sees it, the same overflow checkFlags' doc below describes for
+// /Flags — no check here can see that either, and closing it is the renderer-wide follow-up this
+// group deferred, not a gap this function closes. checkFlags' doc below names the same leading-'0'
+// sign-strip pdfcpu performs before a sign as a gap here too, on any build — a code written
+// "0+65" reaches this package as the integer 65 but pdfium as 0, landing the name at 65 here and
+// at 0 there.
+//
+// R#1: a dangling reference reaches the default case below alongside a literal null, because
+// Store.Resolve turns both into the same Null value with a nil error (ISO 32000-2 §7.3.10 already
+// makes a dangling reference and a null the same object, and objects.Store's Resolve does not
+// distinguish "resolves to nothing" from "resolves to a null" either). pdfium does distinguish
+// them: LoadDifferences finds a dangling reference's GetDirectObjectAt nil and skips it in its
+// own nil check on the resolved element, before ever calling GetInteger, so a later name lands
+// on the code it would have taken anyway, while a literal null is a real CPDF_Null object that
+// reaches GetInteger like any other non-name and reads back as 0. applyDifferences cannot tell
+// the two apart and treats both the same way it treats any other non-number, non-name entry:
+// leaving the code in progress unchanged and skipping to the next one — which happens to match
+// pdfium for the dangling reference and not for the literal null. Both are refused regardless:
+// neither is the literal integer or the name §9.6.5.1 requires, and an agreement pdfium reaches
+// by a nil-pointer check is no more a rule this package can rely on than the uint32_t wrap above
+// is.
+func checkDifferences(s objects.Store, encDict objects.Dict) string {
+	arr, ok := objects.GetArray(s, encDict, "Differences")
+	if !ok {
+		if _, present := objects.Get(s, encDict, "Differences"); present {
+			return "/Differences present and not an array"
+		}
+		return ""
+	}
+	for i, item := range arr {
+		r, err := s.Resolve(item)
+		if err != nil {
+			// Not a dangling reference: Resolve already turns that into a Null with a nil
+			// error (see objects.Store), which the Null case in the default branch below
+			// reaches directly. This fires only if the store adapter meets an object type its
+			// own conv does not convert (objects/pdfcpu/pdfcpu.go) — an internal defect, not a
+			// shape a /Differences entry can take — so fold it into the same default case
+			// rather than invent a refusal for a condition no PDF content can cause.
+			r = objects.Null{}
+		}
+		switch e := r.(type) {
+		case objects.Name:
+			if i == 0 {
+				// LoadDifferences has a code — 0 — before it reads anything; applyDifferences
+				// does not, and skips a name with none to attach to.
+				return "/Differences starting with a name, not a code"
+			}
+		case objects.Int:
+			if e < 0 || e > 255 {
+				return "/Differences containing a code outside 0..255"
+			}
+		default:
+			// A string, an array, or a dictionary is not the literal integer §9.6.5.1 requires,
+			// and LoadDifferences reads each of them through GetInteger rather than skipping it.
+			// A real is not that literal integer either, even though applyDifferences accepts
+			// one anyway by truncating it through AsNum: this checks the grammar the array is
+			// required to hold, not the wider shapes this package's own reader tolerates. A null
+			// and a dangling reference land here too — see the doc above for how the two engines
+			// read them apart, and why both are refused regardless.
+			return "/Differences containing an entry that is neither an integer 0..255 nor a name"
+		}
+	}
+	return ""
+}
+
+// checkFlags reports fd's /Flags as irregular when it is present and not a literal PDF integer in
+// [-2^31, 2^31), the range this package can trust regardless of a '+' sign (R#0); when it is
+// present but null or a reference to nothing (R#2); when it sets both or neither of the
+// symbolic and nonsymbolic bits (R#0); or when the entry is absent from the descriptor at all
+// (R#0) — Table 120 makes it required, and Table 121 makes exactly one of the two bits required
+// within it, so a font descriptor Table 120 already calls malformed is refused rather than routed
+// by flags() above's absent-key default.
+//
+// R#0: the range stops at INT_MAX, not 2^32-1, because objects.Store cannot tell a '+'-signed
+// literal from an unsigned one once pdfcpu has parsed it, and pdfium reads the two differently
+// above INT_MAX. pdfcpu's parseNumericOrIndRef (model/parse.go:805) calls strconv.Atoi on the
+// token, which accepts a leading '+' the same as no sign at all, so "+2147483652" and
+// "2147483652" both come back as the int64 2147483652 — the sign is gone before font.go ever sees
+// the value. pdfium's own number parser is not vendored here (core/fxcrt's FX_atonum and
+// CPDF_Number are absent from the sources this package can read), so what follows is a
+// measurement, not a citation: a fixture with /Flags "+2147483652" draws as flags 0 in pdfium,
+// while the same bits written unsigned, "2147483652", draw as their full uint32 value,
+// 0x80000004. A range reaching 2^32-1 would call the '+'-signed literal regular and route it by a
+// symbolic bit pdfium never forms; since the Store gives this package no way to tell which literal
+// produced a given value above INT_MAX, every one of them is refused, including the unsigned
+// literals pdfium and this package's int64 read would have agreed on.
+//
+// A leading '0' is a second, wider gap the range check cannot close either, and this package does
+// not try: pdfcpu's startParseNumericOrIndRef (model/parse.go:705-715) strips a leading '0' — or a
+// "0.000…" prefix — from in front of a '+' or '-' sign before strconv.Atoi ever runs, so "0+4",
+// "0-2147483644", and "0.0+4" all reach this package as the plain integers 4, -2147483644, and 4,
+// none of them anywhere near INT_MAX, so the range check above never has cause to fire. pdfium
+// reads all three as 0 (measured against swappedFlagsCFFFontPDF in render/native: this package
+// draws the diamond flags 4 draws for each, pdfium the square flags 0 draws). objects.Store keeps
+// only the parsed int64, so no check on objects.Int can see the leading zero that produced it, and
+// the same class reaches every integer this package reads from a renderer, not only /Flags —
+// /Widths [0+600] advances the glyph 600 here and 0 in pdfium. Closing it means changing how the
+// store parses a numeric literal, not adding a range here, so it is deferred as a renderer-wide
+// pdfcpu-adapter follow-up alongside #407 (the out-of-int integer read as 0), the same follow-up
+// checkDifferences' doc above names for its own leading-'0' gap.
+//
+// The range matters outside int32 at all (C20) because flags() above keeps the full int64 GetInt
+// reads, and a bit that int64 sets may be one a 32-bit reader such as pdfium's GetIntegerFor
+// (cpdf_font.cpp) never sees. A real is flagged unconditionally, even one that would read back as
+// the same value: GetInt tolerates a real by truncating it, but publishing that tolerance through
+// Irregular too would make its answer track a rounding rule rather than the literal type /Flags is
+// defined to hold, for a producer that writes 4.0 rather than 4 and evidently means the same font
+// either way.
+//
+// The null and dangling-reference case is an ISO-and-pdfium disagreement rather than a range or a
+// type: ISO 32000-2 makes both the same as an absent key (§7.3.9, §7.3.10), but pdfium's
+// GetIntegerFor applies its default only when the key is missing outright and reads a present
+// null or a dangling reference as 0. objects.Get treats them as absent too, so the raw map is
+// read directly to tell "not there" from "there, and resolves to nothing" apart.
+//
+// The both-bits check also closes a 32-bit hole the range check alone cannot (R#0): on GOARCH=386,
+// pdfcpu's own integer parser overflows a /Flags outside int32 to Integer(0) before this package
+// ever sees it (model/parse.go's parseNumericOrIndRef, the isRangeError branch — #407), so the
+// range check above never runs against the value that was actually written. A truncated 0 has
+// neither bit set, and the both-clear rule below catches that shape whether it arrived as a
+// literal 0 or as pdfcpu's silent stand-in for one that overflowed.
+func checkFlags(s objects.Store, fd objects.Dict) string {
+	v, ok := objects.Get(s, fd, "Flags")
+	if !ok {
+		if _, present := fd["Flags"]; present {
+			return "/Flags present and null, or a reference to nothing"
+		}
+		return "/Flags absent from the font descriptor, which Table 120 requires"
+	}
+	n, ok := v.(objects.Int)
+	if !ok {
+		return "/Flags present and not an integer"
+	}
+	const min, max = -1 << 31, 1<<31 - 1
+	if int64(n) < min || int64(n) > max {
+		return "/Flags present and outside the range a signed 32-bit value can take"
+	}
+	switch sym, non := n&(1<<2) != 0, n&(1<<5) != 0; {
+	case sym && non:
+		return "/Flags with both the symbolic and nonsymbolic bits set, which Table 121 forbids"
+	case !sym && !non:
+		return "/Flags with neither the symbolic nor the nonsymbolic bit set, which Table 121 forbids"
+	}
+	return ""
 }
 
 // loadComposite reads a Type0 font: its encoding CMap, then the CIDFont in

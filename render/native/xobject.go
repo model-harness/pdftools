@@ -156,7 +156,9 @@ func (w *walker) formContent(x xobject) ([]byte, bool) {
 // the CTM in force at the Do; inheriting the text state, since a Tf before the Do is still the font
 // inside; and with the form's own /Resources when it has them and the invoking stream's when it
 // does not. The name cache goes with the resources, because a form's /F1 is its own and need not
-// be the page's.
+// be the page's — and when the Do names the same form by the same indirect reference again, that
+// cache is formFonts's, not a fresh map, so a direct font dictionary in it is parsed once for the
+// page and not once per invocation.
 func (w *walker) inForm(m *content.Machine, x xobject, body func(sub *content.Machine)) {
 	ctm := m.GS.CTM
 	if fm, ok := numMatrix(w.s, x.st.Dict, "Matrix"); ok {
@@ -169,7 +171,24 @@ func (w *walker) inForm(m *content.Machine, x xobject, body func(sub *content.Ma
 
 	res, fonts := w.res, w.fonts
 	if d, ok := objects.GetDict(w.s, x.st.Dict, "Resources"); ok {
-		w.res, w.fonts = d, map[string]*textFont{}
+		w.res = d
+		if x.isRef {
+			ff, ok := w.formFonts[x.ref]
+			if !ok {
+				ff = map[string]*textFont{}
+				w.formFonts[x.ref] = ff
+			}
+			w.fonts = ff
+		} else {
+			// A direct stream has no reference for formFonts to key on, and comes only from an
+			// in-memory store: a file's streams are indirect objects (ISO 32000-2 §7.3.8), so a
+			// file-backed Store never resolves an /XObject entry to one. Nothing caches such a
+			// form's direct font dictionaries, so they are re-parsed and their glyphs rebuilt on
+			// every invocation, survey and paint alike — run's reset of w.glyphWork to zero
+			// before paint (native.go) is what keeps that rebuild from recharging on top of the
+			// survey's total and dropping the glyph.
+			w.fonts = map[string]*textFont{}
+		}
 	}
 	w.save()
 	body(sub)

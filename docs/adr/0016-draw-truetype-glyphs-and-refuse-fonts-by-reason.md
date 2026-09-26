@@ -4,7 +4,12 @@ Date: 2026-09-23
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0022](0022-draw-cff-glyphs-and-route-a-code-as-pdfium-does.md), which
+replaces a simple font's routes below. They were tried in turn for every font, so a nonsymbolic
+subset drew through its (1,0) subtable. A simple font now takes one of §9.6.5.4's two routes, by
+glyph name or by code, chosen as pdfium chooses, and a font that §9.6.5.4 and pdfium would route
+apart is refused. ADR 0022 also shifts each glyph by its left side bearing, as FreeType does. This
+ADR's fixtures set every bearing to the glyph's xMin, so they never showed the shift.
 
 ## Context
 

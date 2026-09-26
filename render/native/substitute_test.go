@@ -133,8 +133,13 @@ func TestSubstitutedPageMatchesTheSamePageEmbedded(t *testing.T) {
 // entirely legible and set in the wrong type — the failure this whole backend refuses pages to
 // avoid, one level up from a missing glyph.
 func TestSubstitutedStyleIsInferredFromTheFont(t *testing.T) {
-	// Flags bit 1 is serif, bit 2 (value 4) is symbolic, bit 7 (value 64) is italic.
+	// Flags bit 2 is serif, bit 3 (value 4) is symbolic, bit 6 (value 32) is nonsymbolic, bit 7
+	// (value 64) is italic. Table 121 requires exactly one of the symbolic and nonsymbolic bits,
+	// so every row below also sets one of the two: nonsymbolicFlag for an ordinary text face,
+	// symbolicFlag for the rows that are about a symbol face, on top of whatever bit the row is
+	// actually testing.
 	const serifFlag, italicFlag, monoFlag = 2, 64, 1
+	const symbolicFlag, nonsymbolicFlag = 4, 32
 
 	for _, c := range []struct {
 		name  string
@@ -142,29 +147,33 @@ func TestSubstitutedStyleIsInferredFromTheFont(t *testing.T) {
 		flags int
 		want  font.Style
 	}{
-		{"a plain sans face", "Helvetica", 0, font.Style{Family: font.FamilySans}},
-		{"serif by flag", "Whatever", serifFlag, font.Style{Family: font.FamilySerif}},
+		{"a plain sans face", "Helvetica", nonsymbolicFlag, font.Style{Family: font.FamilySans}},
+		{"serif by flag", "Whatever", serifFlag | nonsymbolicFlag, font.Style{Family: font.FamilySerif}},
 		// The name overrides an unset serif flag, because unset means "not stated" far more often
 		// than it means "no serifs".
-		{"serif by name", "TimesNewRomanPSMT", 0, font.Style{Family: font.FamilySerif}},
-		{"sans by name against a serif flag", "ArialMT", serifFlag, font.Style{Family: font.FamilySans}},
-		{"bold by name with no weight stated", "Arial-BoldMT", 0,
+		{"serif by name", "TimesNewRomanPSMT", nonsymbolicFlag, font.Style{Family: font.FamilySerif}},
+		{"sans by name against a serif flag", "ArialMT", serifFlag | nonsymbolicFlag,
+			font.Style{Family: font.FamilySans}},
+		{"bold by name with no weight stated", "Arial-BoldMT", nonsymbolicFlag,
 			font.Style{Family: font.FamilySans, Bold: true}},
-		{"italic by flag", "Whatever", italicFlag, font.Style{Family: font.FamilySans, Italic: true}},
-		{"bold italic by name", "Arial-BoldItalicMT", 0,
+		{"italic by flag", "Whatever", italicFlag | nonsymbolicFlag,
+			font.Style{Family: font.FamilySans, Italic: true}},
+		{"bold italic by name", "Arial-BoldItalicMT", nonsymbolicFlag,
 			font.Style{Family: font.FamilySans, Bold: true, Italic: true}},
-		{"mono by flag", "Whatever", monoFlag, font.Style{Family: font.FamilyMono}},
-		{"mono by name", "CourierNewPSMT", 0, font.Style{Family: font.FamilyMono}},
+		{"mono by flag", "Whatever", monoFlag | nonsymbolicFlag, font.Style{Family: font.FamilyMono}},
+		{"mono by name", "CourierNewPSMT", nonsymbolicFlag, font.Style{Family: font.FamilyMono}},
 		// Mono *and* serif, which is the only input that can tell the two branches' order apart:
 		// Courier has serifs and is fixed-pitch, and a fixed-pitch page set in a proportional
 		// serif face reflows every column it has. Fixed pitch is the property that matters, so it
 		// is checked first. Without this case the two branches could be swapped unnoticed.
-		{"a serif monospaced face resolves as mono", "CourierNewPS-BoldMT", serifFlag,
+		{"a serif monospaced face resolves as mono", "CourierNewPS-BoldMT", serifFlag | nonsymbolicFlag,
 			font.Style{Family: font.FamilyMono, Bold: true}},
 		// A symbol face is its own family and carries no weight: no text face stands in for it,
-		// and asking for "symbol bold" would ask for a variant that does not exist.
-		{"a symbol face", "ZapfDingbats", 0, font.Style{Family: font.FamilySymbol}},
-		{"symbol by name, ignoring bold", "Wingdings-Bold", 0, font.Style{Family: font.FamilySymbol}},
+		// and asking for "symbol bold" would ask for a variant that does not exist. Its /Flags
+		// sets the symbolic bit, not the nonsymbolic one — a real ZapfDingbats or Wingdings
+		// descriptor would too — but isSymbolFace reads the name and not this bit either way.
+		{"a symbol face", "ZapfDingbats", symbolicFlag, font.Style{Family: font.FamilySymbol}},
+		{"symbol by name, ignoring bold", "Wingdings-Bold", symbolicFlag, font.Style{Family: font.FamilySymbol}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			src := newFixedSource(t)
@@ -240,11 +249,11 @@ func TestASubstitutedFaceIsReachedOnlyThroughTheCharacter(t *testing.T) {
 	// hand-built font's six glyphs put code 65 out of range, so the page would be refused whether
 	// the route were forbidden or not.
 	src := newRealSource(t)
-	// Flags 4 is symbolic, and the fixture writes neither /Encoding nor /ToUnicode — so there is
-	// no base table and §9.6.5.4 leaves the codes genuinely unreadable, which is what makes this
+	// Flags 4 is symbolic, /Encoding is dropped, and the fixture writes no /ToUnicode — so there
+	// is no base table and §9.6.5.4 leaves the codes genuinely unreadable, which is what makes this
 	// the one input where a substituted face has nothing to look a code up by.
 	path := textPDF(t, "BT /F1 24 Tf 20 100 Td (A) Tj ET", 200,
-		withNoFontFile(), withFlags(4))
+		withNoFontFile(), withFlags(4), withEncoding(""))
 
 	s, err := pcstore.Open(path)
 	if err != nil {

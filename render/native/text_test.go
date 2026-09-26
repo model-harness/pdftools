@@ -21,8 +21,10 @@ import (
 // Arial the machine has.
 func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) string {
 	t.Helper()
+	// Nonsymbolic over a named /WinAnsiEncoding, which is every embedded simple TrueType font in
+	// the corpus: §9.6.5.4's route through the glyph name, the one those pages take.
 	o := textPDFOpts{prog: ttfbuild.Builder{UnitsPerEm: 1000}.Build(), fontFile: "FontFile2",
-		baseFont: "Test"}
+		baseFont: "Test", subtype: "TrueType", flags: 32, encoding: "/Encoding/WinAnsiEncoding"}
 	for _, f := range opts {
 		f(&o)
 	}
@@ -59,8 +61,8 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 	if o.noDescriptor {
 		descRef = ""
 	}
-	fontDict := fmt.Sprintf("<</Type/Font/Subtype/TrueType/BaseFont/%s/FirstChar 32/LastChar 68"+
-		"/Widths [%s]%s%s>>", o.baseFont, strings.Join(widths, " "), descRef, o.encoding)
+	fontDict := fmt.Sprintf("<</Type/Font/Subtype/%s/BaseFont/%s/FirstChar 32/LastChar 68"+
+		"/Widths [%s]%s%s>>", o.subtype, o.baseFont, strings.Join(widths, " "), descRef, o.encoding)
 	objs := []string{
 		"<</Type/Catalog/Pages 2 0 R>>",
 		"<</Type/Pages/Kids[3 0 R]/Count 1>>",
@@ -68,7 +70,7 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 			"/Resources<</Font<</F1 4 0 R>>%s>>/Contents 7 0 R>>", size, size, o.xobjects),
 		fontDict,
 		desc,
-		fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(o.prog), o.prog),
+		fmt.Sprintf("<</Length %d%s>>\nstream\n%s\nendstream", len(o.prog), o.progDict, o.prog),
 		fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(stream), stream),
 	}
 	if o.noFontFile {
@@ -88,17 +90,31 @@ func textPDF(t *testing.T, stream string, size int, opts ...func(*textPDFOpts)) 
 		// /CIDToGIDMap as a stream that maps CID 1 to the *diamond*, not to glyph 1. The
 		// identity would send it to glyph 1, and so would the code-as-glyph-index last resort,
 		// so a non-identity map is the only fixture that can tell this route from either.
-		objs = append(objs, "<</Type/Font/Subtype/CIDFontType2/BaseFont/Test"+
+		descendant, cidToGID := "CIDFontType2", "/CIDToGIDMap 9 0 R"
+		if o.descendant != "" {
+			descendant = o.descendant
+		}
+		if o.noCIDToGIDMap {
+			cidToGID = ""
+		}
+		objs = append(objs, "<</Type/Font/Subtype/"+descendant+"/BaseFont/Test"+
 			"/CIDSystemInfo<</Registry(Adobe)/Ordering(Identity)/Supplement 0>>"+
-			"/FontDescriptor 5 0 R/DW 600/CIDToGIDMap 9 0 R>>")
+			"/FontDescriptor 5 0 R/DW 600"+cidToGID+">>")
 		// Long enough to reach CID 32, which is mapped to the square. A two-byte code of 32 is
 		// what §9.3.3's rule turns on: word spacing applies to a *single-byte* code 32 and to
 		// nothing else, so a composite font whose CIDs happen to include 32 is the only fixture
 		// that can catch the guard being dropped. Real CJK text hits it constantly.
-		m := make([]byte, 2*33)
-		m[2*1+1] = ttfbuild.GIDDiamond
-		m[2*32+1] = ttfbuild.GIDSquare
-		objs = append(objs, fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(m), m))
+		if !o.noCIDToGIDMap {
+			m := make([]byte, 2*33)
+			m[2*1+1] = ttfbuild.GIDDiamond
+			m[2*32+1] = ttfbuild.GIDSquare
+			objs = append(objs, fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(m), m))
+		}
+		if o.cmap != "" {
+			objs = append(objs, fmt.Sprintf("<</Type/CMap/CMapName/Test/Length %d>>\nstream\n%s\nendstream",
+				len(o.cmap), o.cmap))
+			objs[3] = strings.Replace(objs[3], "/Identity-H", fmt.Sprintf(" %d 0 R", len(objs)), 1)
+		}
 	}
 	return buildPDF(t, append(objs, o.extra...), "text.pdf")
 }
@@ -109,11 +125,17 @@ type textPDFOpts struct {
 	encoding     string
 	fontFile     string
 	baseFont     string
+	subtype      string
 	noDescriptor bool
 	noFontFile   bool
 	composite    bool
 	xobjects     string
 	extra        []string
+
+	progDict      string // entries added to the program stream's dictionary
+	descendant    string // a composite font's descendant /Subtype, CIDFontType2 by default
+	noCIDToGIDMap bool
+	cmap          string // a composite font's embedded encoding CMap, in place of Identity-H
 }
 
 // withXObjects adds an /XObject resource dictionary to the page, and objects numbered from 8 for
@@ -127,6 +149,13 @@ func withComposite() func(*textPDFOpts)       { return func(o *textPDFOpts) { o.
 
 func withFlags(f int) func(*textPDFOpts) { return func(o *textPDFOpts) { o.flags = f } }
 
+// withSubtype replaces the simple font dictionary's /Subtype, which is TrueType by default.
+func withSubtype(s string) func(*textPDFOpts) { return func(o *textPDFOpts) { o.subtype = s } }
+
+// withEncoding replaces the font dictionary's /Encoding entry with e, written as it appears in the
+// dictionary, or removes it when e is empty.
+func withEncoding(e string) func(*textPDFOpts) { return func(o *textPDFOpts) { o.encoding = e } }
+
 // withBaseFont names the face the dictionary claims, which is half of what the style inference
 // reads: /BaseFont is the only evidence a standard-14 font offers, since it has no descriptor.
 func withBaseFont(n string) func(*textPDFOpts) {
@@ -139,6 +168,21 @@ func withNoDescriptor() func(*textPDFOpts) {
 	return func(o *textPDFOpts) { o.noDescriptor = true }
 }
 func withNoFontFile() func(*textPDFOpts) { return func(o *textPDFOpts) { o.noFontFile = true } }
+
+// withProgramDict adds entries, written as they appear, to the program stream's dictionary: the
+// /Subtype a FontFile3 stream needs (Table 124).
+func withProgramDict(d string) func(*textPDFOpts) { return func(o *textPDFOpts) { o.progDict = d } }
+
+// withDescendant replaces a composite font's descendant /Subtype, CIDFontType2 by default.
+func withDescendant(s string) func(*textPDFOpts) { return func(o *textPDFOpts) { o.descendant = s } }
+
+// withNoCIDToGIDMap drops the descendant's /CIDToGIDMap stream, which §9.7.4.2 gives only to a
+// CIDFontType2 font.
+func withNoCIDToGIDMap() func(*textPDFOpts) { return func(o *textPDFOpts) { o.noCIDToGIDMap = true } }
+
+// withCMap encodes a composite font through an embedded CMap stream of body, where a code is not
+// its own CID.
+func withCMap(body string) func(*textPDFOpts) { return func(o *textPDFOpts) { o.cmap = body } }
 func withFontFileKey(k string) func(*textPDFOpts) {
 	return func(o *textPDFOpts) { o.fontFile = k }
 }
@@ -278,49 +322,47 @@ func TestTextAgreesWithPdfium(t *testing.T) {
 	}
 }
 
-// TestCodeToGlyphTakesEachRoute pins each way a PDF says which glyph it means.
+// TestCodeToGlyphTakesEachRoute pins each way a PDF says which glyph it means, in both engines.
 //
-// §9.6.5.4 and §9.7.4.2 give three routes and the fixture font reached one: a composite font maps
-// its CID through /CIDToGIDMap, and a simple font with no usable cmap at all falls back to the
-// code as a glyph index — which is not a guess but what a producer means by a subset with no
-// character map to read it with. Neither had an input, so either could have been deleted or
-// reordered with every test still passing.
+// §9.6.5.4 and §9.7.4.2 give a composite font its CID through /CIDToGIDMap, a nonsymbolic simple
+// font its glyph name through the (3,1) subtable, and a symbolic one with no /Encoding its code
+// through (3,0) — at one of four ranges — or else through (1,0); and a subset with no cmap at all
+// takes the code as the glyph index, which is where pdfium lands and ADR 0016 draws. Each case is
+// a font where the route under test and some other route give different glyphs, because a font
+// whose subtables agree cannot tell which one was read: the defect this pins read (1,0) by code
+// ahead of (3,1) by name, and the corpus's subsetters write a (1,0) that disagrees.
 //
-// Each case is compared against the *same glyph drawn by the route that already worked*, at the
-// same size and pen position, so the assertion is the whole image rather than a sample: a route
-// that resolved to a different glyph, or to nothing, differs everywhere the glyph is. That is
-// also why the composite case maps its CID to the diamond — the identity map and the
-// code-as-index fallback would both answer glyph 1, so only a map that disagrees with both can
-// tell which one ran.
+// Each case is compared against the *same glyph drawn through the default font* at the same size
+// and pen position, in this backend and separately in pdfium. Both comparisons are exact, because
+// each is one engine drawing one glyph twice: this backend's says the route reached the glyph, and
+// pdfium's says that is the glyph pdfium reaches too — the agreement the route was chosen for.
 func TestCodeToGlyphTakesEachRoute(t *testing.T) {
-	draw := func(t *testing.T, stream string, opts ...func(*textPDFOpts)) []byte {
-		t.Helper()
-		s, err := pcstore.Open(textPDF(t, stream, 200, opts...))
-		if err != nil {
-			t.Fatalf("open: %v", err)
-		}
-		defer func() { _ = s.Close() }()
-		o := render.DefaultOptions
-		o.DPI = 72
-		got, err := New(s).Page(1, o)
-		if err != nil {
-			t.Fatalf("Page: %v", err)
-		}
-		px, _, _ := ink(got.Image)
-		return px
+	cmaps := func(c ...ttfbuild.Cmap) func(*textPDFOpts) {
+		return withProgram(ttfbuild.Builder{UnitsPerEm: 1000, Cmaps: c}.Build())
+	}
+	// The character 'A' reaches the square, so a symbolic route that fell through to reading the
+	// code as a character draws the square where the case wants another glyph.
+	unicode := ttfbuild.Cmap{Platform: 3, Encoding: 1,
+		Map: map[uint16]uint16{' ': ttfbuild.GIDSpace, 'A': ttfbuild.GIDSquare}}
+	byCode := func(c ...ttfbuild.Cmap) []func(*textPDFOpts) {
+		return []func(*textPDFOpts){withFlags(4), withEncoding(""), cmaps(c...)}
+	}
+	symbol := func(code, gid uint16) ttfbuild.Cmap {
+		return ttfbuild.Cmap{Platform: 3, Encoding: 0, Map: map[uint16]uint16{code: gid}}
 	}
 
 	for _, c := range []struct {
 		name   string
 		stream string
 		opts   []func(*textPDFOpts)
-		want   string // the same glyph, reached through the font's own cmap
+		want   string // the same glyph, drawn through the default font
 	}{
 		{
 			name:   "a code as the glyph index, in a font with no cmap",
 			stream: `BT /F1 48 Tf 20 100 Td (\001) Tj ET`,
-			opts:   []func(*textPDFOpts){withProgram(ttfbuild.Builder{UnitsPerEm: 1000, NoCmap: true}.Build())},
-			want:   "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts: []func(*textPDFOpts){withFlags(4), withEncoding(""),
+				withProgram(ttfbuild.Builder{UnitsPerEm: 1000, NoCmap: true}.Build())},
+			want: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
 		},
 		{
 			name:   "a CID through a CIDToGIDMap stream",
@@ -334,23 +376,254 @@ func TestCodeToGlyphTakesEachRoute(t *testing.T) {
 				withProgram(ttfbuild.Builder{UnitsPerEm: 1000, SymbolicCmap: true}.Build())},
 			want: "BT /F1 48 Tf 20 100 Td (B) Tj ET",
 		},
+		{
+			// The (1,0) record comes first, so a reader that took the first subtable it found
+			// would reach the diamond as surely as one that ranked (1,0) above (3,1).
+			//
+			// This case used to have a "with neither flag set" twin, over the same (3,1)
+			// subtable, to show §9.6.5.4 routing a named WinAnsi encoding by name whatever the
+			// flags say. R#0 (Table 121) now refuses /Flags with neither bit set before ttRoute
+			// ever runs, so that twin drew nothing to compare: it is deleted rather than kept, and
+			// TestSimpleTrueTypeFontsOutsideTheAgreedRoutesAreRefused's "neither flag set" row
+			// asserts the refusal in its place, not the by-name agreement this row was showing.
+			name:   "a nonsymbolic font's glyph name through (3,1), not its code through (1,0)",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts: []func(*textPDFOpts){cmaps(ttfbuild.Cmap{Platform: 1, Encoding: 0,
+				Map: map[uint16]uint16{'A': ttfbuild.GIDDiamond}}, unicode)},
+			want: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+		},
+		{
+			// §9.6.5.4 ignores a symbolic font's /Encoding, and pdfium does too when it names no
+			// base it reads names from.
+			name:   "a symbolic font's code, past an encoding dictionary with no base",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts: []func(*textPDFOpts){withFlags(4), withEncoding("/Encoding<</Type/Encoding>>"),
+				cmaps(unicode, symbol(0xF041, ttfbuild.GIDDiamond))},
+			want: "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			name:   "a symbolic font's code through (3,0), as written",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts:   byCode(unicode, symbol(0x0041, ttfbuild.GIDDiamond)),
+			want:   "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			name:   "a symbolic font's code through (3,0), at 0xF000",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts:   byCode(unicode, symbol(0xF041, ttfbuild.GIDDiamond)),
+			want:   "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			name:   "a symbolic font's code through (3,0), at 0xF100",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts:   byCode(unicode, symbol(0xF141, ttfbuild.GIDDiamond)),
+			want:   "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			name:   "a symbolic font's code through (3,0), at 0xF200",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts:   byCode(unicode, symbol(0xF241, ttfbuild.GIDDiamond)),
+			want:   "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			// Two ranges that agree are one answer, which is what makes the refusal below about
+			// disagreement rather than about a code appearing twice.
+			name:   "a symbolic font's code mapped alike in two ranges",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts: byCode(unicode, ttfbuild.Cmap{Platform: 3, Encoding: 0,
+				Map: map[uint16]uint16{0x0041: ttfbuild.GIDDiamond, 0xF041: ttfbuild.GIDDiamond}}),
+			want: "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			name:   "a symbolic font's code through (3,0) ahead of (1,0)",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts: byCode(ttfbuild.Cmap{Platform: 1, Encoding: 0,
+				Map: map[uint16]uint16{'A': ttfbuild.GIDComposite}}, symbol(0xF041, ttfbuild.GIDDiamond)),
+			want: "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
+		{
+			name:   "a symbolic font's code through (1,0), not (3,1)",
+			stream: "BT /F1 48 Tf 20 100 Td (A) Tj ET",
+			opts: byCode(unicode, ttfbuild.Cmap{Platform: 1, Encoding: 0,
+				Map: map[uint16]uint16{'A': ttfbuild.GIDDiamond}}),
+			want: "BT /F1 48 Tf 20 100 Td (B) Tj ET",
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got := draw(t, c.stream, c.opts...)
-			want := draw(t, c.want)
-			var total, diff float64
-			for i := range want {
-				total += float64(want[i])
-				if got[i] != want[i] {
-					diff++
-				}
+			got, gotRef := drawBoth(t, c.stream, c.opts...)
+			want, wantRef := drawBoth(t, c.want)
+			assertSameInk(t, got, gotRef, want, wantRef)
+		})
+	}
+}
+
+// drawBoth renders a one-page text fixture at 72 dpi in this backend and in pdfium, and returns
+// each one's ink.
+func drawBoth(t *testing.T, stream string, opts ...func(*textPDFOpts)) (native, ref []byte) {
+	t.Helper()
+	path := textPDF(t, stream, 200, opts...)
+	o := render.DefaultOptions
+	o.DPI = 72
+	s, err := pcstore.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	got, err := New(s).Page(1, o)
+	if err != nil {
+		t.Fatalf("Page: %v", err)
+	}
+	p, err := pdfium.Open(path)
+	if err != nil {
+		t.Fatalf("pdfium: %v", err)
+	}
+	defer func() { _ = p.Close() }()
+	want, err := p.Page(1, o)
+	if err != nil {
+		t.Fatalf("pdfium Page: %v", err)
+	}
+	native, _, _ = ink(got.Image)
+	ref, _, _ = ink(want.Image)
+	return native, ref
+}
+
+// assertSameInk fails unless each engine drew got exactly as it drew want: the route under test
+// reached the reference's glyph in this backend, and in pdfium.
+func assertSameInk(t *testing.T, got, gotRef, want, wantRef []byte) {
+	t.Helper()
+	for _, e := range []struct {
+		engine    string
+		got, want []byte
+	}{{"this backend", got, want}, {"pdfium", gotRef, wantRef}} {
+		var total, diff float64
+		for i := range e.want {
+			total += float64(e.want[i])
+			if e.got[i] != e.want[i] {
+				diff++
 			}
-			if total == 0 {
-				t.Fatal("the reference render drew nothing, so this comparison asserts nothing")
+		}
+		if total == 0 {
+			t.Fatalf("%s drew nothing for the reference, so this comparison asserts nothing",
+				e.engine)
+		}
+		if diff > 0 {
+			t.Errorf("%s: %.0f pixels differ from the same glyph drawn through the reference"+
+				" font — the route resolved to a different glyph or to none", e.engine, diff)
+		}
+	}
+}
+
+// TestSimpleTrueTypeFontsOutsideTheAgreedRoutesAreRefused pins every shape §9.6.5.4 and pdfium
+// read differently, or that this backend has no route for.
+//
+// Each is a font the rasterizer could draw, on a page where which glyph to draw is the open
+// question: a symbolic font over a named encoding is one both of §9.6.5.4's routes claim, and
+// pdfium takes the one by name; a MacRoman name goes through the Mac OS Roman table, which this
+// backend does not carry; a /Differences name is resolved by FreeType's rules in pdfium and by the
+// glyph list here. A page drawn in any of them is drawn in confident wrong glyphs wherever the two
+// part, so each is refused, by a reason that names the shape. None occurs in the corpus, where
+// every embedded simple TrueType font is nonsymbolic over /WinAnsiEncoding with a (3,1) subtable.
+func TestSimpleTrueTypeFontsOutsideTheAgreedRoutesAreRefused(t *testing.T) {
+	cmaps := func(c ...ttfbuild.Cmap) func(*textPDFOpts) {
+		return withProgram(ttfbuild.Builder{UnitsPerEm: 1000, Cmaps: c}.Build())
+	}
+	for _, c := range []struct {
+		name   string
+		stream string
+		opts   []func(*textPDFOpts)
+		want   string
+	}{
+		{"symbolic over a named encoding", "(A)", []func(*textPDFOpts){withFlags(4)},
+			"a symbolic TrueType font over /WinAnsiEncoding"},
+		{"symbolic over an encoding dictionary's base", "(A)", []func(*textPDFOpts){withFlags(4),
+			withEncoding("/Encoding<</BaseEncoding/WinAnsiEncoding>>")},
+			"a symbolic TrueType font over /WinAnsiEncoding"},
+		{"nonsymbolic with no encoding", "(A)", []func(*textPDFOpts){withEncoding("")},
+			"a nonsymbolic TrueType font with no /Encoding"},
+		// pdfium reads /MacExpertEncoding as /WinAnsiEncoding in a TrueType font, so it reads a
+		// symbolic one by name as surely as it does over WinAnsi.
+		{"symbolic over MacExpert", "(A)", []func(*textPDFOpts){withFlags(4),
+			withEncoding("/Encoding/MacExpertEncoding")},
+			"a symbolic TrueType font over /MacExpertEncoding"},
+		{"nonsymbolic over MacExpert", "(A)", []func(*textPDFOpts){
+			withEncoding("/Encoding/MacExpertEncoding")},
+			"a TrueType font whose glyph names come from /MacExpertEncoding"},
+		// R#0 (Table 121) refuses /Flags with neither bit set before ttRoute ever reads /Encoding,
+		// so this used to be two rows — this one over MacExpert, and a "both flags clear, by
+		// code with neither (3,0) nor (1,0)" row, since deleted — that each named a different
+		// downstream reason for the same flags(0) fixture. Neither downstream reason is reachable
+		// through that fixture any longer, because checkFlags refuses flags(0) before ttRoute ever
+		// runs: one row asserting that reason is what is left here, and the deleted row was a
+		// duplicate of it, not a second reason this route still needs. The MacExpert-over-
+		// nonsymbolic reason is not moot, though — a font that clears checkFlags still reaches
+		// it, pinned separately above by "nonsymbolic over MacExpert".
+		{"neither flag set", "(A)", []func(*textPDFOpts){withFlags(0)},
+			"neither the symbolic nor the nonsymbolic bit set, which Table 121 forbids"},
+		// pdfium reads any TrueType font over /MacRomanEncoding by name, so a symbolic one is
+		// again claimed by both of §9.6.5.4's routes.
+		{"symbolic over MacRoman", "(A)", []func(*textPDFOpts){withFlags(4),
+			withEncoding("/Encoding/MacRomanEncoding")},
+			"a symbolic TrueType font over /MacRomanEncoding"},
+		{"nonsymbolic over MacRoman", "(A)", []func(*textPDFOpts){
+			withEncoding("/Encoding/MacRomanEncoding")},
+			"a TrueType font whose glyph names come from /MacRomanEncoding"},
+		{"an encoding dictionary with no base", "(A)", []func(*textPDFOpts){
+			withEncoding("/Encoding<</Type/Encoding>>")},
+			"a TrueType font whose /Encoding names no base encoding"},
+		{"a TrueType program under a Type1 font", "(A)", []func(*textPDFOpts){withSubtype("Type1")},
+			"a FontFile2 program under a /Type1 font"},
+		{"differences", "(A)", []func(*textPDFOpts){
+			withEncoding("/Encoding<</BaseEncoding/WinAnsiEncoding/Differences[65/B]>>")},
+			"a TrueType font with /Differences"},
+		{"nonsymbolic with no (3,1) subtable", "(A)", []func(*textPDFOpts){
+			cmaps(ttfbuild.Cmap{Platform: 1, Encoding: 0, Map: map[uint16]uint16{'A': ttfbuild.GIDSquare}})},
+			"a nonsymbolic TrueType font with no (3,1) subtable"},
+		// pdfium reads the code as a character in whatever subtable FreeType calls Unicode, which
+		// §9.6.5.4 leaves to the reader and this backend declines to model.
+		{"by code with neither (3,0) nor (1,0)", "(A)",
+			[]func(*textPDFOpts){withFlags(4), withEncoding("")},
+			"a TrueType font read by code, with neither a (3,0) nor a (1,0) subtable"},
+
+		// And the refusals of one code rather than of the font.
+		{"a code whose ranges disagree", "(A)", []func(*textPDFOpts){withFlags(4), withEncoding(""),
+			cmaps(ttfbuild.Cmap{Platform: 3, Encoding: 0,
+				Map: map[uint16]uint16{0x0041: ttfbuild.GIDSquare, 0xF041: ttfbuild.GIDDiamond}})},
+			"no glyph for code 65 in /Test: the (3,0) subtable maps it to glyph 1 at 0x0041 and" +
+				" glyph 2 at 0xF041"},
+		// Annex D note 3 maps WinAnsi's unused codes to the bullet and this package's table does
+		// not, so a code in that gap is one the two readings do not share.
+		{"a code WinAnsi leaves unnamed", `(\201)`, nil,
+			"no glyph for code 129 in /Test: /WinAnsiEncoding names no glyph for it"},
+		{"a code below WinAnsi's first name", `(\037)`, nil,
+			"no glyph for code 31 in /Test: /WinAnsiEncoding names no glyph for it"},
+		{"a name the (3,1) subtable does not map", "(Z)", nil, "no glyph for code 90 in /Test"},
+		{"a code as glyph 0, in a font with no cmap", `(\000)`, []func(*textPDFOpts){withFlags(4),
+			withEncoding(""), withProgram(ttfbuild.Builder{UnitsPerEm: 1000, NoCmap: true}.Build())},
+			"no glyph for code 0 in /Test"},
+		{"a code past the glyph count, in a font with no cmap", `(\006)`, []func(*textPDFOpts){
+			withFlags(4), withEncoding(""),
+			withProgram(ttfbuild.Builder{UnitsPerEm: 1000, NoCmap: true}.Build())},
+			"no glyph for code 6 in /Test"},
+		{"a code (1,0) does not map", "(B)", []func(*textPDFOpts){withFlags(4), withEncoding(""),
+			cmaps(ttfbuild.Cmap{Platform: 1, Encoding: 0, Map: map[uint16]uint16{'A': ttfbuild.GIDSquare}})},
+			"no glyph for code 66 in /Test"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, err := pcstore.Open(textPDF(t, "BT /F1 24 Tf 20 100 Td "+c.stream+" Tj ET", 200,
+				c.opts...))
+			if err != nil {
+				t.Fatalf("open: %v", err)
 			}
-			if diff > 0 {
-				t.Errorf("%.0f pixels differ from the same glyph drawn through the cmap —"+
-					" this route resolved to a different glyph or to none", diff)
+			defer func() { _ = s.Close() }()
+			o := render.DefaultOptions
+			o.DPI = 72
+			_, err = New(s).Page(1, o)
+			var u *Unsupported
+			if !errors.As(err, &u) {
+				t.Fatalf("err = %v, want an *Unsupported naming the shape", err)
+			}
+			if joined := strings.Join(u.Ops, " | "); !strings.Contains(joined, c.want) {
+				t.Errorf("refusal = %q, want it to mention %q", joined, c.want)
 			}
 		})
 	}
@@ -455,7 +728,7 @@ func TestWordSpacingSkipsMultiByteCodes(t *testing.T) {
 // cannot be drawn, not for using a text operator.
 //
 // The distinction is the whole value of the error: over a corpus, "this page draws text" is the
-// same message 1,241 times, where "the font program is FontFile3 (CFF)" against "no descriptor" is
+// same message 1,241 times, where "the font program is FontFile (Type 1)" against "no descriptor" is
 // a census of what to implement next. Each case here is a real shape a producer writes.
 //
 // Crossed with all four show operators, because the refusal is decided in the survey and the
@@ -468,7 +741,7 @@ func TestFontsWithoutGlyfAreRefusedByReason(t *testing.T) {
 		opt  func(*textPDFOpts)
 		want string
 	}{
-		{"a CFF program", withFontFileKey("FontFile3"), "CFF"},
+		{"a TrueType program in FontFile3", withFontFileKey("FontFile3"), "belongs in FontFile2"},
 		{"a Type 1 program", withFontFileKey("FontFile"), "Type 1"},
 		{"no embedded program", withNoFontFile(), "no face source was supplied"},
 	} {

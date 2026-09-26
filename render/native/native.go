@@ -148,6 +148,7 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		unsup:     map[string]bool{},
 		fonts:     map[string]*textFont{},
 		fontRefs:  map[objects.Ref]*textFont{},
+		formFonts: map[objects.Ref]map[string]*textFont{},
 		images:    map[objects.Ref]*image.NRGBA{},
 		forms:     map[objects.Ref][]byte{},
 		iccSpaces: map[objects.Ref]space{},
@@ -279,9 +280,19 @@ type walker struct {
 
 	// fontRefs caches a parsed font by its indirect reference, across every resource dictionary
 	// the page reaches. fonts is keyed by resource *name*, and a name only means something within
-	// one dictionary — a form's /F1 need not be the page's — so each form gets a fresh name map,
-	// and this is what keeps a form drawn a hundred times from parsing its font a hundred times.
+	// one dictionary — a form's /F1 need not be the page's — so each form gets a fresh name map.
+	// This is what keeps a form drawn a hundred times from parsing its font a hundred times when
+	// the form's /Font entry is itself an indirect reference. When it is a direct dictionary
+	// instead, it has no reference of its own to key this by: formFonts caches it when the form
+	// is reached by reference, and nothing caches it when the form is a direct stream (inForm).
 	fontRefs map[objects.Ref]*textFont
+
+	// formFonts caches a form's fresh name map — the one inForm gives fonts, below — by the
+	// form's own indirect reference, so a form invoked a hundred times still gets its direct font
+	// dictionaries parsed once. Keyed separately from fontRefs because what identifies the cache
+	// entry here is the *form*, not the font: a direct dictionary has no reference for fontRefs to
+	// use, and every invocation of the same form reaches the same direct dictionary.
+	formFonts map[objects.Ref]map[string]*textFont
 
 	// images caches decoded pixels by indirect reference, for the same reason, and pixels
 	// counts what has been decoded so far against maxPagePixels.
@@ -300,6 +311,10 @@ type walker struct {
 
 	// ops counts operators surveyed across the page and every form it reaches, against maxOps.
 	ops int
+
+	// glyphWork counts what the page's glyph outlines have cost, against maxGlyphWork: outline()'s
+	// build charge and checkText's per-show draw charge both add to it.
+	glyphWork int
 
 	unsup map[string]bool
 }
@@ -353,6 +368,18 @@ func (w *walker) run(data []byte) {
 	w.fill, w.alpha, w.font, w.stack = black, 1, nil, nil
 	w.stroke, w.strokeAlpha, w.pen = black, 1, defaultPen
 	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
+	// glyphWork resets to zero rather than carrying the survey's total forward: paint builds only
+	// the glyphs the survey already built, in the same order, and never more often — a font kept
+	// by reference (loadFont, text.go) is the survey's own cached *textFont, outlines and all, so
+	// reaching it again in paint costs nothing, and a font with no reference to cache by (a direct
+	// dictionary inside a direct-stream form, inForm's else branch in xobject.go) is re-parsed and
+	// its glyphs rebuilt exactly as often as the survey rebuilt them, never more — and charges
+	// nothing for a draw, so at every point paint's running total is at most what the survey's was
+	// there — and a glyph the survey built within its remaining budget builds within paint's
+	// remaining budget too. Without this reset a form's rebuild would add to the survey's total
+	// instead of to zero, cross the budget on a page the survey accepted, and drop the glyph paint
+	// never reached.
+	w.glyphWork = 0
 	w.paint(content.NewMachine(geom.Identity), data, 0)
 }
 
@@ -483,6 +510,24 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 	}
 }
 
+// chargeGlyphWork adds n to the page's glyph work — outline()'s build charge or checkText's draw
+// charge below — but only while the page is still within budget.
+//
+// Guarding the add, not just the check that follows it, is what stops glyphWork from growing
+// without bound once a page is already refused: outline()'s pre-check only fires on the *next*
+// distinct glyph, and checkText may still walk through many more shows of glyphs already built
+// before the caller sees the refusal and stops. Left unguarded, that accumulation wraps a 32-bit
+// int negative on GOARCH=386, and a negative glyphWork makes maxGlyphWork-w.glyphWork — the
+// remaining budget outline() hands to font.Outline — a number over a billion instead of zero.
+// Guarded, glyphWork stops climbing the moment it first passes maxGlyphWork, so it never exceeds
+// that by more than the one charge which crossed it — nowhere near enough of a margin to reach
+// even a fraction of where a 32-bit int wraps.
+func (w *walker) chargeGlyphWork(n int) {
+	if w.glyphWork <= maxGlyphWork {
+		w.glyphWork += n
+	}
+}
+
 // checkText records why a string cannot be drawn, without drawing it.
 //
 // The same three questions showText would ask — is there a font, does it carry a program this
@@ -495,18 +540,42 @@ func (w *walker) checkText(str []byte) {
 	case tf == nil:
 		w.refuseText("the page shows a string before naming a font with Tf")
 		return
-	case tf.tt == nil:
+	case tf.tt == nil && tf.cff == nil:
 		w.refuseText(tf.why)
 		return
 	}
 	for _, g := range tf.f.Decode(str) {
-		if _, ok := tf.gid(g); !ok {
+		gid, err := tf.gid(g)
+		if err != nil {
 			// A code with no glyph is a character the page draws and this backend cannot, which
 			// is the same class as an operator it cannot draw and gets the same answer. Dropping
 			// it would put a page on screen with one character quietly missing — the failure
 			// mode this whole backend refuses pages to avoid, at the granularity where it is
 			// hardest to notice.
-			w.refuseText(fmt.Sprintf("no glyph for code %d in /%s", g.Code, tf.f.BaseFont))
+			w.refuseText(fmt.Sprintf("no glyph for code %d in /%s: %v", g.Code, tf.f.BaseFont, err))
+			continue
+		}
+		// And a glyph whose outline cannot be built is the same missing character one step later.
+		out, err := w.outline(tf, gid)
+		if err != nil {
+			if errors.Is(err, font.ErrGlyphBudget) {
+				w.refuseText(fmt.Sprintf(
+					"the page's glyphs take more than %d operations to build and draw", maxGlyphWork))
+				continue
+			}
+			w.refuseText(fmt.Sprintf("code %d in /%s does not draw: %v", g.Code, tf.f.BaseFont, err))
+			continue
+		}
+		// A glyph that built is charged again here for what paint will draw of it: len(out)
+		// segments, every time this show reaches it. A build is cached and charged once per
+		// distinct glyph; a page of text shows the same handful of glyphs over and over, and each
+		// of those shows still costs fillGlyph a flatten. Checked right after adding, rather than
+		// only before the next build, so the show that pushes the total over is the one refused —
+		// not the next glyph after it.
+		w.chargeGlyphWork(len(out))
+		if w.glyphWork > maxGlyphWork {
+			w.refuseText(fmt.Sprintf(
+				"the page's glyphs take more than %d operations to build and draw", maxGlyphWork))
 		}
 	}
 }

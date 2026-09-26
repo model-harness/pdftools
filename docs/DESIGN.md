@@ -1023,18 +1023,42 @@ Against pdfium, a fill agrees to within a level through every profile but a line
 up to 6 off near black because pdfium truncates `scn` to a byte first. The 16 pages gained are
 identical with the conversion on and off.
 
-**The remaining worklist:**
+**CFF is done — see ADR 0022, and `render/native` now draws 1,232 of 1,251 pages (98%).** 103 of
+the 104 pages CFF blocked draw, and the other is refused for a dash. How it works:
 
-- CFF: 104 pages
+- `font.ParseCFF` reads a bare CFF program by Technical Note #5176, and a Type 2 interpreter draws
+  its charstrings as FreeType's Adobe engine does. Hints are counted but not applied, because
+  pdfium loads CFF unhinted.
+- A code selects a glyph as pdfium selects it: a CID through the charset, and a simple font's code
+  through the glyph name its encoding states. A font where §9.6.5.1 and pdfium would select
+  differently is refused, and so is a code that reaches no glyph.
+
+Drawing CFF found a TrueType defect. ADR 0016's routes were tried in turn for every font, so a
+nonsymbolic subset drew through its subsetter's (1,0) subtable, and `This` came out as `Thrs`. A
+simple TrueType font now takes one of §9.6.5.4's two routes, by name or by code, chosen as pdfium
+chooses. A TrueType glyph is also shifted by its left side bearing now, as FreeType shifts it. Of
+the 1,129 pages that drew before, 103 moved closer to pdfium, and 43 moved further by at most
+0.0065 at 36 dpi. 31 of those draw a dash that was missing, half a pixel from pdfium's grid-fitted
+position. The other 12 are the bearing shift, which pdfium rounds to the pixel where it hints a
+glyph; at 600 dpi, where it does not, every page the shift moves is closer.
+
+**The remaining worklist**, 19 pages, with some overlap:
+
 - Type 1: 17
 - a dash: 2
 - one soft-mask group
 - one shading
 
-Two accuracy items affect no page count:
+Six accuracy items affect no page count:
 
 - pdfium's own CMYK-to-sRGB table
 - an image `/ColorSpace` that names a resource, which no corpus image uses
+- pdfium's grid-fitting of a glyph's origin to the device pixel
+- pdfium's LCD-mode filtering of a glyph under 50 pixels per em
+- pdfium's hinting of a TrueType glyph at 50 pixels per em or fewer, which rounds the glyph's
+  left side bearing shift to the pixel
+- WinAnsi's six unused codes, which Annex D sends to the bullet and this backend refuses per
+  glyph, and which no corpus page shows
 
 **The page scale is pdfium's.** The page is mapped to fill the image exactly, with the image's
 size over the box's on each axis, and not by dpi/72. The image is a whole number of pixels and the

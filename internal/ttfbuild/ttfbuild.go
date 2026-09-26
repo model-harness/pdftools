@@ -24,6 +24,7 @@ package ttfbuild
 import (
 	"encoding/binary"
 	"math"
+	"slices"
 	"sort"
 )
 
@@ -36,6 +37,22 @@ type Builder struct {
 	// SymbolicCmap adds a (3,0) subtable keyed by code, which is what a symbolic font carries
 	// alongside or instead of the (3,1) one keyed by character.
 	SymbolicCmap bool
+	// Cmaps replaces the default subtables with these, in this order, for the fixtures whose
+	// question is which subtable a reader consults.
+	Cmaps []Cmap
+	// PostNames, when non-nil, replaces the default format 3.0 `post` table (which the TrueType
+	// spec's own header comment calls "no PostScript name information") with a format 2.0 one
+	// naming glyph i PostNames[i], for the fixtures whose question is the charmap FreeType
+	// synthesizes from those names when no cmap subtable survives. An empty string leaves that
+	// glyph unnamed.
+	PostNames []string
+}
+
+// Cmap is one cmap subtable: the platform and encoding its record names, and the codes it maps to
+// glyphs. It is written as format 4 with a segment per code.
+type Cmap struct {
+	Platform, Encoding uint16
+	Map                map[uint16]uint16
 }
 
 // cmapSubtable is one platform-and-encoding record with its subtable bytes.
@@ -58,6 +75,32 @@ func assembleCmap(subs []cmapSubtable) []byte {
 		body = append(body, s.data...)
 	}
 	return append(head, body...)
+}
+
+// buildPost2 writes a format 2.0 `post` table (Apple's TrueType Reference Manual, `post`): the
+// 32-byte header every version shares, one glyph name index per glyph, and the custom pascal
+// strings those indices name. Every name here is written as a custom string, at index 258 and
+// up, rather than resolved against the standard Macintosh glyph order that low indices name —
+// FreeType's synthesized Unicode charmap reads a glyph's name the same way regardless of which
+// table it came from, and only the custom form needs no lookup table of its own to write.
+// #nosec G115 -- font fields are written by reinterpretation; see the package comment
+func buildPost2(names []string) []byte {
+	b := make([]byte, 32)
+	binary.BigEndian.PutUint32(b[0:], 0x00020000)
+	b = binary.BigEndian.AppendUint16(b, uint16(len(names)))
+	var extra []byte
+	idx := uint16(258)
+	for _, n := range names {
+		if n == "" {
+			b = binary.BigEndian.AppendUint16(b, 0) // .notdef
+			continue
+		}
+		b = binary.BigEndian.AppendUint16(b, idx)
+		idx++
+		extra = append(extra, byte(len(n)))
+		extra = append(extra, n...)
+	}
+	return append(b, extra...)
 }
 
 const (
@@ -166,7 +209,7 @@ func compositeGlyph(gid uint16) []byte {
 	var b []byte
 	put16 := func(v uint16) { b = binary.BigEndian.AppendUint16(b, v) }
 	put16(0xFFFF) // negative contour count marks a composite
-	put16(0)
+	put16(100)    // xMin: both components are gid's own square, whose xMin is 100
 	put16(0)
 	put16(1000)
 	put16(1000)
@@ -258,11 +301,16 @@ func (tb Builder) Build() []byte {
 	binary.BigEndian.PutUint16(hhea[10:], uint16(int16(tb.UnitsPerEm)))         // advanceWidthMax
 	binary.BigEndian.PutUint16(hhea[34:], NumGlyphs)                            // numberOfHMetrics
 
-	// The left side bearing must equal each glyph's own xMin. FreeType shifts an outline to
-	// agree with the declared bearing when it hints, so a font that declares zero for a glyph
-	// starting at x=100 renders 100 units to the left of where its own outline says — which
-	// looked exactly like a rasterizer placing glyphs wrongly, in the one comparison built to
-	// find that.
+	// The left side bearing must equal each glyph's own xMin: ParseTrueType now models FreeType's
+	// tt_loader_set_pp (ttgload.c:1346-1350) and TrueType.Outline translates a drawn glyph by
+	// xMin-lsb (see its own comment), so a font that declares a bearing other than its glyph's own
+	// xMin is drawn shifted from where its outline says — which looked exactly like a rasterizer
+	// placing glyphs wrongly, in the one comparison built to find that. Every glyph's point data
+	// above is written in `head`'s own raw grid regardless of UnitsPerEm — the square's xMin is
+	// always the literal 100 — so lsb has to be that same literal value to agree with it; scaling
+	// it by UnitsPerEm/1000 the way this package scales its own *output* would make lsb agree with
+	// xMin only at UnitsPerEm 1000, and disagree, and so shift every other unitsPerEm fixture, at
+	// every other one.
 	lsb := [NumGlyphs]int{0, 100, 100, 100, 100, 0}
 	var hmtx []byte
 	for i := 0; i < NumGlyphs; i++ {
@@ -271,7 +319,7 @@ func (tb Builder) Build() []byte {
 			adv = uint16(int(tb.UnitsPerEm) * 3 / 5)
 		}
 		hmtx = binary.BigEndian.AppendUint16(hmtx, adv)
-		hmtx = binary.BigEndian.AppendUint16(hmtx, uint16(int16(lsb[i]*int(tb.UnitsPerEm)/1000)))
+		hmtx = binary.BigEndian.AppendUint16(hmtx, uint16(int16(lsb[i])))
 	}
 
 	// A minimal name table and a post table. FreeType tolerates their absence for glyph access
@@ -279,6 +327,9 @@ func (tb Builder) Build() []byte {
 	// thing a reader declines for reasons that have nothing to do with its outlines.
 	post := make([]byte, 32)
 	binary.BigEndian.PutUint32(post[0:], 0x00030000) // version 3.0: no glyph names
+	if tb.PostNames != nil {
+		post = buildPost2(tb.PostNames)
+	}
 
 	os2 := make([]byte, 96)
 	binary.BigEndian.PutUint16(os2[0:], 4)                                     // version
@@ -298,6 +349,23 @@ func (tb Builder) Build() []byte {
 		{'A', 'D', GIDSquare},
 		{0xFFFF, 0xFFFF, 0},
 	})}}
+	if tb.Cmaps != nil {
+		subs = nil
+		type seg = struct{ lo, hi, gid uint16 }
+		for _, c := range tb.Cmaps {
+			codes := make([]uint16, 0, len(c.Map))
+			for code := range c.Map {
+				codes = append(codes, code)
+			}
+			slices.Sort(codes)
+			var segs []seg
+			for _, code := range codes {
+				segs = append(segs, seg{code, code, c.Map[code]})
+			}
+			segs = append(segs, seg{0xFFFF, 0xFFFF, 0})
+			subs = append(subs, cmapSubtable{plat: c.Platform, enc: c.Encoding, data: format4(segs)})
+		}
+	}
 	if tb.SymbolicCmap {
 		// A (3,0) subtable keyed by code rather than by character, which is what a symbolic font
 		// carries. It maps code 1 to the *square*, so a consumer that reads this table where it
@@ -350,6 +418,42 @@ func format4(segs []struct{ lo, hi, gid uint16 }) []byte {
 		put(0) // idRangeOffset zero means use idDelta
 	}
 	return b
+}
+
+// Entry is one table-directory record: a tag and its bytes, written exactly in the order given.
+//
+// AssembleTables' map can hold only one entry per tag and always writes it sorted, which is right
+// for a well-formed font but cannot express the shapes ParseTrueType's directory rules are about:
+// a repeated tag, so which one wins is the question; a zero-length entry ahead of a real one; or
+// records in an order a real subsetter would not choose. AssembleTablesOrdered writes exactly the
+// list given, so a test can put those shapes in the file rather than describe them.
+type Entry struct {
+	Tag  string
+	Data []byte
+}
+
+// AssembleTablesOrdered writes a table directory in exactly the given order, with no sort and no
+// duplicate-tag merge.
+// #nosec G115 -- font fields are written by reinterpretation; see the package comment
+func AssembleTablesOrdered(entries []Entry) []byte {
+	n := len(entries)
+	head := make([]byte, 12+16*n)
+	binary.BigEndian.PutUint32(head[0:], 0x00010000)
+	binary.BigEndian.PutUint16(head[4:], uint16(n))
+
+	body := []byte{}
+	off := len(head)
+	for i, e := range entries {
+		rec := 12 + i*16
+		copy(head[rec:], e.Tag)
+		binary.BigEndian.PutUint32(head[rec+8:], uint32(off+len(body)))
+		binary.BigEndian.PutUint32(head[rec+12:], uint32(len(e.Data)))
+		body = append(body, e.Data...)
+		for len(body)%4 != 0 {
+			body = append(body, 0)
+		}
+	}
+	return append(head, body...)
 }
 
 // assembleTables writes a table directory and the tables, four-byte aligned.

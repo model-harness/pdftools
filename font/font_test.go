@@ -403,6 +403,120 @@ func TestSymbolicFontWithNoEncodingResolvesNothing(t *testing.T) {
 	}
 }
 
+// TestSimpleFontReportsWhatRoutesItsGlyphs pins the inputs §9.6.5.4 reads to choose a TrueType
+// font's route from code to glyph: the two flags, whether there is an /Encoding at all, the base it
+// names, and whether /Differences assigns anything.
+//
+// Each is reported as the dictionary states it rather than folded into a verdict, because the
+// routes turn on combinations — both flags set, or the nonsymbolic flag with no /Encoding, is a
+// font both routes claim — and a combination folded away cannot be refused. A descriptor with no
+// /Flags reads as nonsymbolic, as pdfium reads it.
+//
+// R#2: a /Flags that is null, a reference to nothing, or present and not a number reads as
+// neither flag set — pdfium's GetIntegerFor (cpdf_font.cpp) reads all three as 0, and its
+// nonsymbolic default applies only to a /Flags key that is missing outright.
+func TestSimpleFontReportsWhatRoutesItsGlyphs(t *testing.T) {
+	s := newStore()
+	withBase := objects.Dict{"BaseEncoding": objects.Name("WinAnsiEncoding")}
+	for _, c := range []struct {
+		name          string
+		dict          objects.Dict
+		sym, non      bool
+		encoded, diff bool
+		base          string
+	}{
+		{"symbolic", objects.Dict{"FontDescriptor": objects.Dict{"Flags": objects.Int(4)}},
+			true, false, false, false, ""},
+		{"nonsymbolic", objects.Dict{"FontDescriptor": objects.Dict{"Flags": objects.Int(32)}},
+			false, true, false, false, ""},
+		{"both flags", objects.Dict{"FontDescriptor": objects.Dict{"Flags": objects.Int(36)}},
+			true, true, false, false, ""},
+		{"neither flag", objects.Dict{"FontDescriptor": objects.Dict{"Flags": objects.Int(0)}},
+			false, false, false, false, ""},
+		{"no /Flags", objects.Dict{"FontDescriptor": objects.Dict{}}, false, true, false, false, ""},
+		{"/Flags null", objects.Dict{"FontDescriptor": objects.Dict{"Flags": objects.Null{}}},
+			false, false, false, false, ""},
+		{"/Flags a dangling reference", objects.Dict{
+			"FontDescriptor": objects.Dict{"Flags": objects.Ref{Num: 999}}}, false, false, false, false, ""},
+		{"/Flags present and not a number", objects.Dict{
+			"FontDescriptor": objects.Dict{"Flags": objects.Name("X")}}, false, false, false, false, ""},
+		{"no descriptor, Symbol", objects.Dict{"BaseFont": objects.Name("Symbol")},
+			true, false, false, false, ""},
+		{"no descriptor, subset ZapfDingbats", objects.Dict{
+			"BaseFont": objects.Name("ABCDEF+ZapfDingbats")}, true, false, false, false, ""},
+		{"no descriptor, Helvetica", objects.Dict{"BaseFont": objects.Name("Helvetica")},
+			false, true, false, false, ""},
+		{"a named encoding", objects.Dict{"Encoding": objects.Name("WinAnsiEncoding")},
+			false, true, true, false, "WinAnsiEncoding"},
+		{"a named encoding this package does not carry", objects.Dict{
+			"Encoding": objects.Name("MacExpertEncoding")}, false, true, true, false,
+			"MacExpertEncoding"},
+		{"a dictionary with a base", objects.Dict{"Encoding": withBase},
+			false, true, true, false, "WinAnsiEncoding"},
+		{"a dictionary with no base", objects.Dict{"Encoding": objects.Dict{}},
+			false, true, true, false, ""},
+		{"empty differences", objects.Dict{"Encoding": objects.Dict{
+			"Differences": objects.Array{}}}, false, true, true, true, ""},
+		{"differences", objects.Dict{"Encoding": objects.Dict{
+			"Differences": objects.Array{objects.Int(65), objects.Name("B")}}},
+			false, true, true, true, ""},
+		{"differences assigning nothing", objects.Dict{"Encoding": objects.Dict{
+			"Differences": objects.Array{objects.Name("B")}}},
+			false, true, true, true, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			d := objects.Dict{"Subtype": objects.Name("TrueType")}
+			for k, v := range c.dict {
+				d[k] = v
+			}
+			f := Load(s, d)
+			if f.Symbolic() != c.sym || f.Nonsymbolic() != c.non {
+				t.Errorf("Symbolic, Nonsymbolic = %v, %v; want %v, %v", f.Symbolic(),
+					f.Nonsymbolic(), c.sym, c.non)
+			}
+			if f.HasEncoding() != c.encoded || f.HasDifferences() != c.diff ||
+				f.BaseEncoding() != c.base {
+				t.Errorf("HasEncoding, HasDifferences, BaseEncoding = %v, %v, %q; want %v, %v, %q",
+					f.HasEncoding(), f.HasDifferences(), f.BaseEncoding(), c.encoded, c.diff, c.base)
+			}
+		})
+	}
+}
+
+// TestStatedGlyphNameTracksTheAssignedCode pins the bit that records a /Differences assignment
+// to the code it was made for, not to some other code that happens to share a smaller modulus.
+//
+// Code 48 sets bit 48 of word 0 (48/64 == 0, 48%64 == 48). A modulus of 32 instead would set bit
+// 16 there, so code 48 would read back as unstated and code 16 — never touched by /Differences —
+// would read back as stated.
+func TestStatedGlyphNameTracksTheAssignedCode(t *testing.T) {
+	s := newStore()
+	f := Load(s, objects.Dict{
+		"Subtype": objects.Name("TrueType"),
+		"Encoding": objects.Dict{
+			"Differences": objects.Array{objects.Int(48), objects.Name("zero")},
+		},
+	})
+	if got := f.StatedGlyphName(48); got != "zero" {
+		t.Errorf("StatedGlyphName(48) = %q, want %q", got, "zero")
+	}
+	if got := f.StatedGlyphName(16); got != "" {
+		t.Errorf("StatedGlyphName(16) = %q, want empty: code 16 was never assigned", got)
+	}
+
+	// A named base encoding states every name in its table, and no /Encoding states none: the
+	// StandardEncoding name is this package's assumption.
+	named := Load(s, objects.Dict{"Subtype": objects.Name("TrueType"),
+		"Encoding": objects.Name("WinAnsiEncoding")})
+	if got := named.StatedGlyphName('A'); got != "A" {
+		t.Errorf("over /WinAnsiEncoding, StatedGlyphName('A') = %q, want %q", got, "A")
+	}
+	none := Load(s, objects.Dict{"Subtype": objects.Name("TrueType")})
+	if got := none.StatedGlyphName('A'); got != "" {
+		t.Errorf("with no /Encoding, StatedGlyphName('A') = %q, want empty", got)
+	}
+}
+
 func TestToUnicodeOverridesEncoding(t *testing.T) {
 	// Where the two disagree, /ToUnicode is the font's own statement about this
 	// document's codes, and a subset font with a rearranged encoding is the usual
@@ -1012,4 +1126,230 @@ func TestIndirectReferencesAreResolvedThroughout(t *testing.T) {
 	if got := c.Width(9, 9); got != 500 {
 		t.Errorf("Width(cid 9) = %v, want the indirect /DW of 500", got)
 	}
+}
+
+// TestIrregularBaseFont pins C15: a /BaseFont pdfium reads as a string even though this
+// package's own /BaseFont field stays empty for it.
+func TestIrregularBaseFont(t *testing.T) {
+	s := newStore()
+	for _, c := range []struct {
+		name    string
+		val     objects.Object
+		regular bool
+	}{
+		{"a name", objects.Name("Symbol"), true},
+		{"a string", objects.String("Symbol"), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"), "BaseFont": c.val})
+			if got := f.Irregular(); (got == "") != c.regular {
+				t.Errorf("Irregular() = %q, want empty = %v", got, c.regular)
+			}
+		})
+	}
+}
+
+// TestIrregularEncoding pins the /Encoding entry itself: a name or a dictionary is regular, and
+// anything else — pdfium's LoadPDFEncoding wants one of those two shapes too — is not.
+func TestIrregularEncoding(t *testing.T) {
+	s := newStore()
+	for _, c := range []struct {
+		name    string
+		val     objects.Object
+		regular bool
+	}{
+		{"a name", objects.Name("WinAnsiEncoding"), true},
+		{"a dictionary", objects.Dict{"BaseEncoding": objects.Name("WinAnsiEncoding")}, true},
+		{"a string", objects.String("WinAnsiEncoding"), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"), "Encoding": c.val})
+			if got := f.Irregular(); (got == "") != c.regular {
+				t.Errorf("Irregular() = %q, want empty = %v", got, c.regular)
+			}
+		})
+	}
+}
+
+// TestIrregularBaseEncoding pins C16: a /BaseEncoding pdfium reads as a string even though
+// baseEncoding leaves f.baseName empty for it.
+func TestIrregularBaseEncoding(t *testing.T) {
+	s := newStore()
+	for _, c := range []struct {
+		name    string
+		val     objects.Object
+		regular bool
+	}{
+		{"a name", objects.Name("WinAnsiEncoding"), true},
+		{"a string", objects.String("WinAnsiEncoding"), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"),
+				"Encoding": objects.Dict{"BaseEncoding": c.val}})
+			if got := f.Irregular(); (got == "") != c.regular {
+				t.Errorf("Irregular() = %q, want empty = %v", got, c.regular)
+			}
+		})
+	}
+}
+
+// TestIrregularDifferences pins C17's four ways LoadDifferences (cpdf_simplefont.cpp) reads an
+// entry this package's applyDifferences does not: a real first code and a stray non-name entry
+// among them, plus a dangling reference and a /Differences that is not an array at all.
+//
+// R#5 pins the code range's own edges, 0 and 255, as regular: they are the codes a simple font
+// actually has, not the out-of-range shape checkDifferences refuses, so a mutant that narrows the
+// accepted range by one at either edge — `e < 1` or `e > 254` — must not refuse them. The codes
+// one past each edge, -1 and 256, are refused, so one that widens it — `e < -1` or `e > 256` —
+// must not accept them.
+func TestIrregularDifferences(t *testing.T) {
+	s := newStore()
+	for _, c := range []struct {
+		name    string
+		arr     objects.Array
+		regular bool
+	}{
+		{"a plain run", objects.Array{objects.Int(65), objects.Name("A"), objects.Name("B")}, true},
+		{"the code range's lower edge, 0", objects.Array{objects.Int(0), objects.Name("A")}, true},
+		{"the code range's upper edge, 255", objects.Array{objects.Int(255), objects.Name("A")}, true},
+		{"one past the upper edge, 256", objects.Array{objects.Int(256), objects.Name("A")}, false},
+		{"a code out of range, name after it dropped", objects.Array{objects.Int(999), objects.Name("A")}, false},
+		{"a non-name entry after the first code", objects.Array{
+			objects.Int(65), objects.Name("A"), objects.String("x"), objects.Name("C")}, false},
+		{"a leading name", objects.Array{objects.Name("C")}, false},
+		{"a negative code", objects.Array{objects.Int(-1), objects.Name("X"), objects.Name("C")}, false},
+		{"a negative real code", objects.Array{objects.Real(-0.5), objects.Name("C")}, false},
+		{"a real code past 255", objects.Array{objects.Real(255.5), objects.Name("C")}, false},
+		{"an in-range code too large by an integer", objects.Array{objects.Int(300), objects.Name("B")}, false},
+		{"a null entry", objects.Array{objects.Int(65), objects.Null{}, objects.Name("C")}, false},
+		{"a dangling reference", objects.Array{objects.Int(65), objects.Ref{Num: 999}, objects.Name("C")}, false},
+		// checkDifferences' doc discusses both these codes: at 4294967295, the uint32_t cur_code
+		// (cpdf_simplefont.cpp) is one increment from wrapping into range, so a second name here
+		// would land on code 0 the way applyDifferences never would — this row's single name does
+		// not reach that, and is simply dropped, same as applyDifferences drops it. At 4294967296,
+		// the code itself is already outside what cur_code can hold, so this row's one name lands
+		// on code 0 immediately in pdfium, with no second name needed — a real disagreement with
+		// applyDifferences' drop, not a merely theoretical one. Both rows are refused regardless:
+		// checkDifferences' 0..255 check catches any code at or above 256 outright, before either
+		// engine's repair, or disagreement, ever has a chance to run — this store is in memory, so
+		// both hold the same on a 32-bit build too.
+		{"the wrap edge, 4294967295", objects.Array{objects.Int(4294967295), objects.Name("A")}, false},
+		{"one past the wrap edge, 4294967296", objects.Array{objects.Int(4294967296), objects.Name("A")}, false},
+		{"empty", objects.Array{}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"),
+				"Encoding": objects.Dict{"Differences": c.arr}})
+			if got := f.Irregular(); (got == "") != c.regular {
+				t.Errorf("Irregular() = %q, want empty = %v", got, c.regular)
+			}
+		})
+	}
+	t.Run("not an array", func(t *testing.T) {
+		f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"),
+			"Encoding": objects.Dict{"Differences": objects.Int(1)}})
+		if got := f.Irregular(); got == "" {
+			t.Errorf("Irregular() = %q, want non-empty: /Differences is not an array", got)
+		}
+	})
+}
+
+// TestIrregularFlags pins C20 and C21: /Flags must be a literal PDF integer, and within
+// [-2^31, 2^31), the range this package can trust regardless of a '+' sign (R#0; a leading
+// '0' before a sign is a gap no range closes, see checkFlags' doc), or pdfium's GetIntegerFor (cpdf_font.cpp) reads a different symbolic bit, or a default,
+// than flags() does. It also pins R#0's three additions: both bits set, both bits
+// clear, and the key absent from a present descriptor.
+//
+// R#1 pins both edges of the range exactly: the lower bound -2^31 and the value one below it, and
+// the upper bound 2^31-1 (INT_MAX) and the value one above it — want is the reason substring
+// rather than a bare pass/fail, because R#0's bit rule reaches every one of these four values too,
+// just by a different route. The exact edges are the bit rule's own doing regardless of the range
+// check: -2^31 clears both bits (32 zero bits but the sign bit), and 2^31-1 sets every one of its
+// bits below the sign bit, both of Table 121's included. The edges one past them are the range
+// check's own doing today, but a mutant that widens min to -2^31-1 or max to 2^31 stops the range
+// check firing there, and the value falls through to the bit rule instead — which finds -2^31-1
+// sets both bits, and 2^31 sets neither. Both are still refused, so neither mutant reaches a route
+// or loses a page; the substring assertion catches each one by the reason it now reports, not by
+// what the page draws. Narrowing either edge (`<= min` or `>= max`) is symmetric: it only moves
+// the range check to fire one value earlier, on -2^31 or 2^31-1, which the bit rule was refusing
+// anyway, so nothing is lost there either. The two rows below that sit inside the range near
+// each edge and set only the symbolic bit — one near the upper edge, one near the lower — show
+// the bit rule keeps working there undisturbed by how close the value is to a boundary the range
+// check patrols instead.
+//
+// The range check still catches a shape the bit rule alone cannot: a value outside [-2^31, 2^31)
+// that sets exactly one of the two bits, which the bit rule alone would call regular. "2^32+4,
+// outside a 32-bit value either way" and "a large negative integer wrapping to 4 as uint32" below
+// are both that shape, each setting only the symbolic bit, and deleting the range check hands
+// either one to a route. render/native's TestFlagsOutsideTheRangeWithOneBitIsRefusedNotRouted
+// (fontdict_test.go) measures the first of the two against pdfium, on a CFF fixture that swaps its
+// by-name and built-in encodings: with the range check deleted (checked in a scratch copy, never
+// in this tree), this package draws the diamond the bit rule alone would route it to, and pdfium
+// draws the square — so the range check is load-bearing for that row, not refusal-only.
+//
+// R#0 also pins why the range stops at 2^31-1 rather than 2^32-1: "2^31+4, a '+'-signed literal
+// pdfium reads as flags 0 (R#0)" below is the value objects.Store hands this package for both
+// "+2147483652" and the unsigned "2147483652" — pdfcpu's strconv.Atoi drops the sign either way —
+// but pdfium reads the two literals apart, at flags 0 and at their full uint32 value respectively
+// (measured by render/native's TestFlagsSignedLiteralAboveIntMaxIsRefusedEitherWay). A range
+// reaching 2^32-1 would call the value regular and read a symbolic bit off it that the '+'-signed
+// literal never forms in pdfium, so both literals are refused here, the unsigned one more
+// strictly than pdfium alone would need.
+//
+// R#2 pins /Flags null and a dangling reference as irregular: ISO 32000-2 makes both the same as
+// an absent key (§7.3.9, §7.3.10), but pdfium's GetIntegerFor default applies only to a key that
+// is missing outright, so this is an ISO-and-pdfium disagreement rather than agreement on absence.
+func TestIrregularFlags(t *testing.T) {
+	s := newStore()
+	for _, c := range []struct {
+		name string
+		val  objects.Object
+		want string // "" means regular; otherwise a substring Irregular() must contain
+	}{
+		{"a small integer", objects.Int(4), ""},
+		{"2^31-33, inside the range near its upper edge, symbolic bit only", objects.Int(2147483615), ""},
+		{"exactly the nonsymbolic bit", objects.Int(32), ""},
+		{"both bits set", objects.Int(36), "both the symbolic and nonsymbolic bits set"},
+		{"neither bit set", objects.Int(0), "neither the symbolic nor the nonsymbolic bit set"},
+		{"2^31+4, a '+'-signed literal pdfium reads as flags 0 (R#0)", objects.Int(2147483652), "outside the range"},
+		{"2^32+4, outside a 32-bit value either way", objects.Int(4294967300), "outside the range"},
+		{"a large negative integer wrapping to 4 as uint32", objects.Int(-4294967292), "outside the range"},
+		{"2^33+4", objects.Int(8589934596), "outside the range"},
+		{"a real", objects.Real(4.0), "not an integer"},
+		{"not a number", objects.Name("X"), "not an integer"},
+		// The exact edges: -2^31 clears both bits (it is 32 zero bits but the sign bit), and
+		// 2^31-1 sets every one of its bits below the sign bit, so R#0's bit rule catches each —
+		// not the range check, which only fires strictly outside [min, max]. See the doc above
+		// for why that still pins the range boundary exactly.
+		{"the lower bound, -2^31", objects.Int(-2147483648), "neither the symbolic nor the nonsymbolic bit set"},
+		{"one below the lower bound", objects.Int(-2147483649), "outside the range"},
+		{"-2^31+4 as int32, inside the range near its lower edge, symbolic bit only", objects.Int(-2147483644), ""},
+		{"the upper bound, 2^31-1 (INT_MAX)", objects.Int(2147483647), "both the symbolic and nonsymbolic bits set"},
+		{"one above the upper bound", objects.Int(2147483648), "outside the range"},
+		{"null", objects.Null{}, "null, or a reference to nothing"},
+		{"a dangling reference", objects.Ref{Num: 999}, "null, or a reference to nothing"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"), "BaseFont": objects.Name("X"),
+				"FontDescriptor": objects.Dict{"Flags": c.val}})
+			got := f.Irregular()
+			if c.want == "" {
+				if got != "" {
+					t.Errorf("Irregular() = %q, want empty", got)
+				}
+				return
+			}
+			if !strings.Contains(got, c.want) {
+				t.Errorf("Irregular() = %q, want it to contain %q", got, c.want)
+			}
+		})
+	}
+	// R#0: the key absent from the descriptor entirely, distinct from present-and-null above.
+	t.Run("Flags absent from the descriptor", func(t *testing.T) {
+		f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"), "BaseFont": objects.Name("X"),
+			"FontDescriptor": objects.Dict{}})
+		if got := f.Irregular(); !strings.Contains(got, "absent from the font descriptor") {
+			t.Errorf("Irregular() = %q, want it to contain %q", got, "absent from the font descriptor")
+		}
+	})
 }

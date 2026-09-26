@@ -5,6 +5,68 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-26
+
+- **`render/native` draws CFF fonts: 1,232 of the corpus's 1,251 pages (98%).** ADR 0022. A
+  FontFile3 program, `/Type1C` or `/CIDFontType0C`, is drawn through a new charstring interpreter,
+  and 103 of the 104 pages CFF blocked now draw.
+  - **`font.ParseCFF`** reads a bare CFF program by Technical Note #5176, a CID-keyed one's FDArray
+    and FDSelect included. Where the note leaves a malformed table open, it reads as FreeType does.
+    An OpenType wrapper, CFF2, `SyntheticBase`, Type 1 charstrings and the Expert tables are
+    refused.
+  - **A Type 2 interpreter** draws every path operator, flex included, and follows subroutines and
+    seac. Hints are counted but not applied, because pdfium loads CFF unhinted. The arithmetic,
+    storage and conditional operators and `random` are refused, and so is every grammar error
+    FreeType repairs silently. Glyph work is bounded per page, build and draw together.
+  - **A glyph is selected as pdfium selects it.** A font is refused where §9.6.5.1 and pdfium would
+    select differently: a base encoding other than WinAnsi, a font named Symbol or ZapfDingbats,
+    and a `/CIDToGIDMap` on a CIDFontType0 font.
+  - **Checked against fontTools and pdfium.** All 1,378 corpus glyphs have fontTools' outlines,
+    point for point. Against pdfium, each of 37 test cases is within 0.205 levels in mean, and
+    each of the 103 pages gained is closer with its CFF glyphs drawn than without them. 346 of 348
+    mutants are killed by a named test, and the other two are equivalent.
+
+### Fixed — 2026-09-26
+
+- **`render/native` drew a nonsymbolic TrueType subset through its (1,0) subtable.** Every route
+  was tried in turn for every font, and a subsetter's (1,0) subtable is keyed by its own codes, so
+  a SourceSansPro subset drew `This` as `Thrs`. A simple TrueType font now takes one of §9.6.5.4's
+  two routes, chosen as pdfium chooses: by glyph name through (3,1), or by code through (3,0) and
+  then (1,0). A font that §9.6.5.4 and pdfium would route apart is refused, and so is a (3,0)
+  subtable that maps one code to two glyphs. `/ToUnicode` no longer selects a glyph, except in a
+  substituted face.
+  - `font.TrueType.GIDForCode`, which tried (3,0) and then (1,0) for any font, is gone. `HasCmap`,
+    `HasSubtable` and `GIDInSubtable` replace it. `font.Font` now reports what the routes read:
+    `StatedGlyphName`, `BaseEncoding`, `Symbolic`, `Nonsymbolic`, `HasEncoding` and
+    `HasDifferences`.
+  - Of the 1,129 pages that drew before, 983 score the same, 103 moved closer to pdfium and 43
+    further, by at most 0.0065 in mean at 36 dpi. 31 of the 43 draw a dash that was missing
+    before, half a pixel from where pdfium's grid-fitted origin puts it. At 150 dpi every changed
+    region is closer. The other 12 moved with the left side bearing shift, below.
+- **`render/native` placed a TrueType glyph by its glyf coordinates, not its left side bearing.**
+  FreeType shifts every glyph by its xMin less its hmtx bearing, and pdfium draws what FreeType
+  loads. A corpus SymbolMT bullet, with an xMin of 0 and a bearing of 106, drew 2 pixels from
+  pdfium's at 288 dpi. It now draws within a pixel. At 36 dpi the shift moves 19 pages closer and
+  12 further, because pdfium hints a TrueType glyph of 50 pixels per em or fewer and rounds the
+  shift to the pixel. At 600 dpi, where it does not, all 31 are closer.
+- **`render/native` drew TrueType programs FreeType will not open.** pdfium draws a substitute for
+  those, so they are now refused:
+  - a table directory with no valid entries
+  - no head, hhea or hmtx table
+  - a head, hhea or vhea too short to read
+  - a unitsPerEm outside 16 to 16,384
+- **`render/native` drew simple fonts whose dictionaries pdfium reads another way.** Examples are
+  a `/BaseFont` string, a `/Differences` code outside 0 to 255, and a `/Flags` that is absent or
+  outside the signed 32-bit range. These fonts are now refused. `font.Font.Irregular` names the
+  entry, and `font.Load` stays lenient.
+- **`font.TrueType.Outline` returns an error, not a bool.** An empty glyph and an unreadable one
+  were both `false`. A space is now `nil` with no error, and a malformed glyph is an error that
+  names why. `Outline` takes the budget the page has left, and returns the work it took. A
+  composite is bounded at 1,024 components and 65,536 segments across its tree, as well as by
+  depth.
+- **`font.TrueType` took the last cmap record for a platform and encoding.** pdfium takes the first,
+  and so does this now.
+
 ### Added — 2026-09-25
 
 - **`render/native` draws ICC colour: 1,129 of the corpus's 1,251 pages (90%).** ADR 0021.
