@@ -728,8 +728,8 @@ func TestWordSpacingSkipsMultiByteCodes(t *testing.T) {
 // cannot be drawn, not for using a text operator.
 //
 // The distinction is the whole value of the error: over a corpus, "this page draws text" is the
-// same message 1,241 times, where "the font program is FontFile (Type 1)" against "no descriptor" is
-// a census of what to implement next. Each case here is a real shape a producer writes.
+// same message 1,241 times, where "a FontFile program under a /TrueType font" against "no descriptor"
+// is a census of what to implement next. Each case here is a real shape a producer writes.
 //
 // Crossed with all four show operators, because the refusal is decided in the survey and the
 // survey dispatches on the operator: a show operator missing from that switch does not produce a
@@ -742,7 +742,8 @@ func TestFontsWithoutGlyfAreRefusedByReason(t *testing.T) {
 		want string
 	}{
 		{"a TrueType program in FontFile3", withFontFileKey("FontFile3"), "belongs in FontFile2"},
-		{"a Type 1 program", withFontFileKey("FontFile"), "Type 1"},
+		{"a Type 1 program under a TrueType font", withFontFileKey("FontFile"),
+			"a FontFile program under a /TrueType font"},
 		{"no embedded program", withNoFontFile(), "no face source was supplied"},
 	} {
 		for _, show := range []struct{ op, operands string }{

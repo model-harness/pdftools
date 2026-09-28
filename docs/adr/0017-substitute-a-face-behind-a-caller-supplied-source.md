@@ -4,7 +4,9 @@ Date: 2026-09-24
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0022](0022-draw-cff-glyphs-and-route-a-code-as-pdfium-does.md) and
+[ADR 0023](0023-draw-type1-glyphs-as-freetype-reads-them.md), which draw CFF and Type 1 programs.
+An embedded font is still not substituted: where its program is refused, so is the page.
 
 ## Context
 

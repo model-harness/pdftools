@@ -76,6 +76,7 @@ func (c *CFF) Outline(gid uint16, budget int) (Outline, int, error) {
 // the operations spent on it.
 type charRun struct {
 	cff                  *CFF
+	t1                   *Type1
 	local                cffIndex
 	gsubrBias, localBias int
 	out                  Outline

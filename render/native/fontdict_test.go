@@ -83,7 +83,7 @@ func TestIrregularSimpleFontDictionariesAreRefused(t *testing.T) {
 		// pdfium's own number parser and GetIntegerFor (cpdf_font.cpp) do with a value outside
 		// int32 range is not on disk to read (R#3: neither core/fxcrt's number parsing nor
 		// CPDF_Number is vendored here), and this fixture's /Encoding names /WinAnsiEncoding, so
-		// cffGID resolves by name regardless of which bits flags() reports — no route through
+		// type1GID resolves by name regardless of which bits flags() reports — no route through
 		// /Flags is exercised here to measure. The test shows only that this package refuses the
 		// value outright, rather than trusting a bit its own int64 reading and a 32-bit reader's
 		// GetIntegerFor may disagree on.
@@ -306,7 +306,7 @@ func swappedFlagsCFFFontPDF(t *testing.T, flags string) string {
 // bits set exactly one of Table 121's two bits, a shape R#0's both/neither bit rule alone would
 // call regular. 4294967300 (2^32+4) is that shape — its low 32 bits are 4, the symbolic bit alone
 // — so with the range check deleted (checked in a scratch copy, never in this tree) checkFlags
-// finds it regular, cffGID reads the font as symbolic, and this backend draws the diamond
+// finds it regular, type1GID reads the font as symbolic, and this backend draws the diamond
 // swappedFlagsCFFFontPDF's built-in encoding gives code 'A' under a symbolic reading.
 //
 // This measures pdfium's side rather than only asserting it in a comment: pdfium draws the same

@@ -1042,12 +1042,20 @@ the 1,129 pages that drew before, 103 moved closer to pdfium, and 43 moved furth
 position. The other 12 are the bearing shift, which pdfium rounds to the pixel where it hints a
 glyph; at 600 dpi, where it does not, every page the shift moves is closer.
 
-**The remaining worklist**, 19 pages, with some overlap:
+**Type 1 is done — see ADR 0023, and `render/native` now draws 1,248 of 1,251 pages (99.8%).**
+16 of the 17 pages Type 1 blocked draw, and the other is refused for a dash. How it works:
 
-- Type 1: 17
-- a dash: 2
-- one soft-mask group
-- one shading
+- `font.ParseType1` reads a PFA program token for token as FreeType does, since FreeType does not
+  run the program's PostScript. A Type 1 interpreter draws its charstrings as FreeType's Adobe
+  engine does in its Type 1 mode, and takes othersubrs only in the byte sequences the format
+  prints.
+- A code selects a glyph through ADR 0022's CFF route, because pdfium reads both formats as one
+  kind of font. A `/Length1` that disagrees with where FreeType finds the cipher is refused.
+
+**The remaining worklist** is 3 pages:
+
+- a dash: LightOnOCR page 12 and WTPDF page 3
+- a soft-mask group and a shading: ISO TS 32005 page 1
 
 Six accuracy items affect no page count:
 

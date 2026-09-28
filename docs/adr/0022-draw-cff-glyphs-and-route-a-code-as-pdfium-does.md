@@ -6,7 +6,8 @@ Date: 2026-09-26
 
 Accepted. Amends [ADR 0016](0016-draw-truetype-glyphs-and-refuse-fonts-by-reason.md): a simple
 TrueType font's codes now reach its glyphs by one of two routes chosen per font, and not by
-trying every route in turn.
+trying every route in turn. Amended by [ADR 0023](0023-draw-type1-glyphs-as-freetype-reads-them.md),
+which draws Type 1 programs through the same glyph selection, now `type1GID`.
 
 ## Context
 
@@ -417,6 +418,7 @@ tables the directory declares, which a read through an absent `maxp`'s zero offs
   - a dash: 2
   - one soft-mask group
   - one shading
+- **Type 1**, the largest item here, is drawn by ADR 0023.
 - **Not built:** CFF2 and the OpenType wrapper, CharstringType 1, the Expert tables, and the
   charstring arithmetic operators. Each refuses by name, and none has a corpus page.
 - **Deferred, because each needs a change below the font readers:**

@@ -5,6 +5,25 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-28
+
+- **`render/native` draws Type 1 fonts: 1,248 of the corpus's 1,251 pages (99.8%).** ADR 0023. A
+  FontFile program is drawn through a new Type 1 charstring interpreter, and 16 of the 17 pages
+  Type 1 blocked now draw. The other, LightOnOCR page 12, is refused for a dash.
+  - **`font.ParseType1`** reads the PFA form token for token as FreeType does: its eexec search,
+    its token skipper, and its readings of the encoding, Subrs and CharStrings. The PFB form, hex
+    eexec, a scaled FontMatrix, a PaintType other than 0 and multiple masters are refused.
+  - **A Type 1 interpreter** draws every path operator, `div`, seac, flex and hint replacement.
+    Othersubrs are taken only in the byte sequences the format prints, since FreeType runs none of
+    them. Every grammar error FreeType would read past is refused.
+  - **A glyph is selected as pdfium selects it**, through the CFF route of ADR 0022, which pdfium
+    shares between the two formats. A `/Length1` that disagrees with where FreeType finds the
+    cipher is refused.
+  - **Checked against fontTools and pdfium.** All 396 corpus glyphs have fontTools' outlines, and
+    every built-in encoding maps its 256 codes to the same glyphs. Each of the 16 pages gained is
+    closer to pdfium with its Type 1 glyphs drawn than without them.
+  - **Mutation-tested.** Of 199 mutants, 194 are killed by a named test and 5 are equivalent.
+
 ### Added — 2026-09-26
 
 - **`render/native` draws CFF fonts: 1,232 of the corpus's 1,251 pages (98%).** ADR 0022. A

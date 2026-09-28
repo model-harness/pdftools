@@ -540,7 +540,7 @@ func (w *walker) checkText(str []byte) {
 	case tf == nil:
 		w.refuseText("the page shows a string before naming a font with Tf")
 		return
-	case tf.tt == nil && tf.cff == nil:
+	case !tf.drawable():
 		w.refuseText(tf.why)
 		return
 	}

@@ -23,7 +23,8 @@ type textFont struct {
 	f    *font.Font
 	tt   *font.TrueType
 	cff  *font.CFF
-	why  string // empty when tt or cff is usable
+	t1   *font.Type1
+	why  string // empty when tt, cff, or t1 is usable
 	dict objects.Dict
 
 	// substituted marks a program that is a stand-in rather than the document's own.
@@ -140,12 +141,13 @@ func (w *walker) parseFont(fonts objects.Dict, name string) *textFont {
 		tf.why = "the descriptor embeds more than one font program"
 		return tf
 	case fd["FontFile"] != nil:
-		// Type 1 is refused rather than substituted, and the difference is worth stating: the
-		// document *did* embed a face, so its glyphs are on hand and only the charstring
-		// interpreter is missing. Standing a different face in for one the file carries would
-		// replace a typeface the producer chose and shipped, which is a larger misrepresentation
-		// than declining the page.
-		tf.why = "the font program is FontFile (Type 1), which needs a charstring interpreter"
+		st, _ := objects.GetStream(w.s, fd, "FontFile")
+		data, ok := objects.GetStreamData(w.s, fd, "FontFile")
+		if !ok {
+			tf.why = "the FontFile stream did not decode"
+			return tf
+		}
+		tf.t1, tf.why = w.parseType1(f, st.Dict, data)
 		return tf
 	case fd["FontFile3"] != nil:
 		data, ok := objects.GetStreamData(w.s, fd, "FontFile3")
@@ -269,17 +271,8 @@ func (w *walker) parseCFF(f *font.Font, desc objects.Dict, data []byte) (*font.C
 		if _, ok := objects.GetStream(w.s, desc, "CIDToGIDMap"); ok {
 			return nil, "a /CIDToGIDMap stream on a CIDFontType0 font"
 		}
-	} else {
-		if f.Subtype != "Type1" && f.Subtype != "MMType1" {
-			return nil, fmt.Sprintf("a FontFile3 program under a /%s font", f.Subtype)
-		}
-		if base := f.BaseEncoding(); base != "" && base != "WinAnsiEncoding" {
-			return nil, fmt.Sprintf("a CFF font over /%s", base)
-		}
-		switch strings.ToLower(f.Name()) {
-		case "symbol", "symbolmt", "zapfdingbats":
-			return nil, fmt.Sprintf("a CFF font named %s", f.Name())
-		}
+	} else if why := type1Route(f, "FontFile3", "CFF"); why != "" {
+		return nil, why
 	}
 	c, err := font.ParseCFF(data)
 	if err != nil {
@@ -291,17 +284,63 @@ func (w *walker) parseCFF(f *font.Font, desc objects.Dict, data []byte) (*font.C
 	return c, ""
 }
 
+// type1Route refuses the simple fonts whose codes pdfium sends to a Type 1 or CFF program's glyphs
+// by tables of its own, rather than type1GID's: a named base encoding other than WinAnsi, and a
+// font named Symbol or ZapfDingbats. pdfium reads both program kinds as one CPDF_Type1Font, so
+// the refusals are the same for each. program and kind name the font in the reason.
+func type1Route(f *font.Font, program, kind string) string {
+	if f.Subtype != "Type1" && f.Subtype != "MMType1" {
+		return fmt.Sprintf("a %s program under a /%s font", program, f.Subtype)
+	}
+	if base := f.BaseEncoding(); base != "" && base != "WinAnsiEncoding" {
+		return fmt.Sprintf("a %s font over /%s", kind, base)
+	}
+	switch strings.ToLower(f.Name()) {
+	case "symbol", "symbolmt", "zapfdingbats":
+		return fmt.Sprintf("a %s font named %s", kind, f.Name())
+	}
+	return ""
+}
+
+// parseType1 reads a FontFile program, refusing what parseCFF refuses of a simple font, and a
+// program under a composite font, which §9.7.4 gives no Type 1 route. /Length1 is where §9.9 says
+// the clear text ends and FreeType finds it for itself, by searching for eexec; where the two
+// disagree, the file and the yardstick have different ideas of where the encrypted part begins,
+// and the font is refused. An absent /Length1 leaves only FreeType's answer, and is taken.
+func (w *walker) parseType1(f *font.Font, stream objects.Dict, data []byte) (*font.Type1, string) {
+	if f.Kind == font.Composite {
+		return nil, "a FontFile program under a composite font"
+	}
+	if why := type1Route(f, "FontFile", "Type 1"); why != "" {
+		return nil, why
+	}
+	t, err := font.ParseType1(data)
+	if err != nil {
+		return nil, fmt.Sprintf("the FontFile program did not parse: %v", err)
+	}
+	if n, ok := objects.GetInt(w.s, stream, "Length1"); ok && n != int64(t.ClearTextLength()) {
+		return nil, fmt.Sprintf("/Length1 %d, where the program's clear text is %d bytes", n,
+			t.ClearTextLength())
+	}
+	return t, ""
+}
+
+// drawable reports whether the font has a program to draw with.
+func (tf *textFont) drawable() bool {
+	return tf.tt != nil || tf.cff != nil || tf.t1 != nil
+}
+
 var errNoGlyph = errors.New("the program maps it to none")
 
 // gid resolves one decoded glyph to an index in the program.
 func (tf *textFont) gid(g font.Glyph) (uint16, error) {
-	if tf.cff != nil {
-		return tf.cffGID(g)
+	if tf.cff != nil || tf.t1 != nil {
+		return tf.type1GID(g)
 	}
 	return tf.ttGID(g)
 }
 
-// cffGID selects a glyph in a CFF program the way pdfium does.
+// type1GID selects a glyph in a CFF or Type 1 program the way pdfium does.
 //
 // A composite font's CID goes through the program's charset, or is the glyph index itself when the
 // program is not CID-keyed (§9.7.4.2). A simple font's code goes by the glyph name its encoding
@@ -312,12 +351,18 @@ func (tf *textFont) gid(g font.Glyph) (uint16, error) {
 //
 // Glyph 0 is .notdef, which draws a box or nothing depending on the font, so a code that reaches
 // it is refused like one that reaches no glyph at all.
-func (tf *textFont) cffGID(g font.Glyph) (uint16, error) {
-	c := tf.cff
+func (tf *textFont) type1GID(g font.Glyph) (uint16, error) {
+	var c interface {
+		GIDForName(string) (uint16, bool)
+		GIDForCode(byte) (uint16, bool)
+	} = tf.t1
+	if tf.cff != nil {
+		c = tf.cff
+	}
 	var gid uint16
 	var ok bool
 	if tf.f.Kind == font.Composite {
-		gid, ok = c.GIDForCID(g.CID)
+		gid, ok = tf.cff.GIDForCID(g.CID) // parseType1 refuses a Type 1 program here
 	} else {
 		code := byte(g.Code) // #nosec G115 -- a simple font's code is one byte
 		name, base := tf.f.StatedGlyphName(code), tf.f.BaseEncoding()
@@ -449,7 +494,7 @@ func (w *walker) showText(m *content.Machine, str []byte) {
 	// a two-line return is a nil dereference, which is a worse answer than nothing for a caller
 	// who reaches this some other way.
 	tf := w.font
-	if tf == nil || (tf.tt == nil && tf.cff == nil) {
+	if tf == nil || !tf.drawable() {
 		return
 	}
 	ts := &m.GS.Text
@@ -482,17 +527,17 @@ func (w *walker) showText(m *content.Machine, str []byte) {
 }
 
 // maxGlyphWork bounds what a page's glyph outlines may cost, building and drawing together:
-// charstring operations for a CFF program, or visits plus contours plus points for a TrueType
-// one, to build — once per distinct glyph per textFont, the way this cache makes it — and
+// charstring operations for a CFF or Type 1 program, or visits plus contours plus points for a
+// TrueType one, to build — once per distinct glyph per textFont, the way this cache makes it — and
 // segments to draw, once per show and not deduplicated the way a build is. Every glyph's segments
-// are themselves bounded: a TrueType composite and a CFF charstring both by font's
+// are themselves bounded: a TrueType composite and a charstring both by font's
 // maxGlyphSegments (65,536 — charstring.go's appendSeg caps a charstring's the way the composite
 // check in truetype.go caps a composite's), and a simple TrueType glyph further by maxGlyphPoints
 // (10,000 points). So one show of one glyph costs at most maxGlyphSegments to draw; this is what
 // bounds a page of many glyphs, or one glyph shown many times, from adding up to the same stall.
 //
-// A CFF charstring cannot loop, but ten levels of subroutines that each call others many times
-// make one glyph's build exponential in its size, and a TrueType composite fans out the same way.
+// A charstring cannot loop, but nested subroutines that each call others many times make one
+// glyph's build exponential in its size, and a TrueType composite fans out the same way.
 // The heaviest corpus page's total, build and draw together, is 133,489 (ISO 32000-2 page 161).
 const maxGlyphWork = 4 << 20
 
@@ -512,6 +557,10 @@ func (w *walker) outline(tf *textFont, gid uint16) (font.Outline, error) {
 		var ops int
 		o.out, ops, o.err = tf.cff.Outline(gid, maxGlyphWork-w.glyphWork)
 		w.chargeGlyphWork(ops)
+	case tf.t1 != nil:
+		var ops int
+		o.out, ops, o.err = tf.t1.Outline(gid, maxGlyphWork-w.glyphWork)
+		w.chargeGlyphWork(ops)
 	default:
 		var work int
 		o.out, work, o.err = tf.tt.Outline(gid, maxGlyphWork-w.glyphWork)
@@ -527,7 +576,7 @@ func (w *walker) outline(tf *textFont, gid uint16) (font.Outline, error) {
 // refuseText records a font problem under a key that names the reason.
 //
 // Keyed by the reason rather than by the operator, so the refusal a page comes back with says
-// "the font program is FontFile (Type 1)" instead of "Tj" — which over a corpus turns the error
+// "the FontFile3 program did not parse" instead of "Tj" — which over a corpus turns the error
 // list into a census of what to implement next.
 func (w *walker) refuseText(why string) {
 	w.unsup["text: "+why] = true
