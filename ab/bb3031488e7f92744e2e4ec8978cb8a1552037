@@ -1,0 +1,121 @@
+render/native/shade_test.go
+  s_5cd1b28ed520c1::t_5af04d30ecb03d 187-188,270-271,274-275
+  s_5cd1b28ed520c1::t_f4eef73a03e7e0 155-161,209-212,214-216,224-227,237-238
+  s_5cd1b28ed520c1::t_3ff890c6436e65 117-118,194-199,206
+  s_5cd1b28ed520c1::t_66b88d986a3d28 53,77-80
+  s_5cd1b28ed520c1::t_39ceb471ab4eab 119-120
+  s_5cd1b28ed520c1::t_6d62d2baf62a8b 171,176,373-374
+  s_5cd1b28ed520c1::t_84597ba82a7657 91,93
+  s_5cd1b28ed520c1::t_649bc6e7667004 200-201
+  s_5cd1b28ed520c1::t_6c9d040d6620c3 115-116
+  s_5cd1b28ed520c1::t_ed0a9fe0ccebd1 321-326
+  s_5cd1b28ed520c1::t_b4fcb50ac9daae 130,132-135
+  s_5cd1b28ed520c1::t_136061d90e2378 348
+  s_5cd1b28ed520c1::t_0755aa164f7f74 304-320,327-331
+  s_5cd1b28ed520c1::t_dc88b9d7c76131 1-52,54-76,81-90,92,94-114,121-122,124-129,136-154,162-170,172-175,177-186,189-193,202-205,207-208,213,217-223,228-236,239-257,260-269,272-273,276-282,284-303,332-347,349-362,369,372,375-401
+  s_5cd1b28ed520c1::t_8c1b21ff352ca8 283
+  s_5cd1b28ed520c1::t_6a7df7e6e4cc1a 363,365-368,370-371
+  s_5cd1b28ed520c1::t_ec048c7d45efea 364
+  s_5cd1b28ed520c1::t_593d7061554923 258-259
+  s_5cd1b28ed520c1::t_0755c518aada14 123,131
+function/function_test.go
+  s_5cd1b28ed520c1::t_7531cbfddb7abc 1-33,38-154,156-171,173-180,182-186,188-419
+  s_5cd1b28ed520c1::t_f9f10eb0745328 420-498,500-515
+  s_5cd1b28ed520c1::t_91c5834006be01 155,172,181,187,499
+  s_5cd1b28ed520c1::t_9c06a4e31f803b 34-37
+render/native/paint.go
+  s_5cd1b28ed520c1::t_809cd9e9a88bcb 134-136,152-157
+  s_5cd1b28ed520c1::t_6d62d2baf62a8b 137-138,141
+  s_5cd1b28ed520c1::t_6f92e9983f09cf 127-128,139
+render/native/fill.go
+  s_5cd1b28ed520c1::t_950814f21a8972 198,200
+  s_5cd1b28ed520c1::t_ed3866cf00b636 343-361
+  s_5cd1b28ed520c1::t_c08aaa23527ddd 67-71,101-103,122,177-188,190-197,201-255
+  s_5cd1b28ed520c1::t_813b94a410b4ce 189
+  s_5cd1b28ed520c1::t_9d0033af6c893c 199
+  s_e42fdde53e66b8::t_14fb1226e6b176 256
+icc/icc_test.go
+  s_5cd1b28ed520c1::t_52ea3a1e87915d 302-320,334-343
+  s_5cd1b28ed520c1::t_649bc6e7667004 321-333
+icc/icc.go
+  s_5cd1b28ed520c1::t_6aa0b044da04ef 231-240,243-246
+  s_5cd1b28ed520c1::t_52ea3a1e87915d 241-242
+render/native/native_test.go
+  s_5cd1b28ed520c1::t_526ccbc32c914e 389,408-409
+  s_5cd1b28ed520c1::t_e62aba0b4946e1 503-508,515-527,538-542,545,548-553
+  s_5cd1b28ed520c1::t_476876504c6c5c 528-537
+  s_5cd1b28ed520c1::t_a4e1578cef7dde 543-544
+  s_5cd1b28ed520c1::t_260dbfff3427de 509-514,546-547
+render/native/smask.go
+  s_5cd1b28ed520c1::t_809cd9e9a88bcb 217-231
+  s_5cd1b28ed520c1::t_9fe4a357c64a5c 1-143,149-216,232
+  s_5cd1b28ed520c1::t_e199d251761404 144-148
+render/native/shade.go
+  s_5cd1b28ed520c1::t_4f01d91f5d783a 153-155
+  s_5cd1b28ed520c1::t_9240ff25d86990 304-307,313
+  s_5cd1b28ed520c1::t_5af04d30ecb03d 103-104,106-107
+  s_5cd1b28ed520c1::t_39ceb471ab4eab 298-301,331-332
+  s_5cd1b28ed520c1::t_593d7061554923 75-80
+  s_5cd1b28ed520c1::t_1a55b474272897 1-74,81-102,105,108-152,156-230,232-245,249-250,268-272,275-297,302-303,310-312,314-315,317-322,324-329,333-344,346-348
+  s_5cd1b28ed520c1::t_ed3866cf00b636 231,246-247,251-267,273-274,308-309,316,323,330
+  s_5cd1b28ed520c1::t_809cd9e9a88bcb 345
+  s_5cd1b28ed520c1::t_6f92e9983f09cf 248
+render/native/xobject.go
+  s_5cd1b28ed520c1::t_6f92e9983f09cf 87-99
+render/native/text.go
+  s_5cd1b28ed520c1::t_6f92e9983f09cf 628
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_8f8382b868a111 10-25
+render/native/gs_test.go
+  s_5cd1b28ed520c1::t_f4eef73a03e7e0 86
+render/native/corpus_test.go
+  s_5cd1b28ed520c1::t_08d4bba002f70d 171-176
+  s_5cd1b28ed520c1::t_291dee4ff02923 69,129-131,134
+function/function.go
+  s_5cd1b28ed520c1::t_42cfa61f81d6ea 212-217,219
+  s_5cd1b28ed520c1::t_fd913ac698f6e7 262-265
+  s_5cd1b28ed520c1::t_475486f909f59a 1-211,218,220-261,266-267,270-361,365-366,368-471
+  s_5cd1b28ed520c1::t_d75e2c70ad6105 268-269
+  s_5cd1b28ed520c1::t_ac084ff36544f0 362-364,367
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_ed925bfa4a1104 1080-1081
+  s_5cd1b28ed520c1::t_8e7018cc8f7f08 1066-1079,1083-1087
+  s_5cd1b28ed520c1::t_a4f36dc801b1a1 1082
+render/native/native.go
+  s_5cd1b28ed520c1::t_3b84111c6fd4b0 165,337-349,369,397,507,532-536,923,950,965
+  s_5cd1b28ed520c1::t_fd2e5f2b37754e 733-734,769
+  s_5cd1b28ed520c1::t_6f92e9983f09cf 1045,1053
+  s_5cd1b28ed520c1::t_29a654807d002f 333-336
+  s_5cd1b28ed520c1::t_c08aaa23527ddd 938,1064-1068
+  s_5cd1b28ed520c1::t_7d0ca3adfd3e22 494-497,537,935-937,1019-1020
+docs/adr/0025-draw-axial-shadings-and-luminosity-soft-masks-as-pdfium-does.md
+  s_5cd1b28ed520c1::t_e940f6845151b4 1-69,78-129,131,133-158,160-163,165-169,171-172,177-217,257-260,262-266
+  s_5cd1b28ed520c1::t_3ae4096c958962 218-242,244-253,256
+  s_5cd1b28ed520c1::t_4ccfdd837d8bf5 70-77,130,132,159,164,170,173-176
+  s_5cd1b28ed520c1::t_0c908c9ffd2d15 243,254-255
+  s_5cd1b28ed520c1::t_6933e7070e69fa 261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "abbb3031488e7f92744e2e4ec8978cb8a1552037",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_e42fdde53e66b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2d4b32-8f8f-4b11-9aca-781204735566",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
