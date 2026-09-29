@@ -162,6 +162,7 @@ func (r *rasterizer) open(n int, o render.Options) (w *walker, data []byte, dpi 
 	w = &walker{
 		s:         r.s,
 		res:       res,
+		pageRes:   res,
 		w:         pw,
 		h:         ph,
 		base:      pageMatrix(box, sx, sy, rotate),
@@ -329,6 +330,23 @@ type walker struct {
 	// dashes counts the dashes the page's strokes can draw, against maxDashes (checkDash).
 	dashes float64
 
+	// areas counts the passes over the page's area its sh operators and soft masks make, against
+	// maxPageAreas (chargeArea).
+	areas int
+
+	// soft is the soft mask in force (§11.6.5.2), each pixel's share of every mark's alpha, or nil
+	// for none; surveyedMask in the survey. q saves it and Q restores it, as §11.6.5.2 makes it
+	// graphics state.
+	soft *mask
+
+	// inGroup is true while the survey walks a soft mask's group, where what pdfium draws
+	// differently from a page is refused.
+	inGroup bool
+
+	// pageRes is the page's resource dictionary, which a soft mask's group without /Resources
+	// draws from wherever its gs is: pdfium's LoadSMask gives the group the page's.
+	pageRes objects.Dict
+
 	unsup map[string]bool
 }
 
@@ -348,6 +366,7 @@ type saved struct {
 	font                   *textFont
 	alpha, strokeAlpha     float64
 	pen                    pen
+	soft                   *mask
 }
 
 // canvasFor returns the canvas, creating it on first use.
@@ -375,7 +394,7 @@ func (w *walker) run(data []byte) {
 	}
 	// The survey walked the same q/Q and Tf sequence and left its state behind; the paint pass
 	// starts from the page's initial state, not from wherever the survey ended.
-	w.fill, w.alpha, w.font, w.stack = black, 1, nil, nil
+	w.fill, w.alpha, w.font, w.stack, w.soft = black, 1, nil, nil, nil
 	w.stroke, w.strokeAlpha, w.pen = black, 1, defaultPen
 	w.path = path{}
 	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
@@ -472,6 +491,10 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 			if len(op.Operands) >= 1 {
 				w.surveyXObject(m, op.NameAt(0), depth)
 			}
+		case "sh":
+			if len(op.Operands) >= 1 {
+				w.checkShading(m, objects.Name(op.NameAt(0)))
+			}
 		case "gs":
 			// Resolved and checked here rather than in the paint pass, for the reason the font
 			// reasons are: the paint pass never runs when anything else blocked the page, so a
@@ -481,6 +504,7 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 				if g, ok := w.extGState(name); ok {
 					w.checkExtGState(g)
 					w.applyExtGState(m, g)
+					w.surveySoftMask(m, g, depth)
 				} else {
 					w.unsup[fmt.Sprintf("gs: /%s is not in the page's /ExtGState resources", name)] = true
 				}
@@ -504,6 +528,12 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 		case "B", "B*", "b", "b*":
 			if op.Name == "b" || op.Name == "b*" {
 				w.path.close()
+			}
+			if w.soft != nil {
+				// pdfium draws the fill and the stroke into one layer and masks the layer, so
+				// where they overlap the stroke covers the fill before the mask applies; masking
+				// each on its own shows the fill through the stroke.
+				w.unsup[op.Name+": a path filled and stroked under a soft mask, which pdfium masks as one object"] = true
 			}
 			w.checkFill()
 			w.checkStroke(m)
@@ -700,8 +730,8 @@ func (w *walker) extGState(name objects.Name) (objects.Dict, bool) {
 //   - /TK is text knockout, which changes how glyphs composite *against each other* inside a
 //     transparency group. With alpha 1 and the normal blend mode there is nothing to knock out,
 //     and a non-normal blend mode is refused below, so the case where it matters cannot arrive.
-//   - /AIS makes alpha come from a soft mask's shape instead of its alpha, and a soft mask is
-//     refused below, so it likewise cannot matter here.
+//   - /AIS makes alpha come from a soft mask's shape instead of its alpha. Only a luminosity
+//     mask is drawn, which has no shape to take it from, and pdfium does not read the key.
 //   - /Type is /ExtGState.
 func (w *walker) checkExtGState(g objects.Dict) {
 	refuse := func(f string, a ...any) { w.unsup["gs: "+fmt.Sprintf(f, a...)] = true }
@@ -736,12 +766,7 @@ func (w *walker) checkExtGState(g objects.Dict) {
 			}
 
 		case "SMask":
-			// /None is the absence of a soft mask. A dictionary is a luminosity or alpha group
-			// that has to be rendered and then used as a per-pixel mask — a page of its own —
-			// and compositing one wrongly produces an image that looks plausible.
-			if nm, ok := objects.GetName(w.s, g, "SMask"); !ok || nm != "None" {
-				refuse("/SMask is a soft mask group")
-			}
+			// Read and refused by reason in surveySoftMask (smask.go), which surveys the group.
 
 		case "Font":
 			// An ExtGState can set the font and size, which every show operator after it then
@@ -895,6 +920,7 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 		if len(op.Operands) >= 1 {
 			if g, ok := w.extGState(objects.Name(op.NameAt(0))); ok {
 				w.applyExtGState(m, g)
+				w.paintSoftMask(m, g, depth)
 			}
 		}
 
@@ -905,6 +931,10 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 	case "Do":
 		if len(op.Operands) >= 1 {
 			w.drawXObject(m, op.NameAt(0), depth)
+		}
+	case "sh":
+		if len(op.Operands) >= 1 {
+			w.drawShading(m, objects.Name(op.NameAt(0)))
 		}
 	}
 }
@@ -917,7 +947,7 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 // since the survey creates no canvas.
 func (w *walker) save() {
 	s := saved{fill: w.fill, stroke: w.stroke, fillSpace: w.fillSpace, strokeSpace: w.strokeSpace,
-		font: w.font, alpha: w.alpha, strokeAlpha: w.strokeAlpha, pen: w.pen}
+		font: w.font, alpha: w.alpha, strokeAlpha: w.strokeAlpha, pen: w.pen, soft: w.soft}
 	if w.canvas != nil && w.canvas.clipped {
 		s.clip = w.canvas.clip.clone()
 	}
@@ -932,7 +962,7 @@ func (w *walker) restore() {
 	}
 	s := w.stack[n-1]
 	w.stack = w.stack[:n-1]
-	w.fill, w.font, w.alpha = s.fill, s.font, s.alpha
+	w.fill, w.font, w.alpha, w.soft = s.fill, s.font, s.alpha, s.soft
 	w.stroke, w.strokeAlpha, w.pen = s.stroke, s.strokeAlpha, s.pen
 	w.fillSpace, w.strokeSpace = s.fillSpace, s.strokeSpace
 	// Only when something actually has to change. A q…Q pair that set no clip is the
@@ -986,6 +1016,8 @@ func marks(op string) bool {
 		// XObjects, for the same reason again: Do marks what the XObject it names marks, so the
 		// survey resolves it and refuses by what it found — see surveyXObject.
 		"Do",
+		// a shading, which checkShading decides by reason
+		"sh",
 		// text state, which positions nothing until a show operator
 		"BT", "ET", "Tf", "Tc", "Tw", "Tz", "TL", "Ts", "Tr", "Td", "TD", "Tm", "T*",
 		// marked content, compatibility, and stroke colour
@@ -1010,7 +1042,7 @@ func (w *walker) paintPath(evenOdd bool) {
 
 func (w *walker) fillPath(evenOdd bool) {
 	if !w.path.empty() {
-		w.canvasFor().fill(&w.path, w.fill, evenOdd, w.alpha)
+		w.canvasFor().fill(&w.path, w.fill, evenOdd, w.alpha, w.soft)
 	}
 }
 
@@ -1018,7 +1050,7 @@ func (w *walker) fillPath(evenOdd bool) {
 // §8.5.3.1 makes the one that shapes the pen, whatever CTM the path's points were given under.
 func (w *walker) strokePath(m *content.Machine) {
 	out := stroke(&w.path, m.GS.LineWidth, w.base.mul(m.GS.CTM).m, w.pen)
-	w.canvasFor().fill(out, w.stroke, false, w.strokeAlpha)
+	w.canvasFor().fill(out, w.stroke, false, w.strokeAlpha, w.soft)
 }
 
 // endPath clears the path and installs a pending clip.
@@ -1029,7 +1061,11 @@ func (w *walker) strokePath(m *content.Machine) {
 func (w *walker) endPath() {
 	if w.pending {
 		c := w.canvasFor()
-		c.clip.intersect(w.path.rasterize(c.clip.w, c.clip.h, w.pendingEO))
+		if x0, y0, x1, y1, ok := w.path.pixelRect(c.clip.w, c.clip.h); ok {
+			c.clip.intersect(rectMask(c.clip.w, c.clip.h, x0, y0, x1, y1))
+		} else {
+			c.clip.intersect(w.path.rasterize(c.clip.w, c.clip.h, w.pendingEO))
+		}
 		c.clipped = true
 	}
 	w.pending = false

@@ -1063,12 +1063,28 @@ pages the dash blocked draw, and each is closer to pdfium dashed than solid. How
   refused by reason. The survey charges every dashed stroke against 2^20 dashes a page, on the
   path paint will stroke.
 
-**The remaining worklist** is 1 page:
+**Shadings and soft masks are done — see ADR 0025, and `render/native` now draws all 1,251 of
+1,251 pages.** ISO TS 32005 page 1 draws, its logo box within a mean of 0.268 of pdfium at
+200 dpi. How it works:
 
-- a soft-mask group and a shading: ISO TS 32005 page 1
+- `sh` draws an axial shading as pdfium's DrawAxialShading does: 256 steps sampled in float32,
+  each device pixel's corner projected onto the axis and truncated to a step, and the composite in
+  integers. A new `function` package reads types 2 and 3 as pdfium does, and an ICC shading
+  converts through `icc.Profile.Translate`, quantized to bytes as pdfium's transform is. A CMYK or
+  non-axial shading is refused by reason.
+- A luminosity soft mask is drawn as pdfium's LoadSMask draws it: the group from the initial
+  state, over its backdrop, then (30r + 59g + 11b)/100 per pixel, multiplied into each mark's
+  alpha before the clip. An alpha mask, a transfer function, and an image, form or fill-and-stroke
+  under a mask are refused by reason.
+- A clip that is a rectangle on the device's axes admits whole pixels, as pdfium's SetClip_PathFill
+  does. 1,103 corpus pages have one: 131 moved closer, 456 further by at most 0.015, and 516 did
+  not move, and the corpus mean went from 5.06554 to 5.06454.
 
-Six accuracy items affect no page count:
+**The worklist is empty.** Every corpus page draws natively. Seven accuracy items affect no page
+count:
 
+- pdfium's fill of an axis-aligned rectangle in whole pixels, which may be what moved the 456
+  pages further under the rectangle-clip rule
 - pdfium's own CMYK-to-sRGB table
 - an image `/ColorSpace` that names a resource, which no corpus image uses
 - pdfium's grid-fitting of a glyph's origin to the device pixel

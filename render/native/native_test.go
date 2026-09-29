@@ -386,7 +386,7 @@ func (b *boxStore) Resolve(o objects.Object) (objects.Object, error) {
 // stream is cheap, rasterizing into an image nobody will receive is not.
 func TestRefusalListsEveryMissingFeature(t *testing.T) {
 	stream := "0 g 20 20 100 100 re f BT /F1 12 Tf 30 30 Td (text) Tj ET " +
-		"/GS0 gs /Sh0 sh"
+		"/GS0 gs 0 0 d0"
 	path := onePagePDF(t, stream, 200, 200)
 	s, err := pcstore.Open(path)
 	if err != nil {
@@ -405,8 +405,8 @@ func TestRefusalListsEveryMissingFeature(t *testing.T) {
 	for _, op := range u.Ops {
 		got[op] = true
 	}
-	if !got["sh"] {
-		t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, "sh")
+	if !got["d0"] {
+		t.Errorf("Ops = %v, missing %q — the walk stopped at the first blocker", u.Ops, "d0")
 	}
 	// The other two are keyed by reason rather than by operator, so they are matched by prefix:
 	// one operator name stands for one missing feature, where one *reason* is the thing a caller
@@ -497,6 +497,57 @@ func TestClipIsRestoredByQ(t *testing.T) {
 				t.Errorf("mean %.3f, %d pixels over 32 — the clip stack disagrees with pdfium", mean, over)
 			}
 		})
+	}
+}
+
+// TestARectangleClipAdmitsWholePixels pins pdfium's rule for a clip that is a rectangle on the
+// device's axes: it admits every pixel the rectangle touches, whole, where coverage would admit
+// the edge pixels in part. At 200 dpi a sh under "10 10 180 80 re W n" differed from pdfium by
+// up to 245 levels along the clip's edges before the rule.
+//
+// The shapes are the ones CFX_Path::GetRect calls a rectangle — re, m l l l h, four points left
+// open, five returning to the start, lines that go nowhere, a scaling CTM, no width, past the
+// page's edge, and a line that goes nowhere kept because the five points are reached — and the
+// ones it does not, each one rule of GetRect's: turned, a curve, an edge askew, five points not
+// closed, the second and fourth points equal, a closing line kept by its close flag, and no edges.
+// Those are rasterized, and agree only to their antialiasing: at most 5 levels, where whole pixels
+// would be some 180 off along each fractional edge.
+func TestARectangleClipAdmitsWholePixels(t *testing.T) {
+	const fill = " W n 0 g 0 0 200 100 re f"
+	for _, c := range []struct {
+		name, clip string
+		rect       bool
+	}{
+		{"re", "10.3 10.3 80.4 60.7 re", true},
+		{"closed with h", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 10.3 71 l h", true},
+		{"four points", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 10.3 71 l", true},
+		{"back to the start", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 10.3 71 l 10.3 10.3 l", true},
+		{"lines that go nowhere", "10.3 10.3 m 10.3 10.3 l 90.7 10.3 l 90.7 10.3 l 90.7 71 l 10.3 71 l h", true},
+		{"scaled", "1.37 0 0 0.73 3.3 2.1 cm 10.3 10.3 80.4 60.7 re", true},
+		{"turned", "0.8 0.6 -0.6 0.8 60 0 cm 10.3 10.3 50.4 30.7 re", false},
+		{"no width", "10.3 10.3 0 60.7 re", true},
+		{"past the left edge", "-10.3 10.3 80.4 60.7 re", true},
+		{"a kept line that goes nowhere", "10.3 10.3 m 10.3 10.3 l 50.3 10.3 l 50.3 10.3 l 90.7 10.3 l h", true},
+		{"a curve that goes nowhere", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 10.3 71 l 10.3 10.3 l 10.3 10.3 10.3 10.3 10.3 10.3 c", false},
+		{"first edge askew", "10.3 10.3 m 90.7 20.6 l 90.7 71 l 10.3 71 l h", false},
+		{"last edge askew", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 50.2 71 l", false},
+		{"five points, open", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 10.3 71 l 10.3 40.6 l", false},
+		{"second and fourth points equal", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 90.7 10.3 l h", false},
+		{"closed on a line that goes nowhere", "10.3 10.3 m 90.7 10.3 l 90.7 71 l 10.3 71 l 10.3 10.3 l 10.3 10.3 l h", false},
+		{"no edges", "10.3 10.3 m", false},
+	} {
+		for _, dpi := range []float64{72, 144, 200} {
+			t.Run(fmt.Sprintf("%s/%g", c.name, dpi), func(t *testing.T) {
+				path := shadePDF(t, 200, 100, "", "q "+c.clip+fill+" Q")
+				mean, worst := compareRGB(t, path, dpi)
+				switch {
+				case c.rect && worst > 0:
+					t.Errorf("mean %.4f, worst %.0f against pdfium; want every pixel equal", mean, worst)
+				case mean > 0.02 || worst > 5:
+					t.Errorf("mean %.4f, worst %.0f against pdfium; want at most 0.02 and 5", mean, worst)
+				}
+			})
+		}
 	}
 }
 

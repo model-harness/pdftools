@@ -66,7 +66,7 @@ func TestCorpusCoverage(t *testing.T) {
 	// 20 dpi, which is not a resolution anyone would render at and is the right one here: whether
 	// a page is refused is decided by the survey, which never looks at a pixel, so the *count* this
 	// test asserts is resolution-independent while the painting it pays for is not. At the default
-	// 200 dpi the 1,250 pages that draw cost a Letter page's 3.7 million pixels each and the run
+	// 200 dpi the 1,251 pages that draw cost a Letter page's 3.7 million pixels each and the run
 	// exceeded go test's ten-minute timeout; at 20 dpi it is a hundredth of that and measures
 	// exactly the same set.
 	o := render.DefaultOptions
@@ -126,11 +126,12 @@ func TestCorpusCoverage(t *testing.T) {
 		t.Logf("  blocked by %-34s %4d pages", e.k, e.v)
 	}
 
-	// Measured at 1,250 with Liberation supplying Sans and Serif, XObjects drawn, strokes and their
-	// dashes drawn, ICCBased colour drawn through its profile, and CFF and Type 1 programs drawn. Stated tight,
+	// Measured at 1,251 — every page — with Liberation supplying Sans and Serif, XObjects drawn,
+	// strokes and their dashes drawn, ICCBased colour drawn through its profile, CFF and Type 1
+	// programs drawn, and axial shadings and luminosity soft masks drawn. Stated tight,
 	// and a *rise* is not a failure — only a fall is, because the only way this number goes down
 	// is a feature regressing or a refusal widening.
-	const floor = 1250
+	const floor = 1251
 	if drawn < floor {
 		t.Errorf("drew %d of %d pages, want at least %d — a refusal widened or a feature regressed",
 			drawn, total, floor)
@@ -167,8 +168,12 @@ func feature(op string) string {
 			return op[:i]
 		}
 		return op
-	case op == "sh":
-		return "sh (shadings)"
+	case strings.HasPrefix(op, "sh: /"):
+		// Every sh reason that names its shading starts with it, and the name is the page's.
+		if i := strings.Index(op[len("sh: /"):], " "); i >= 0 {
+			return "sh:" + op[len("sh: /")+i:]
+		}
+		return op
 	}
 	return op
 }

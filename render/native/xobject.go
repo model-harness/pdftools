@@ -84,6 +84,19 @@ func (w *walker) surveyXObject(m *content.Machine, name objects.Name, depth int)
 		w.unsup["Do: "+why] = true
 		return
 	}
+	switch {
+	case x.subtype == "Image" && w.inGroup:
+		// pdfium loads an image inside a luminosity group with its mask read as a mask of its
+		// own (SetLoadMask), which this backend does not.
+		w.unsup[fmt.Sprintf("Do: an image inside a soft mask's group, /%s", name)] = true
+		return
+	case w.soft != nil:
+		// pdfium masks an image as one object, its own /SMask replacing the graphics state's,
+		// and a form as one group; drawing either mark by mark masks each on its own.
+		w.unsup[fmt.Sprintf("Do: %s drawn under a soft mask, /%s",
+			map[objects.Name]string{"Image": "an image", "Form": "a form"}[x.subtype], name)] = true
+		return
+	}
 	if x.subtype == "Image" {
 		if _, err := w.imagePixels(x, true); err != nil {
 			w.unsup[fmt.Sprintf("Do: an image that cannot be drawn, /%s: %v", name, err)] = true

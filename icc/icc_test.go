@@ -299,6 +299,48 @@ func TestSRGBProfileReturnsItsInput(t *testing.T) {
 	}
 }
 
+// TestTranslateQuantizesAsPdfium pins Translate's two rules, IccTransform::Translate's: each
+// component is truncated to a byte before it is converted, and an sRGB profile's colour is left
+// unquantized, as CPDF_ICCBasedCS::GetRGB leaves it.
+func TestTranslateQuantizesAsPdfium(t *testing.T) {
+	gray, err := Parse(iccbuild.Gray(2.2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0.9985 and 0.9965 are 254.6 and 254.1 255ths, both byte 254 truncated; rounded, the first
+	// would be 255.
+	px := &image.NRGBA{Pix: []uint8{254, 254, 254, 255}, Stride: 4, Rect: image.Rect(0, 0, 1, 1)}
+	gray.Image(px)
+	want := float64(px.Pix[0]) / 255
+	for _, c := range []float64{0.9985, 0.9965} {
+		if r, g, b := gray.Translate([]float64{c}); r != want || g != want || b != want {
+			t.Errorf("Translate(%v) = %v,%v,%v, want %v, byte 254's", c, r, g, b, want)
+		}
+	}
+
+	// An RGB profile reads each of the three components: 0.2, 0.6 and 0.9 are bytes 51, 153, 229.
+	adobe, err := Parse(rgbProfile([3]float64{0.6097, 0.3111, 0.0195}, [3]float64{0.2053, 0.6257, 0.0609},
+		[3]float64{0.1492, 0.0632, 0.7446}, iccbuild.Gamma(2.2)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	px = &image.NRGBA{Pix: []uint8{51, 153, 229, 255}, Stride: 4, Rect: image.Rect(0, 0, 1, 1)}
+	adobe.Image(px)
+	wr, wg, wb := float64(px.Pix[0])/255, float64(px.Pix[1])/255, float64(px.Pix[2])/255
+	if r, g, b := adobe.Translate([]float64{0.2, 0.6, 0.9}); r != wr || g != wg || b != wb {
+		t.Errorf("Translate(0.2, 0.6, 0.9) = %v,%v,%v, want %v,%v,%v, bytes 51, 153, 229's", r, g, b, wr, wg, wb)
+	}
+
+	srgb, err := Parse(rgbProfile(srgbR, srgbG, srgbB, srgbTRC()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := []float64{0.5, 0.25, 0.7}
+	if r, g, b := srgb.Translate(in); r != 0.5 || g != 0.25 || b != 0.7 {
+		t.Errorf("sRGB Translate(%v) = %v,%v,%v, want its input", in, r, g, b)
+	}
+}
+
 // TestAdobeRGB checks a real, non-sRGB working space: pure green is outside sRGB's gamut, so the
 // matrix step must send at least one channel negative before it is clamped to exactly 0, and a mid
 // gray must land close to the same mid gray Gray(2.2) produces, since both are the same tone curve

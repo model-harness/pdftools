@@ -625,7 +625,7 @@ func (w *walker) fillGlyph(out font.Outline, trm geom.Matrix) {
 	if p.empty() {
 		return
 	}
-	w.canvasFor().fill(&p, w.fill, false, w.alpha)
+	w.canvasFor().fill(&p, w.fill, false, w.alpha, w.soft)
 }
 
 // showArray handles TJ, whose array mixes strings to show with kerning adjustments.

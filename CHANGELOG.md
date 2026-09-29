@@ -7,6 +7,22 @@ All notable changes to this project are documented here, following
 
 ### Added — 2026-09-29
 
+- **`render/native` draws axial shadings and luminosity soft masks: all 1,251 of the corpus's
+  1,251 pages.** ADR 0025. ISO TS 32005 page 1, the last page refused, now draws.
+  - **`sh`** draws an axial shading as pdfium does: 256 steps in float32, each pixel's corner
+    projected onto the axis and truncated to a step, and an integer composite. A projection past
+    int32 saturates, as the WebAssembly build does.
+  - **A luminosity `/SMask`** draws its group from the initial state over its backdrop, and
+    multiplies each pixel's (30r + 59g + 11b)/100 into every fill, stroke, glyph and shading
+    before the clip. `q` and `Q` stack it, and `/None` ends it.
+  - **`function`**, a new package, reads type 2 and type 3 functions as pdfium does, in float32,
+    bounded at 8 levels and 256 functions.
+  - **`icc.Profile.Translate`** converts one colour quantized to bytes, as pdfium's transform does.
+  - **A rectangle clip on the device's axes admits whole pixels**, as pdfium's clip does.
+  - **Refused by reason:** shading types other than 2, a CMYK shading, a shading `/BBox`, an
+    alpha mask, a transfer function, a backdrop outside DeviceGray and DeviceRGB, a mask inside a
+    mask's group, an image in a group, an image, form or fill-and-stroke under a mask, and more
+    than 64 page-area passes.
 - **`render/native` draws dashes: 1,250 of the corpus's 1,251 pages.** ADR 0024. `d` and `/D` are
   dashed as §8.4.3.6 describes, in pen space, with pdfium's rule that an element of at most
   0.000001 is 0.1. WTPDF page 3 and LightOnOCR page 12 now draw, and each is closer to pdfium

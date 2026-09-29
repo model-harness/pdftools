@@ -228,6 +228,22 @@ func (p *Profile) SRGB(c []float64) (r, g, b float64) {
 	return in(0), in(1), in(2)
 }
 
+// Translate converts one colour as pdfium's IccTransform::Translate does, where SRGB converts it
+// exactly: each component truncated to a byte, then Image's conversion, so each channel is a whole
+// 255th. An sRGB profile returns the colour clamped and not quantized, as CPDF_ICCBasedCS::GetRGB
+// does before it would reach the transform.
+func (p *Profile) Translate(c []float64) (r, g, b float64) {
+	in := component(c)
+	if p.srgb {
+		return p.SRGB(c)
+	}
+	byteOf := func(i int) uint8 { return uint8(float32(in(i)) * 255) }
+	// A gray profile's Image reads the first channel only, and in reads a component c lacks as 0.
+	px := &image.NRGBA{Pix: []uint8{byteOf(0), byteOf(1), byteOf(2), 255}, Stride: 4, Rect: image.Rect(0, 0, 1, 1)}
+	p.Image(px)
+	return float64(px.Pix[0]) / 255, float64(px.Pix[1]) / 255, float64(px.Pix[2]) / 255
+}
+
 // component reads c's i'th value clamped to 0..1, and a missing one as 0.
 func component(c []float64) func(i int) float64 {
 	return func(i int) float64 {

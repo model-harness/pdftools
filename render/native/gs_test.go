@@ -83,7 +83,7 @@ func TestExtGStateAcceptsWhatCannotMarkAndRefusesWhatCan(t *testing.T) {
 		// Refused, each naming what it is.
 		{"a real blend mode", "<</BM/Multiply>>", "/BM is /Multiply"},
 		{"a blend mode array", "<</BM[/Darken/Normal]>>", "/BM is /Darken"},
-		{"a soft mask group", "<</SMask<</S/Luminosity/G 5 0 R>>>>", "soft mask"},
+		{"an alpha soft mask", "<</SMask<</S/Alpha/G 5 0 R>>>>", "/SMask /S is /Alpha"},
 		{"a font from the graphics state", "<</Font[5 0 R 12]>>", "/Font sets the text font"},
 		{"an alpha outside 0..1", "<</ca 1.5>>", "outside 0..1"},
 		{"an alpha that is not a number", "<</ca/Half>>", "not a number"},

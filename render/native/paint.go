@@ -124,16 +124,21 @@ func newCanvas(w, h int) *canvas {
 // clip stays a full mask because it has to outlive the operator that set it.
 //
 // Source-over with the coverage as alpha, which is §11.3.8's normal blend mode for an opaque
-// colour. Nothing here implements the rest of §11: a page that sets a blend mode or a soft
-// mask is refused, because compositing one wrongly produces an image that looks plausible and
-// is not the page.
+// colour. Nothing here implements the rest of §11: a page that sets a blend mode is refused,
+// because compositing one wrongly produces an image that looks plausible and is not the page.
 //
 // alpha is the constant fill alpha an ExtGState's /ca sets (§11.6.4.4), multiplied into the
 // coverage. Correct only over an opaque backdrop and under the normal blend mode, which is
 // what this canvas has — a white page and no blend mode, since any other is refused. Passed
 // rather than folded into col, because alpha is graphics state and a later rg must not clear it.
-func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64) {
+//
+// soft, when not nil, is a soft mask's per-pixel alpha. pdfium draws a masked mark into a layer of
+// its own and composites the layer in integers, so a masked fill is composited as merge composites
+// it: the colour in whole 255ths, the alpha truncated to them as pdfium's GetFillArgb truncates it
+// — a shading's is rounded — and the coverage the layer's alpha is drawn at.
+func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64, soft *mask) {
 	pr, pg, pb := col.r*255, col.g*255, col.b*255
+	src, a8 := [3]uint8{channel(col.r), channel(col.g), channel(col.b)}, int(float32(alpha)*255)
 	w := c.clip.w
 	p.scan(w, c.clip.h, evenOdd, func(py int, row []float64) {
 		base := py * w
@@ -143,6 +148,12 @@ func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64) {
 			}
 			if v > 1 {
 				v = 1
+			}
+			if soft != nil {
+				if cl := c.clip.a[base+x]; cl != 0 {
+					c.merge(base+x, src, a8*int(math.Round(v*255))/255, soft, cl)
+				}
+				continue
 			}
 			al := v * alpha
 			if cl := c.clip.a[base+x]; cl != 255 {

@@ -64,6 +64,11 @@ type path struct {
 	start point // where the current subpath began, for h and for the implicit close
 	open  bool  // a subpath is being built
 	from  int   // the current subpath's first edge
+
+	// figures counts the subpaths with an edge, and curved says a curve was flattened into the
+	// edges, which is what pixelRect needs to see the path as pdfium's points.
+	figures int
+	curved  bool
 }
 
 // subpath is edges[from:to] of its path. A subpath the fill closed implicitly ends before the
@@ -93,6 +98,9 @@ func (p *path) lineTo(to point) {
 		p.moveTo(p.cur)
 	}
 	if p.open {
+		if len(p.edges) == p.from {
+			p.figures++
+		}
 		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, to.x, to.y})
 	}
 	p.cur = to
@@ -111,6 +119,7 @@ func (p *path) curveTo(c1, c2, to point) {
 	if !p.open {
 		p.moveTo(p.cur)
 	}
+	p.curved = true
 	from := p.cur
 	span := hypot(from, c1) + hypot(c1, c2) + hypot(c2, to)
 	n := int(math.Min(256, math.Max(4, span/0.2)))
@@ -164,6 +173,86 @@ func (p *path) rect(x, y, w, h float64, m matrix) {
 }
 
 func (p *path) empty() bool { return len(p.edges) == 0 }
+
+// pixelRect is the clip pdfium makes of p when p is a rectangle on the device's axes: every pixel
+// the rectangle touches, whole, and none it does not. CFX_AggDeviceDriver::SetClip_PathFill takes
+// such a path's outer bounds instead of rasterizing it, so a clip edge at 27.8 device pixels admits
+// all of row 27 where coverage would admit a fifth of it. ok is false for any other path, which
+// pdfium rasterizes as it would fill it.
+//
+// Whether p is a rectangle is CFX_Path::GetRect's question, asked of the points pdfium's parser
+// would have recorded: a move, then the end of each line, in float32. re makes five, and so does
+// m l l l h, which closes with a line back to the start; more than five are first rid of the lines
+// that go nowhere, as GetNormalizedPoints does. Only one subpath, and no curve, can be four or five
+// points.
+func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
+	if p.curved || p.figures != 1 {
+		return 0, 0, 0, 0, false
+	}
+	type pt struct{ x, y float32 }
+	pts := []pt{{float32(p.edges[0].x0), float32(p.edges[0].y0)}}
+	for _, e := range p.edges {
+		pts = append(pts, pt{float32(e.x1), float32(e.y1)})
+	}
+	if n := len(pts); n > 5 {
+		// GetNormalizedPoints refuses a path whose last point is not its first, which the five-point
+		// test below does too: what survives is five points, the fifth the path's last point.
+		//
+		// The closing line of a closed subpath carries pdfium's close flag, which keeps it.
+		closed := !p.open
+		norm := pts[:1:1]
+		for i := 1; i < n; i++ {
+			if len(norm)+n-i == 5 {
+				norm = append(norm, pts[i:]...)
+				break
+			}
+			if pts[i] == norm[len(norm)-1] && !(closed && i == n-1) {
+				continue
+			}
+			if norm = append(norm, pts[i]); len(norm) > 5 {
+				return 0, 0, 0, 0, false
+			}
+		}
+		pts = norm
+	}
+	n := len(pts)
+	if n != 4 && n != 5 || n == 5 && pts[0] != pts[4] || pts[0] == pts[2] || pts[1] == pts[3] {
+		return 0, 0, 0, 0, false
+	}
+	askew := func(a, b pt) bool { return a.x != b.x && a.y != b.y }
+	for i := 1; i < n; i++ {
+		if askew(pts[i], pts[i-1]) {
+			return 0, 0, 0, 0, false
+		}
+	}
+	if askew(pts[0], pts[3]) {
+		return 0, 0, 0, 0, false
+	}
+	l, r := min(pts[0].x, pts[2].x), max(pts[0].x, pts[2].x)
+	t, b := min(pts[0].y, pts[2].y), max(pts[0].y, pts[2].y)
+	l, t, r, b = max(l, 0), max(t, 0), min(r, float32(w)), min(b, float32(h))
+	if l > r || t > b {
+		return 0, 0, 0, 0, true
+	}
+	return int(math.Floor(float64(l))), int(math.Floor(float64(t))),
+		int(math.Ceil(float64(r))), int(math.Ceil(float64(b))), true
+}
+
+// rectMask admits the pixels [x0,x1)×[y0,y1) wholly and nothing else.
+func rectMask(w, h, x0, y0, x1, y1 int) *mask {
+	m := newMask(w, h)
+	if x0 >= x1 || y0 >= y1 {
+		return m
+	}
+	for y := y0; y < y1; y++ {
+		row := m.a[y*w : (y+1)*w]
+		for x := x0; x < x1; x++ {
+			row[x] = 255
+		}
+	}
+	m.y0, m.y1 = y0, y1
+	return m
+}
 
 // subpaths is every subpath of p, the one still being built among them, which a stroke draws open.
 func (p *path) subpaths() []subpath {
@@ -249,6 +338,25 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// box is the first column and row the mask admits anything in, which is where pdfium's clip box
+// starts; an empty mask's is its origin.
+func (m *mask) box() (left, top int) {
+	left = m.w
+	for y := m.y0; y < m.y1; y++ {
+		row := m.a[y*m.w : y*m.w+left]
+		for x, v := range row {
+			if v != 0 {
+				left = x
+				break
+			}
+		}
+	}
+	if left == m.w {
+		return 0, 0
+	}
+	return left, m.y0
 }
 
 // clone copies the mask, for the clip stack q and Q maintain.
