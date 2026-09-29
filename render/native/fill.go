@@ -165,6 +165,14 @@ func (p *path) rect(x, y, w, h float64, m matrix) {
 
 func (p *path) empty() bool { return len(p.edges) == 0 }
 
+// subpaths is every subpath of p, the one still being built among them, which a stroke draws open.
+func (p *path) subpaths() []subpath {
+	if !p.open {
+		return p.subs
+	}
+	return append(p.subs[:len(p.subs):len(p.subs)], subpath{from: p.from, to: len(p.edges), at: p.start})
+}
+
 func hypot(a, b point) float64 { return math.Hypot(b.x-a.x, b.y-a.y) }
 
 // mask is an 8-bit coverage bitmap in device space, one byte per pixel.

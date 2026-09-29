@@ -6,6 +6,7 @@ import (
 
 	"github.com/model-harness/pdftools/content"
 	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/objects"
 )
 
 // pen is the part of §8.4.3's graphics state that shapes a stroke and that content.Machine does
@@ -17,9 +18,13 @@ type pen struct {
 	cap, join int
 	miter     float64
 
-	// dashed is set by a non-empty dash array, which the survey refuses at the stroke: no page the
-	// corpus draws sets one, so a dasher here would be code with nothing to measure it against.
-	dashed bool
+	// dash is the pattern as the dasher walks it, lengths in user space alternately on and off and
+	// always an even count of them, or nil for a solid line; phase is how far into it a subpath
+	// starts. dashWhy is why the pattern last set cannot be drawn, which checkStroke refuses at the
+	// stroke. dashPattern sets all three, from d and from /D alike.
+	dash    []float64
+	phase   float64
+	dashWhy string
 }
 
 var defaultPen = pen{miter: 10}
@@ -43,9 +48,142 @@ func (w *walker) setPen(op content.Op) {
 			w.pen.miter = op.Num(0)
 		}
 	case "d":
-		if len(op.Operands) >= 1 {
-			w.pen.dashed = len(op.Arr(0)) > 0
+		// A d without an array and a phase is ignored, as pdfium ignores it.
+		if len(op.Operands) >= 2 {
+			if a, ok := op.Operands[0].(objects.Array); ok {
+				w.pen.dash, w.pen.phase, w.pen.dashWhy = dashPattern(w.s, a, op.Operands[1])
+			}
 		}
+	}
+}
+
+// maxDashElements is how many elements of a dash array pdfium reads. AGG's vcgen_dash keeps 32
+// and drops the rest.
+const maxDashElements = 32
+
+// dashPattern reads a dash array and phase, from d or from /D, as the dasher walks them, or says
+// why they cannot be drawn.
+//
+// The pattern is §8.4.3.6's with one exception, which is pdfium's: an element of 0.000001 or less
+// is drawn 0.1 unit long. §8.4.3.6 draws a dash of length zero as its caps alone, a dot under round
+// caps, and keeps the period the array states. pdfium's lengthens every period by 0.1, so along a
+// line its dots drift away from the specification's. The corpus decides between them: WTPDF page 3
+// draws 45 dotted leaders as [0 3] with round caps, and drawn as §8.4.3.6 says, the page is further
+// from pdfium than it is with no dots at all.
+//
+// The rule is for gaps too, which is measured and not read: RasterizeStroke, in pdfium's
+// cfx_agg_devicedriver.cpp, lengthens only the dash, but the pdfium this repo compares against
+// draws [4 0] and [4 0.0000009] exactly as [4 0.1], at every resolution, and [4 0.0000011] as a
+// solid line. A gap of zero is a seam of 0.1 unit where §8.4.3.6 draws none.
+//
+// Everywhere else the two disagree, the pattern is refused rather than drawn either way:
+//
+//   - an odd count of three or more, which §8.4.3.6 repeats whole and pdfium pairs as (a b)(c c)
+//   - more than 32 elements, where pdfium drops the rest
+//   - a negative element, which §8.4.3.6 forbids and pdfium draws 0.1 long
+//   - every element zero, which §8.4.3.6 forbids and pdfium draws as dashes and gaps of 0.1
+//   - an element or a phase that is not a number, which pdfium reads as 0
+//   - an element or a phase past float32's range, in which pdfium holds a dash pattern
+//
+// A negative phase is not among them. §8.4.3.6 adds twice the period until it is positive, and
+// pdfium does the same.
+func dashPattern(s objects.Store, a objects.Array, phase objects.Object) (dash []float64, ph float64, why string) {
+	if len(a) == 0 {
+		return nil, 0, ""
+	}
+	if len(a) > maxDashElements {
+		return nil, 0, fmt.Sprintf("a dash array of %d elements, past the %d pdfium reads", len(a), maxDashElements)
+	}
+	if len(a)%2 == 1 && len(a) > 1 {
+		return nil, 0, fmt.Sprintf("a dash array of odd length %d, which §8.4.3.6 repeats and pdfium pairs", len(a))
+	}
+	num := func(o objects.Object) (float64, bool) {
+		r, _ := s.Resolve(o)
+		return objects.AsNum(r)
+	}
+	ph, ok := num(phase)
+	if !ok {
+		return nil, 0, "a dash phase that is not a number"
+	}
+	if math.Abs(ph) > math.MaxFloat32 {
+		return nil, 0, fmt.Sprintf("a dash phase of %g, past the float range pdfium holds it in", ph)
+	}
+	zero := true
+	for _, o := range a {
+		v, ok := num(o)
+		if !ok {
+			return nil, 0, "a dash element that is not a number"
+		}
+		if v < 0 {
+			return nil, 0, fmt.Sprintf("a negative dash element, %g", v)
+		}
+		if v > math.MaxFloat32 {
+			return nil, 0, fmt.Sprintf("a dash element of %g, past the float range pdfium holds it in", v)
+		}
+		zero = zero && v == 0
+		dash = append(dash, v)
+	}
+	if zero {
+		return nil, 0, "a dash array of zeros"
+	}
+	if len(dash) == 1 {
+		dash = append(dash, dash[0]) // [a] is a on, a off, and the two readings agree
+	}
+	for i := range dash {
+		if dash[i] <= 0.000001 { // pdfium's own threshold
+			dash[i] = 0.1
+		}
+	}
+	return dash, ph, ""
+}
+
+// period is the length of one repeat of a dash pattern.
+func period(dash []float64) float64 {
+	p := 0.0
+	for _, v := range dash {
+		p += v
+	}
+	return p
+}
+
+// maxDashes bounds the dashes one page may draw, counting a form each time it is drawn.
+//
+// A stroke's dashes are its length over the pattern's period, which nothing in the file bounds:
+// one l a million units long dashed [0.1 0.1] is five million dashes, and one operator. A dash
+// is a segment and two caps where a solid stroke's l is a segment and a join, so this bound is
+// about two million of maxOps' operators, and tighter than it.
+const maxDashes = 1 << 20
+
+// checkDash charges the page for the dashes this stroke can draw, and refuses the dashed subpath
+// the survey can see that pdfium and §8.5.3.2 draw differently.
+//
+// That subpath is one that goes nowhere. §8.5.3.2 paints it only under round caps, as a dot.
+// pdfium draws a path that is nothing but m and l to the same point as a line one unit long, under
+// every cap, and dashes that line; the same subpath beside another it does not draw at all, nor one
+// with two such l, and closed by h it draws a part of the dot. Measured against pdfium, dashed and
+// not. Only a lone m, which neither draws, is not refused.
+//
+// The charge is dashBound's, computed from the path the paint pass will stroke, which the survey
+// builds for the purpose (buildPath): a bound taken from a second reading of the operators could
+// disagree with the path it bounds.
+func (w *walker) checkDash(m *content.Machine, refuse func(string, ...any)) {
+	s, ok := newStroker(nil, m.GS.LineWidth, w.base.mul(m.GS.CTM).m, w.pen)
+	if !ok {
+		return // a stroke with no area, which paint does not dash
+	}
+	for _, sp := range w.path.subpaths() {
+		edges := w.path.edges[sp.from:sp.to]
+		pts := s.points(edges, sp)
+		if len(pts) == 1 {
+			if !lone(edges, sp) {
+				refuse("a dashed subpath of zero length, which pdfium draws by rules of its own")
+			}
+			continue
+		}
+		w.dashes += s.dashBound(pts, sp.closed)
+	}
+	if !(w.dashes <= maxDashes) {
+		refuse("the page's dashes run past %d", maxDashes)
 	}
 }
 
@@ -58,10 +196,10 @@ func (w *walker) checkStroke(m *content.Machine) {
 	if r := w.refusal(w.strokeSpace); r != "" {
 		refuse("%s", r)
 	}
-	if w.pen.dashed {
-		// None of the pages the corpus draws sets a dash, so a dasher would have nothing to be
-		// measured against.
-		refuse("a dash pattern")
+	if w.pen.dashWhy != "" {
+		refuse("%s", w.pen.dashWhy)
+	} else if w.pen.dash != nil {
+		w.checkDash(m, refuse)
 	}
 	if w.pen.cap < 0 || w.pen.cap > 2 {
 		refuse("line cap %d is not 0, 1 or 2", w.pen.cap)
@@ -99,12 +237,25 @@ const strokeTolerance = 0.1
 // stroke is what a renderer does to save edges, and it is where the inner side of a sharp join
 // folds back over itself; pieces have no inner side.
 func stroke(p *path, w float64, ctm geom.Matrix, pn pen) *path {
+	out := &path{}
+	s, ok := newStroker(out, w, ctm, pn)
+	if !ok {
+		return out
+	}
+	for _, sp := range p.subpaths() {
+		s.subpath(p.edges[sp.from:sp.to], sp)
+	}
+	return out
+}
+
+// newStroker is the stroker that adds to out the pieces of a stroke of width w under ctm, or false
+// when ctm collapses the plane.
+func newStroker(out *path, w float64, ctm geom.Matrix, pn pen) (stroker, bool) {
 	a, b, c, d := ctm.A, ctm.B, ctm.C, ctm.D
 	det := a*d - b*c
-	out := &path{}
 	if det == 0 || math.IsNaN(det) || math.IsInf(det, 0) {
 		// A CTM that collapses the plane collapses the pen with it, and the stroke has no area.
-		return out
+		return stroker{}, false
 	}
 	// No line is drawn thinner than one device pixel, which is §8.4.3.2's reading of a width of 0
 	// and pdfium's of every width below a pixel. Measured before it was adopted: a 0.25pt line at
@@ -115,20 +266,12 @@ func stroke(p *path, w float64, ctm geom.Matrix, pn pen) *path {
 		w = unit
 	}
 	hw := w / 2
-	s := stroker{
+	return stroker{
 		out: out, hw: hw, pen: pn,
 		fwd:  func(q point) point { return point{a*q.x + c*q.y, b*q.x + d*q.y} },
 		back: func(q point) point { return point{(d*q.x - c*q.y) / det, (a*q.y - b*q.x) / det} },
 		rdev: hw * math.Max(math.Hypot(a, b), math.Hypot(c, d)),
-	}
-	subs := p.subs
-	if p.open {
-		subs = append(subs[:len(subs):len(subs)], subpath{from: p.from, to: len(p.edges), at: p.start})
-	}
-	for _, sp := range subs {
-		s.subpath(p.edges[sp.from:sp.to], sp)
-	}
-	return out
+	}, true
 }
 
 type stroker struct {
@@ -141,6 +284,26 @@ type stroker struct {
 
 // subpath strokes one subpath's edges.
 func (s *stroker) subpath(edges []edge, sp subpath) {
+	pts := s.points(edges, sp)
+	switch {
+	case len(pts) > 1 && s.pen.dash != nil:
+		s.dashed(pts, sp.closed)
+	case len(pts) > 1:
+		s.polyline(pts, sp.closed)
+	case s.pen.dash == nil && s.pen.cap == 1 && !lone(edges, sp):
+		// A subpath that goes nowhere is painted only with round caps, as a dot (§8.5.3.2).
+		// Dashed, checkDash has refused it.
+		s.arc(pts[0], point{s.hw, 0}, 2*math.Pi)
+	}
+}
+
+// lone is whether a subpath is an m and nothing more, which marks nothing: the stream neither
+// drew from it nor closed it.
+func lone(edges []edge, sp subpath) bool { return !sp.closed && len(edges) == 0 }
+
+// points is a subpath's points in pen space, each distinct from the one before it, without a
+// closed subpath's last point when that is its first again.
+func (s *stroker) points(edges []edge, sp subpath) []point {
 	pts := []point{s.back(sp.at)}
 	for _, e := range edges {
 		if q := s.back(point{e.x1, e.y1}); q != pts[len(pts)-1] {
@@ -150,18 +313,16 @@ func (s *stroker) subpath(edges []edge, sp subpath) {
 	if sp.closed && len(pts) > 1 && pts[len(pts)-1] == pts[0] {
 		pts = pts[:len(pts)-1]
 	}
-	if len(pts) == 1 {
-		// A subpath that goes nowhere is painted only with round caps, as a dot (§8.5.3.2). One
-		// with no segment at all is a lone m, which marks nothing, unless the stream closed it.
-		if s.pen.cap == 1 && (sp.closed || len(edges) > 0) {
-			s.arc(pts[0], point{s.hw, 0}, 2*math.Pi)
-		}
-		return
-	}
+	return pts
+}
 
+// polyline strokes two or more points, each distinct from the one before it: a segment between
+// each pair, a join at each corner, and caps at the ends of an open one or a join where a closed
+// one meets itself.
+func (s *stroker) polyline(pts []point, closed bool) {
 	n := len(pts)
 	segs := n - 1
-	if sp.closed {
+	if closed {
 		segs = n
 	}
 	for i := 0; i < segs; i++ {
@@ -170,12 +331,137 @@ func (s *stroker) subpath(edges []edge, sp subpath) {
 	for i := 1; i < segs; i++ {
 		s.joinAt(pts[i-1], pts[i], pts[(i+1)%n])
 	}
-	if sp.closed {
+	if closed {
 		s.joinAt(pts[n-1], pts[0], pts[1])
 		return
 	}
 	s.capAt(pts[0], unit(pts[1], pts[0]))
 	s.capAt(pts[n-1], unit(pts[n-2], pts[n-1]))
+}
+
+// dashed strokes a subpath's points in §8.4.3.6's dashes. Each dash is an open polyline, capped at
+// both ends and joined at the corners inside it, and the pattern starts again at every subpath.
+//
+// The walk is in pen space, which is user space up to a translation, because that is where
+// §8.4.3.6 measures a dash; pdfium dashes in user space too. A dash that ends exactly where a
+// segment does ends there and takes no join, which is AGG's vcgen_dash's strict comparison.
+//
+// A closed subpath whose pattern is in a dash when it comes back to its start joins that dash to
+// the one it began with, as §8.4.3.3 asks. A dash that ends exactly there is not in it, and takes no
+// join, as at a corner. This is the one place the dasher follows the
+// specification where pdfium does not: AGG ends one dash there and begins the other, both capped.
+// The survey cannot see the difference coming without dashing the path, and no corpus page strokes
+// a closed dashed subpath.
+func (s *stroker) dashed(pts []point, closed bool) {
+	if closed {
+		pts = append(pts[:len(pts):len(pts)], pts[0])
+	}
+	d := s.pen.dash
+	i, left := dashStart(d, s.pen.phase)
+	on := i%2 == 0
+	var first, cur []point // first is a closed subpath's opening dash, held for the last one
+	broken := false        // whether any dash or gap has ended
+	if on {
+		cur = []point{pts[0]}
+	}
+	for k := 0; k+1 < len(pts); k++ {
+		a, b := pts[k], pts[k+1]
+		l := math.Hypot(b.x-a.x, b.y-a.y)
+		t := 0.0
+		for l-t > left {
+			t += left
+			q := point{a.x + (b.x-a.x)*t/l, a.y + (b.y-a.y)*t/l}
+			if on {
+				cur = append(cur, q)
+				if closed && !broken {
+					first = cur
+				} else {
+					s.dash(cur)
+				}
+				cur = nil
+			} else {
+				cur = []point{q}
+			}
+			broken = true
+			i = (i + 1) % len(d)
+			on, left = !on, d[i]
+		}
+		// A dash that ends where the segment does ends there, and takes no join to the next one.
+		// The points came back from device space through the inverse CTM, so an end the file puts
+		// exactly on a corner arrives a rounding either side of it; this is the side that would
+		// carry the dash round the corner by that rounding, and draw the whole join.
+		if left -= l - t; left < 1e-9*l {
+			left = 0
+		}
+		if on {
+			cur = append(cur, b)
+		}
+	}
+	if !broken {
+		// The whole subpath fell in one dash, which strokes it solid, or in one gap.
+		if on && closed && left > 0 {
+			s.polyline(pts[:len(pts)-1], true)
+		} else if on {
+			s.polyline(pts, false)
+		}
+		return
+	}
+	if on && first != nil && left > 0 {
+		cur, first = append(cur, first[1:]...), nil
+	}
+	if on {
+		s.dash(cur)
+	}
+	if first != nil {
+		s.dash(first)
+	}
+}
+
+// dashStart is where a subpath begins in a dash pattern: the element the phase falls in, and how
+// much of that element is left.
+//
+// The phase is taken modulo the period, which is also §8.4.3.6's rule for a negative one: adding
+// twice the period until it is positive leaves the same remainder. A phase that ends an element
+// exactly begins the next, so a pattern and its rotation start alike; AGG's calc_dash_start stays
+// in the element with nothing left, which differs only at a closed subpath's start.
+func dashStart(d []float64, phase float64) (i int, left float64) {
+	p := period(d)
+	ph := math.Mod(phase, p)
+	if ph < 0 {
+		ph += p
+	}
+	for ph >= d[i] {
+		ph -= d[i]
+		i = (i + 1) % len(d)
+	}
+	return i, d[i] - ph
+}
+
+// dash strokes one dash, dropping any point that repeats the one before it. A dash that is one
+// point after that has no direction for its caps, and draws nothing.
+func (s *stroker) dash(c []point) {
+	pts := c[:1]
+	for _, q := range c[1:] {
+		if q != pts[len(pts)-1] {
+			pts = append(pts, q)
+		}
+	}
+	if len(pts) > 1 {
+		s.polyline(pts, false)
+	}
+}
+
+// dashBound is the most dashes dashed can draw along pts: len(dash)/2 in each period of the
+// subpath's length, and as many again for the partial period at each end.
+func (s *stroker) dashBound(pts []point, closed bool) float64 {
+	l := 0.0
+	for i := 0; i+1 < len(pts); i++ {
+		l += hypot(pts[i], pts[i+1])
+	}
+	if closed {
+		l += hypot(pts[len(pts)-1], pts[0])
+	}
+	return float64(len(s.pen.dash)/2) * (l/period(s.pen.dash) + 2)
 }
 
 func unit(from, to point) point {

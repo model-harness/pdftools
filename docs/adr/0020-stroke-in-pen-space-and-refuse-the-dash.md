@@ -4,7 +4,7 @@ Date: 2026-09-25
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0024](0024-dash-as-pdfium-does.md), which draws the dash.
 
 ## Context
 

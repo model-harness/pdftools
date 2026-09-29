@@ -5,6 +5,23 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-09-29
+
+- **`render/native` draws dashes: 1,250 of the corpus's 1,251 pages.** ADR 0024. `d` and `/D` are
+  dashed as §8.4.3.6 describes, in pen space, with pdfium's rule that an element of at most
+  0.000001 is 0.1. WTPDF page 3 and LightOnOCR page 12 now draw, and each is closer to pdfium
+  dashed than solid.
+  - **A closed subpath still in a dash at its start is joined there**, as §8.4.3.3 asks, where
+    pdfium caps it. A dash that ends exactly at the start takes no join. A phase that ends an
+    element exactly begins the next, so a pattern and its rotation draw alike.
+  - **Refused by reason:** an odd array of 3 or more, more than 32 elements, a negative element,
+    all zeros, an element or phase that is not a number or is past float32's range, and a dashed
+    subpath of zero length other than a lone `m`.
+  - **Bounded:** the survey charges each dashed stroke on the path paint will stroke, and refuses
+    a page past 2^20 dashes, a NaN count included.
+  - **Refusal tests only survey their pages**, so a survey that fails to refuse a page fails the
+    test instead of painting a million dashes or a form that draws itself.
+
 ### Added — 2026-09-28
 
 - **`render/native` draws Type 1 fonts: 1,248 of the corpus's 1,251 pages (99.8%).** ADR 0023. A

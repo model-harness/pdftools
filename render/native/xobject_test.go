@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -81,15 +82,71 @@ func checkPixels(t *testing.T, ra *render.Raster, want []pixel, tol int) {
 	}
 }
 
-// refusal renders a page that must be refused and returns its reasons joined.
+// refusal is what the survey refuses on page 1 of a page that must be refused, at 72 dpi: its
+// reasons, sorted and joined. It does not paint. A survey that failed to refuse the page would
+// otherwise paint what the refusal guards against, a million dashes or a form that draws itself,
+// and the test would take the machine's memory instead of failing. That Page refuses what the
+// survey does, and paints nothing, is TestARefusedPageIsNotPainted.
 func refusal(t *testing.T, path string) string {
 	t.Helper()
+	return refusalAt(t, path, 72)
+}
+
+func refusalAt(t *testing.T, path string, dpi float64) string {
+	t.Helper()
+	s, err := pcstore.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	o := render.DefaultOptions
+	o.DPI = dpi
+	w, data, _, _, err := New(s).(*rasterizer).open(1, o)
+	var u *Unsupported
+	if errors.As(err, &u) {
+		return strings.Join(u.Ops, " | ")
+	}
+	if err != nil {
+		t.Fatalf("open page 1: %v", err)
+	}
+	if w.surveyPage(data) {
+		t.Fatalf("the survey refused nothing; want the page refused")
+	}
+	ops := make([]string, 0, len(w.unsup))
+	for op := range w.unsup {
+		ops = append(ops, op)
+	}
+	sort.Strings(ops)
+	return strings.Join(ops, " | ")
+}
+
+// TestARefusedPageIsNotPainted is the contract refusal relies on: Page refuses what the survey
+// refuses, and a refused page is not painted, not even the fill before the stroke it refuses.
+func TestARefusedPageIsNotPainted(t *testing.T) {
+	path := onePagePDF(t, "0 g 0 0 10 10 re f 0 G [1 2 3] 0 d 10 w 40 100 m 160 100 l S", 200, 200)
 	ra, err := renderAt72(t, path)
 	var u *Unsupported
-	if !errors.As(err, &u) {
-		t.Fatalf("got %v, %v; want an *Unsupported", ra, err)
+	if !errors.As(err, &u) || u.Page != 1 {
+		t.Fatalf("got %v, %v; want page 1 refused", ra, err)
 	}
-	return strings.Join(u.Ops, " | ")
+	if got, want := strings.Join(u.Ops, " | "), refusal(t, path); got != want {
+		t.Errorf("Page refused %q, the survey %q", got, want)
+	}
+	s, err := pcstore.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	o := render.DefaultOptions
+	o.DPI = 72
+	w, data, _, _, err := New(s).(*rasterizer).open(1, o)
+	if err != nil {
+		t.Fatalf("open page 1: %v", err)
+	}
+	w.run(data)
+	if w.canvas != nil {
+		t.Error("the refused page was painted")
+	}
 }
 
 // TestImageIsPlacedAndOriented pins §8.9.4's mapping: the unit square through the CTM, with sample

@@ -95,7 +95,12 @@ func (w *walker) surveyXObject(m *content.Machine, name objects.Name, depth int)
 		return
 	}
 	body, _ := w.formContent(x)
-	w.inForm(m, x, func(sub *content.Machine) { w.survey(sub, body, depth+1) })
+	w.inForm(m, x, func(sub *content.Machine) {
+		if _, ok := numRect(w.s, x.st.Dict, "BBox"); ok {
+			w.path = path{} // drawXObject's clip to the /BBox ends the path the form was drawn inside
+		}
+		w.survey(sub, body, depth+1)
+	})
 }
 
 // formRefusal is why a form cannot be drawn, before its content is looked at.

@@ -983,7 +983,7 @@ projected. How it works:
 
 What is refused, each checked at the stroke rather than where its state was set:
 
-- a dash
+- a dash, until ADR 0024; now only the patterns and subpaths it lists, and a page past 2^20 dashes
 - a named stroke colour space
 - a cap or join outside 0..2
 - a negative width
@@ -1052,9 +1052,19 @@ glyph; at 600 dpi, where it does not, every page the shift moves is closer.
 - A code selects a glyph through ADR 0022's CFF route, because pdfium reads both formats as one
   kind of font. A `/Length1` that disagrees with where FreeType finds the cipher is refused.
 
-**The remaining worklist** is 3 pages:
+**The dash is done — see ADR 0024, and `render/native` now draws 1,250 of 1,251 pages.** Both
+pages the dash blocked draw, and each is closer to pdfium dashed than solid. How it works:
 
-- a dash: LightOnOCR page 12 and WTPDF page 3
+- The dasher walks each subpath in pen space, as §8.4.3.6 measures it, with pdfium's rule that
+  an element of at most 0.000001 is 0.1. Each dash is capped at its ends and joined inside.
+- A closed subpath still in a dash at its start is joined there, as §8.4.3.3 asks; pdfium caps
+  it. A dash that ends exactly at the start, or on any corner, takes no join.
+- A pattern pdfium reads differently from §8.4.3.6, and a dashed subpath of zero length, are
+  refused by reason. The survey charges every dashed stroke against 2^20 dashes a page, on the
+  path paint will stroke.
+
+**The remaining worklist** is 1 page:
+
 - a soft-mask group and a shading: ISO TS 32005 page 1
 
 Six accuracy items affect no page count:

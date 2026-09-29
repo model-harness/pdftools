@@ -329,15 +329,16 @@ func TestStrokeColourIsEachDeviceSpace(t *testing.T) {
 }
 
 // TestUndrawableStrokesAreRefusedByReason is the refusals, each checked at the stroke that would
-// have drawn wrongly and not where its state was set: a dash or a colour space no stroke uses is on
-// a page that draws.
+// have drawn wrongly and not where its state was set: a dash pattern or a colour space no stroke
+// uses is on a page that draws. TestUndrawableDashesAreRefusedByReason has each dash pattern's.
 func TestUndrawableStrokesAreRefusedByReason(t *testing.T) {
 	const line = " 10 w 40 100.5 m 160 100.5 l S"
 	for _, c := range []struct {
 		name, extg, stream, want string
 	}{
-		{"a dash", "", "[3 2] 0 d" + line, "stroke: a dash pattern"},
-		{"a dash from the graphics state", "<</D[[3 2]0]>>", "/GS0 gs" + line, "stroke: a dash pattern"},
+		{"a dash is drawn", "", "[3 2] 0 d" + line, ""},
+		{"a dash from the graphics state is drawn", "<</D[[3 2]0]>>", "/GS0 gs" + line, ""},
+		{"a dash pattern", "", "[1 2 3] 0 d" + line, "stroke: a dash array of odd length 3"},
 		{"an empty dash array is solid", "", "[] 0 d" + line, ""},
 		{"a dash nothing strokes", "", "[3 2] 0 d 0 0 10 10 re f", ""},
 		{"a named colour space", "", "/CS0 CS 1 SC" + line, "stroke: a colour space not in the resources, /CS0"},
@@ -349,11 +350,11 @@ func TestUndrawableStrokesAreRefusedByReason(t *testing.T) {
 		{"a negative width", "", "-1 w 40 100.5 m 160 100.5 l S", "stroke: line width -1"},
 		{"a stroke alpha outside 0..1", "<</CA 1.5>>", "/GS0 gs" + line, "gs: /CA is 1.5, outside 0..1"},
 		// Each operator that strokes is checked, and not only S.
-		{"a dash at s", "", "[3 2] 0 d 10 w 40 40 m 160 40 l 100 160 l s", "stroke: a dash pattern"},
-		{"a dash at B", "", "[3 2] 0 d 10 w 40 40 m 160 40 l 100 160 l B", "stroke: a dash pattern"},
-		{"a dash at B*", "", "[3 2] 0 d 10 w 40 40 m 160 40 l 100 160 l B*", "stroke: a dash pattern"},
-		{"a dash at b", "", "[3 2] 0 d 10 w 40 40 m 160 40 l 100 160 l b", "stroke: a dash pattern"},
-		{"a dash at b*", "", "[3 2] 0 d 10 w 40 40 m 160 40 l 100 160 l b*", "stroke: a dash pattern"},
+		{"a dash at s", "", "[1 2 3] 0 d 10 w 40 40 m 160 40 l 100 160 l s", "stroke: a dash array of odd length 3"},
+		{"a dash at B", "", "[1 2 3] 0 d 10 w 40 40 m 160 40 l 100 160 l B", "stroke: a dash array of odd length 3"},
+		{"a dash at B*", "", "[1 2 3] 0 d 10 w 40 40 m 160 40 l 100 160 l B*", "stroke: a dash array of odd length 3"},
+		{"a dash at b", "", "[1 2 3] 0 d 10 w 40 40 m 160 40 l 100 160 l b", "stroke: a dash array of odd length 3"},
+		{"a dash at b*", "", "[1 2 3] 0 d 10 w 40 40 m 160 40 l 100 160 l b*", "stroke: a dash array of odd length 3"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			extg := c.extg

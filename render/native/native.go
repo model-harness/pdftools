@@ -93,12 +93,32 @@ func (r *rasterizer) Close() error { return nil }
 // no indication — the same failure as a dropped page, which this repo has already paid for
 // once, and worse here because a plausible-looking image invites no second look.
 func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
+	w, data, dpi, fitBox, err := r.open(n, o)
+	if err != nil {
+		return nil, err
+	}
+	w.run(data)
+
+	if len(w.unsup) > 0 {
+		ops := make([]string, 0, len(w.unsup))
+		for op := range w.unsup {
+			ops = append(ops, op)
+		}
+		sort.Strings(ops)
+		return nil, &Unsupported{Page: n, Ops: ops}
+	}
+	return &render.Raster{Number: n, Image: w.canvasFor().img, DPI: dpi, Box: fitBox}, nil
+}
+
+// open is Page up to the walk: the walker for page n at o's resolution, the content it walks, and
+// the resolution and box the image will report.
+func (r *rasterizer) open(n int, o render.Options) (w *walker, data []byte, dpi float64, fitBox geom.Rect, err error) {
 	if n < 1 || n > r.s.PageCount() {
-		return nil, fmt.Errorf("render/native: page %d out of range 1..%d", n, r.s.PageCount())
+		return nil, nil, 0, fitBox, fmt.Errorf("render/native: page %d out of range 1..%d", n, r.s.PageCount())
 	}
 	page, err := r.s.Page(n)
 	if err != nil {
-		return nil, fmt.Errorf("render/native: page %d: %w", n, err)
+		return nil, nil, 0, fitBox, fmt.Errorf("render/native: page %d: %w", n, err)
 	}
 	// Annotations are a refusal rather than an omission. render.Options documents the flag as
 	// rendering annotation appearance streams, and the borrowed backend honours it; a page with
@@ -106,7 +126,7 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 	// and with nothing to say so, which is the operator-level silent omission one level up.
 	if o.Annotations {
 		if a, ok := objects.GetArray(r.s, page, "Annots"); ok && len(a) > 0 {
-			return nil, &Unsupported{Page: n, Ops: []string{"/Annots"}}
+			return nil, nil, 0, fitBox, &Unsupported{Page: n, Ops: []string{"/Annots"}}
 		}
 	}
 
@@ -115,13 +135,13 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 	// render/pdfium reports it that way and renders those pixel dimensions, and two backends
 	// behind one interface disagreeing about the size of a page would be the worst kind of
 	// difference: every caller that maps a coordinate back would be wrong for one of them.
-	fitBox := box
+	fitBox = box
 	if rotate == 90 || rotate == 270 {
 		fitBox = geom.NewRect(box.X0, box.Y0, box.X0+box.Height(), box.Y0+box.Width())
 	}
 	dpi, pw, ph, err := render.Fit(fitBox, o)
 	if err != nil {
-		return nil, fmt.Errorf("render/native: page %d: %w", n, err)
+		return nil, nil, 0, fitBox, fmt.Errorf("render/native: page %d: %w", n, err)
 	}
 
 	// The page fills the image exactly, one scale per axis, rather than dpi/72 on both. The image
@@ -133,13 +153,13 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		sx, sy = sy, sx
 	}
 
-	data, err := r.s.PageContent(n)
+	data, err = r.s.PageContent(n)
 	if err != nil {
-		return nil, fmt.Errorf("render/native: page %d content: %w", n, err)
+		return nil, nil, 0, fitBox, fmt.Errorf("render/native: page %d content: %w", n, err)
 	}
 
 	res, _ := objects.GetDict(r.s, page, "Resources")
-	w := &walker{
+	w = &walker{
 		s:         r.s,
 		res:       res,
 		w:         pw,
@@ -154,17 +174,7 @@ func (r *rasterizer) Page(n int, o render.Options) (*render.Raster, error) {
 		iccSpaces: map[objects.Ref]space{},
 		faces:     r.faces,
 	}
-	w.run(data)
-
-	if len(w.unsup) > 0 {
-		ops := make([]string, 0, len(w.unsup))
-		for op := range w.unsup {
-			ops = append(ops, op)
-		}
-		sort.Strings(ops)
-		return nil, &Unsupported{Page: n, Ops: ops}
-	}
-	return &render.Raster{Number: n, Image: w.canvasFor().img, DPI: dpi, Box: fitBox}, nil
+	return w, data, dpi, fitBox, nil
 }
 
 // pageBox is the crop box, or the media box, or US Letter.
@@ -316,6 +326,9 @@ type walker struct {
 	// build charge and checkText's per-show draw charge both add to it.
 	glyphWork int
 
+	// dashes counts the dashes the page's strokes can draw, against maxDashes (checkDash).
+	dashes float64
+
 	unsup map[string]bool
 }
 
@@ -357,16 +370,14 @@ func (w *walker) canvasFor() *canvas {
 // operator was the previous shape, and no assertion could see it: the image is discarded either
 // way, so the only observable was wall time.
 func (w *walker) run(data []byte) {
-	w.alpha, w.strokeAlpha, w.pen = 1, 1, defaultPen
-	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
-	w.survey(content.NewMachine(geom.Identity), data, 0)
-	if len(w.unsup) > 0 {
+	if !w.surveyPage(data) {
 		return
 	}
 	// The survey walked the same q/Q and Tf sequence and left its state behind; the paint pass
 	// starts from the page's initial state, not from wherever the survey ended.
 	w.fill, w.alpha, w.font, w.stack = black, 1, nil, nil
 	w.stroke, w.strokeAlpha, w.pen = black, 1, defaultPen
+	w.path = path{}
 	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
 	// glyphWork resets to zero rather than carrying the survey's total forward: paint builds only
 	// the glyphs the survey already built, in the same order, and never more often — a font kept
@@ -381,6 +392,15 @@ func (w *walker) run(data []byte) {
 	// never reached.
 	w.glyphWork = 0
 	w.paint(content.NewMachine(geom.Identity), data, 0)
+}
+
+// surveyPage surveys the page's content from its initial state, and reports whether it found
+// nothing to refuse.
+func (w *walker) surveyPage(data []byte) bool {
+	w.alpha, w.strokeAlpha, w.pen = 1, 1, defaultPen
+	w.fillSpace, w.strokeSpace = deviceGray, deviceGray
+	w.survey(content.NewMachine(geom.Identity), data, 0)
+	return len(w.unsup) == 0
 }
 
 // paint interprets one content stream — the page's, or a form's at depth > 0 — onto the canvas.
@@ -440,6 +460,9 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 			w.unsup[op.Name] = true
 			continue
 		}
+		if w.buildPath(m, op) {
+			continue
+		}
 		switch op.Name {
 		case "q":
 			w.save()
@@ -466,13 +489,25 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 			if len(op.Operands) >= 1 {
 				w.font = w.loadFont(string(op.NameAt(0)))
 			}
+		// Each clears the path where paint's endPath does, and s and b close it first.
 		case "f", "F", "f*":
 			w.checkFill()
+			w.path = path{}
+		case "n":
+			w.path = path{}
 		case "S", "s":
+			if op.Name == "s" {
+				w.path.close()
+			}
 			w.checkStroke(m)
+			w.path = path{}
 		case "B", "B*", "b", "b*":
+			if op.Name == "b" || op.Name == "b*" {
+				w.path.close()
+			}
 			w.checkFill()
 			w.checkStroke(m)
+			w.path = path{}
 		case "J", "j", "M", "d":
 			w.setPen(op)
 		case "g", "rg", "k", "cs", "sc", "scn", "G", "RG", "K", "CS", "SC", "SCN":
@@ -606,10 +641,16 @@ func (w *walker) applyExtGState(m *content.Machine, g objects.Dict) {
 	if v, ok := objects.GetNum(w.s, g, "ML"); ok {
 		w.pen.miter = v
 	}
+	// A /D whose first element is not an array is ignored, as pdfium ignores it.
 	if d, ok := objects.GetArray(w.s, g, "D"); ok && len(d) > 0 {
 		o, _ := w.s.Resolve(d[0])
-		a, _ := o.(objects.Array)
-		w.pen.dashed = len(a) > 0
+		if a, ok := o.(objects.Array); ok {
+			var phase objects.Object
+			if len(d) > 1 {
+				phase = d[1]
+			}
+			w.pen.dash, w.pen.phase, w.pen.dashWhy = dashPattern(w.s, a, phase)
+		}
 	}
 }
 
@@ -736,10 +777,13 @@ func blendNames(s objects.Store, g objects.Dict) []objects.Name {
 	return out
 }
 
-func (w *walker) op(m *content.Machine, op content.Op, depth int) {
+// buildPath applies op if it is a path construction operator, and reports whether it was.
+//
+// Called from both passes: the survey builds the path paint will stroke, because a dash's cost is
+// in the length of the path it dashes (checkDash).
+func (w *walker) buildPath(m *content.Machine, op content.Op) bool {
 	ctm := w.base.mul(m.GS.CTM)
 	switch op.Name {
-	// Path construction.
 	case "m":
 		if len(op.Operands) >= 2 {
 			w.path.moveTo(ctm.apply(point{op.Num(0), op.Num(1)}))
@@ -770,6 +814,23 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 			to := ctm.apply(point{op.Num(2), op.Num(3)})
 			w.path.curveTo(c1, to, to)
 		}
+	case "h":
+		w.path.close()
+	case "re":
+		if len(op.Operands) >= 4 {
+			w.path.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm)
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+func (w *walker) op(m *content.Machine, op content.Op, depth int) {
+	if w.buildPath(m, op) {
+		return
+	}
+	switch op.Name {
 	// Text. The show operators draw; Tf chooses the font the page names.
 	case "Tf":
 		if len(op.Operands) >= 1 {
@@ -793,13 +854,6 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 	case "TJ":
 		if len(op.Operands) >= 1 {
 			w.showArray(m, op.Arr(0))
-		}
-
-	case "h":
-		w.path.close()
-	case "re":
-		if len(op.Operands) >= 4 {
-			w.path.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm)
 		}
 
 	// Colour: every operator that sets a fill or stroke colour or colour space, in one place —
