@@ -156,9 +156,8 @@ func maskGroup(bbox, keys, body string) string {
 // Every case agrees on every pixel except where a path's edge is sloped and antialiased: the hard
 // edge by up to 6 levels at 200 dpi, the RGB backdrop's triangle by 3, the stroke by 1. That is
 // the coverage of those edges, which this backend computes in float and AGG in its own cells, so
-// those three alone are held to a bound. A hard edge that is a rectangle is not one of the cases:
-// pdfium fills an axis-aligned rectangle in whole pixels, mask or no mask, and this backend does
-// not yet.
+// those three alone are held to a bound. A hard edge that is a rectangle agrees on every pixel,
+// because pdfium fills an axis-aligned rectangle in whole pixels inside the group as well.
 func TestSoftMasksAgreeWithPdfium(t *testing.T) {
 	ramp := axialSh("/DeviceGray", "0 0 200 0", "/Extend[true true]", expFn("0", "1", "1"))
 	rampGroup := maskGroup("0 0 200 100", "/Resources<</Shading<</Sh0 5 0 R>>>>", "/Sh0 sh")
@@ -169,6 +168,7 @@ func TestSoftMasksAgreeWithPdfium(t *testing.T) {
 	}{
 		{"ramp", "/G 6 0 R", fill, []string{rampGroup}},
 		{"hard edge", "/G 6 0 R", fill, []string{maskGroup("0 0 200 100", "", "1 g 40 20 m 140 20 l 90 70 l f")}},
+		{"hard rectangle edge", "/G 6 0 R", fill, []string{maskGroup("0 0 200 100", "", "1 g 40.3 20.6 100.5 40.7 re f")}},
 		{"group bbox", "/G 6 0 R", fill, []string{maskGroup("50 20 150 80",
 			"/Resources<</Shading<</Sh0 5 0 R>>>>", "/Sh0 sh")}},
 		{"backdrop", "/G 6 0 R/BC[0.6]", fill, []string{maskGroup("50 20 150 80", "", "0.2 g 0 0 200 100 re f")}},

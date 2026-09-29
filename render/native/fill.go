@@ -48,7 +48,12 @@ type point struct{ x, y float64 }
 //
 // A path arrives as lines and cubics and leaves as edges: the rasterizer never sees a curve,
 // which is what keeps the fill rules to one implementation rather than one per segment kind.
-type edge struct{ x0, y0, x1, y1 float64 }
+type edge struct {
+	x0, y0, x1, y1 float64
+
+	// end is (x1, y1) as pdfium computes the point it records there, in float32 (fillRect).
+	end pt32
+}
 
 // path accumulates one PDF path: subpaths of flattened edges, plus the pen state a content
 // stream's operators move around.
@@ -62,8 +67,14 @@ type path struct {
 
 	cur   point // where the pen is
 	start point // where the current subpath began, for h and for the implicit close
-	open  bool  // a subpath is being built
-	from  int   // the current subpath's first edge
+
+	// start32 and first32 are the subpath's start and the first edge's start as pdfium records
+	// them, in float32 (fillRect). An edge only ever begins away from a subpath's start at the end
+	// of another edge, so the pen needs no float32 copy of its own.
+	start32, first32 pt32
+
+	open bool // a subpath is being built
+	from int  // the current subpath's first edge
 
 	// figures counts the subpaths with an edge, and curved says a curve was flattened into the
 	// edges, which is what pixelRect needs to see the path as pdfium's points.
@@ -80,12 +91,18 @@ type subpath struct {
 	at       point
 }
 
-func (p *path) moveTo(to point) {
+func (p *path) moveTo(to point) { p.moveTo32(to, f32(to)) }
+
+func (p *path) lineTo(to point) { p.lineTo32(to, f32(to)) }
+
+// moveTo32 is moveTo, with the point as pdfium records it.
+func (p *path) moveTo32(to point, f pt32) {
 	p.end(false)
-	p.cur, p.start, p.open, p.from = to, to, true, len(p.edges)
+	p.cur, p.start, p.start32, p.open, p.from = to, to, f, true, len(p.edges)
 }
 
-func (p *path) lineTo(to point) {
+// lineTo32 is lineTo, with the point as pdfium records it.
+func (p *path) lineTo32(to point, f pt32) {
 	// A lineTo with no current subpath is not an error in a content stream — a producer may
 	// emit one after a paint operator cleared the path — and the segment has no start, so
 	// there is nothing to add. Silently ignoring it is what every reader does and what the
@@ -95,13 +112,16 @@ func (p *path) lineTo(to point) {
 	// from it begins a new subpath there. pdfium draws that one, and ignoring it too left 791
 	// pixels of a stroked `h l` undrawn.
 	if !p.open && len(p.subs) > 0 {
-		p.moveTo(p.cur)
+		p.moveTo32(p.cur, p.start32)
 	}
 	if p.open {
 		if len(p.edges) == p.from {
 			p.figures++
 		}
-		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, to.x, to.y})
+		if len(p.edges) == 0 {
+			p.first32 = p.start32
+		}
+		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, to.x, to.y, f})
 	}
 	p.cur = to
 }
@@ -157,18 +177,21 @@ func (p *path) end(closed bool) {
 	// closing segment from the subpath's own points when closed says so, and never otherwise.
 	to := len(p.edges)
 	if p.cur != p.start {
-		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, p.start.x, p.start.y})
+		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, p.start.x, p.start.y, p.start32})
 	}
 	p.subs = append(p.subs, subpath{from: p.from, to: to, closed: closed, at: p.start})
 	p.open = false
 }
 
-// rect adds a closed rectangle, which is the re operator.
-func (p *path) rect(x, y, w, h float64, m matrix) {
-	p.moveTo(m.apply(point{x, y}))
-	p.lineTo(m.apply(point{x + w, y}))
-	p.lineTo(m.apply(point{x + w, y + h}))
-	p.lineTo(m.apply(point{x, y + h}))
+// rect adds a closed rectangle, which is the re operator. m32 is pdfium's matrix for the path,
+// and pdfium adds the width and height in float32 before it transforms the corners.
+func (p *path) rect(x, y, w, h float64, m matrix, m32 mat32) {
+	x0, y0 := float32(x), float32(y)
+	x1, y1 := x0+float32(w), y0+float32(h)
+	p.moveTo32(m.apply(point{x, y}), m32.apply(x0, y0))
+	p.lineTo32(m.apply(point{x + w, y}), m32.apply(x1, y0))
+	p.lineTo32(m.apply(point{x + w, y + h}), m32.apply(x1, y1))
+	p.lineTo32(m.apply(point{x, y + h}), m32.apply(x0, y1))
 	p.close()
 }
 
@@ -180,19 +203,127 @@ func (p *path) empty() bool { return len(p.edges) == 0 }
 // all of row 27 where coverage would admit a fifth of it. ok is false for any other path, which
 // pdfium rasterizes as it would fill it.
 //
+// SetClip_PathFill intersects the rectangle with the device before it takes the outer bounds, so a
+// clip that runs off the page cannot overflow.
+func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
+	l, t, r, b, ok := p.deviceRect(false)
+	if !ok {
+		return 0, 0, 0, 0, false
+	}
+	l, t, r, b = max(l, 0), max(t, 0), min(r, float32(w)), min(b, float32(h))
+	if l > r || t > b {
+		return 0, 0, 0, 0, true
+	}
+	return int(math.Floor(float64(l))), int(math.Floor(float64(t))),
+		int(math.Ceil(float64(r))), int(math.Ceil(float64(b))), true
+}
+
+// fillRect is the rectangle pdfium fills for p when p is a rectangle on the device's axes and
+// nothing strokes it: whole pixels, as many as the rectangle is wide and tall rounded up. ok is
+// false for any other path, which pdfium rasterizes.
+//
+// CFX_RenderDevice::DrawPath takes the outer bounds, then gives back the pixel on whichever side the
+// rectangle covers less when they are a pixel wider than ceil(r-l): 10.4 to 20.2 fills columns 11 to
+// 20, where coverage would shade column 10 by six tenths. A rectangle with no width fills one
+// column. The arithmetic is int32, and the WebAssembly build saturates a float that does not fit and
+// wraps a sum that does not; every overflow CheckedNumeric catches draws nothing. The pixel given
+// back is the one exception that matters: +1 past the widest int32 reads as the narrowest, which
+// would fill every column where pdfium fills none. The column added to a rectangle with no width
+// wraps too, but only on a rectangle 2³¹ pixels off the canvas, so it fills nothing either way.
+func (p *path) fillRect() (x0, y0, x1, y1 int, ok bool) {
+	l, t, r, b, ok := p.deviceRect(true)
+	if !ok {
+		return 0, 0, 0, 0, false
+	}
+	il, it, ir, ib := sat32(floor32(l)), sat32(floor32(t)), sat32(ceil32(r)), sat32(ceil32(b))
+	if int64(ir)-int64(il) > math.MaxInt32 || int64(ib)-int64(it) > math.MaxInt32 {
+		return 0, 0, 0, 0, true
+	}
+	width := sat32(ceil32(r - l))
+	if width < 1 {
+		width = 1
+		if il == ir {
+			ir++
+		}
+	}
+	height := sat32(ceil32(b - t))
+	if height < 1 {
+		height = 1
+		if ib == it {
+			ib++
+		}
+	}
+	if ir-il >= width+1 {
+		if l-float32(il) > float32(ir)-r {
+			if il == math.MaxInt32 {
+				return 0, 0, 0, 0, true
+			}
+			il++
+		} else {
+			if ir == math.MinInt32 {
+				return 0, 0, 0, 0, true
+			}
+			ir--
+		}
+	}
+	if ib-it >= height+1 {
+		if b-float32(it) > float32(ib)-t {
+			if it == math.MaxInt32 {
+				return 0, 0, 0, 0, true
+			}
+			it++
+		} else {
+			if ib == math.MinInt32 {
+				return 0, 0, 0, 0, true
+			}
+			ib--
+		}
+	}
+	return int(il), int(it), int(ir), int(ib), true
+}
+
+// sat32 is a float32 to int32 conversion as WebAssembly's saturating truncation makes it.
+func sat32(v float32) int32 {
+	switch {
+	case v != v:
+		return 0
+	case v >= 1<<31:
+		return math.MaxInt32
+	case v < -(1 << 31):
+		return math.MinInt32
+	}
+	return int32(v)
+}
+
+func floor32(v float32) float32 { return float32(math.Floor(float64(v))) }
+func ceil32(v float32) float32  { return float32(math.Ceil(float64(v))) }
+
+// deviceRect is p's bounds in device space, in float32, when p is a rectangle on the device's axes.
+// recorded asks it of the points as pdfium records and transforms them for a fill, which rounds the
+// width a re adds and each product of the matrix to float32; otherwise it is asked of p's own points
+// rounded to float32, which is what the clip rule was measured against. The two differ in the last
+// bit, which is enough to move ceil(r-l) past an integer: to pdfium's fill, 150.3 70.6 80 60 re is
+// 60.000008 tall.
+//
 // Whether p is a rectangle is CFX_Path::GetRect's question, asked of the points pdfium's parser
 // would have recorded: a move, then the end of each line, in float32. re makes five, and so does
 // m l l l h, which closes with a line back to the start; more than five are first rid of the lines
 // that go nowhere, as GetNormalizedPoints does. Only one subpath, and no curve, can be four or five
 // points.
-func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
+func (p *path) deviceRect(recorded bool) (l, t, r, b float32, ok bool) {
 	if p.curved || p.figures != 1 {
 		return 0, 0, 0, 0, false
 	}
-	type pt struct{ x, y float32 }
-	pts := []pt{{float32(p.edges[0].x0), float32(p.edges[0].y0)}}
+	pts := []pt32{p.first32}
+	if !recorded {
+		pts[0] = pt32{float32(p.edges[0].x0), float32(p.edges[0].y0)}
+	}
 	for _, e := range p.edges {
-		pts = append(pts, pt{float32(e.x1), float32(e.y1)})
+		if recorded {
+			pts = append(pts, e.end)
+		} else {
+			pts = append(pts, pt32{float32(e.x1), float32(e.y1)})
+		}
 	}
 	if n := len(pts); n > 5 {
 		// GetNormalizedPoints refuses a path whose last point is not its first, which the five-point
@@ -219,7 +350,7 @@ func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
 	if n != 4 && n != 5 || n == 5 && pts[0] != pts[4] || pts[0] == pts[2] || pts[1] == pts[3] {
 		return 0, 0, 0, 0, false
 	}
-	askew := func(a, b pt) bool { return a.x != b.x && a.y != b.y }
+	askew := func(a, b pt32) bool { return a.x != b.x && a.y != b.y }
 	for i := 1; i < n; i++ {
 		if askew(pts[i], pts[i-1]) {
 			return 0, 0, 0, 0, false
@@ -228,14 +359,9 @@ func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
 	if askew(pts[0], pts[3]) {
 		return 0, 0, 0, 0, false
 	}
-	l, r := min(pts[0].x, pts[2].x), max(pts[0].x, pts[2].x)
-	t, b := min(pts[0].y, pts[2].y), max(pts[0].y, pts[2].y)
-	l, t, r, b = max(l, 0), max(t, 0), min(r, float32(w)), min(b, float32(h))
-	if l > r || t > b {
-		return 0, 0, 0, 0, true
-	}
-	return int(math.Floor(float64(l))), int(math.Floor(float64(t))),
-		int(math.Ceil(float64(r))), int(math.Ceil(float64(b))), true
+	l, r = min(pts[0].x, pts[2].x), max(pts[0].x, pts[2].x)
+	t, b = min(pts[0].y, pts[2].y), max(pts[0].y, pts[2].y)
+	return l, t, r, b, true
 }
 
 // rectMask admits the pixels [x0,x1)×[y0,y1) wholly and nothing else.
@@ -419,7 +545,7 @@ func (p *path) scan(w, h int, evenOdd bool, emit func(py int, row []float64)) {
 	// is a glyph cache, which will scan one outline many times.
 	edges := p.edges
 	if p.open && p.cur != p.start {
-		edges = append(edges[:len(edges):len(edges)], edge{p.cur.x, p.cur.y, p.start.x, p.start.y})
+		edges = append(edges[:len(edges):len(edges)], edge{p.cur.x, p.cur.y, p.start.x, p.start.y, p.start32})
 	}
 	if len(edges) == 0 {
 		return

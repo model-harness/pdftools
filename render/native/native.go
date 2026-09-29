@@ -166,6 +166,7 @@ func (r *rasterizer) open(n int, o render.Options) (w *walker, data []byte, dpi 
 		w:         pw,
 		h:         ph,
 		base:      pageMatrix(box, sx, sy, rotate),
+		base32:    display32(box, pw, ph, rotate),
 		unsup:     map[string]bool{},
 		fonts:     map[string]*textFont{},
 		fontRefs:  map[objects.Ref]*textFont{},
@@ -248,6 +249,8 @@ type walker struct {
 	w, h   int
 
 	base matrix
+	// base32 is base as pdfium computes it, in float32 (matrix32).
+	base32 mat32
 
 	// s and res are the page's store and resource dictionary, which text needs and paths do
 	// not: a glyph is looked up in a font the stream names, and the name only means something
@@ -811,11 +814,13 @@ func (w *walker) buildPath(m *content.Machine, op content.Op) bool {
 	switch op.Name {
 	case "m":
 		if len(op.Operands) >= 2 {
-			w.path.moveTo(ctm.apply(point{op.Num(0), op.Num(1)}))
+			x, y := op.Num(0), op.Num(1)
+			w.path.moveTo32(ctm.apply(point{x, y}), w.matrix32(m).apply(float32(x), float32(y)))
 		}
 	case "l":
 		if len(op.Operands) >= 2 {
-			w.path.lineTo(ctm.apply(point{op.Num(0), op.Num(1)}))
+			x, y := op.Num(0), op.Num(1)
+			w.path.lineTo32(ctm.apply(point{x, y}), w.matrix32(m).apply(float32(x), float32(y)))
 		}
 	case "c":
 		if len(op.Operands) >= 6 {
@@ -843,7 +848,7 @@ func (w *walker) buildPath(m *content.Machine, op content.Op) bool {
 		w.path.close()
 	case "re":
 		if len(op.Operands) >= 4 {
-			w.path.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm)
+			w.path.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm, w.matrix32(m))
 		}
 	default:
 		return false
@@ -905,13 +910,15 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 		w.strokePath(m)
 		w.endPath()
 	case "B", "B*":
-		w.fillPath(op.Name == "B*")
-		w.strokePath(m)
+		if !w.fillPath(op.Name == "B*", true) {
+			w.strokePath(m)
+		}
 		w.endPath()
 	case "b", "b*":
 		w.path.close()
-		w.fillPath(op.Name == "b*")
-		w.strokePath(m)
+		if !w.fillPath(op.Name == "b*", true) {
+			w.strokePath(m)
+		}
 		w.endPath()
 	case "J", "j", "M", "d":
 		w.setPen(op)
@@ -1036,15 +1043,33 @@ func marks(op string) bool {
 // the expensive half, and skipping it took the corpus-wide refusal pass from minutes to
 // seconds.
 func (w *walker) paintPath(evenOdd bool) {
-	w.fillPath(evenOdd)
+	w.fillPath(evenOdd, false)
 	w.endPath()
 }
 
-func (w *walker) fillPath(evenOdd bool) {
-	if !w.path.empty() {
-		w.canvasFor().fill(&w.path, w.fill, evenOdd, w.alpha, w.soft)
+// fillPath fills the current path, in whole pixels when it is a rectangle on the device's axes and
+// nothing visible strokes it, as CFX_RenderDevice::DrawPath does. stroked says a stroke follows; one
+// whose alpha byte is 0 does not count. whole reports the rule taken, after which DrawPath returns
+// without the stroke.
+func (w *walker) fillPath(evenOdd, stroked bool) (whole bool) {
+	if w.path.empty() {
+		return false
 	}
+	c := w.canvasFor()
+	if !stroked || int(float32(w.strokeAlpha)*255) == 0 {
+		if x0, y0, x1, y1, ok := w.path.fillRect(); ok {
+			c.fillRect(x0, y0, x1, y1, w.fill, w.alpha, w.soft)
+			return true
+		}
+	}
+	c.fill(&w.path, w.fill, evenOdd, w.alpha, w.soft)
+	return false
 }
+
+// matrix32 is the matrix pdfium transforms a path's points by: the CTM, then the page's display
+// matrix, in float32. The CTM is this walker's own rounded to float32, which is pdfium's after at
+// most one cm; pdfium concatenates each cm, and a form's /Matrix, in float32 as it goes.
+func (w *walker) matrix32(m *content.Machine) mat32 { return f32m(m.GS.CTM).then(w.base32) }
 
 // strokePath strokes the current path under the CTM in force at the painting operator, which
 // §8.5.3.1 makes the one that shapes the pen, whatever CTM the path's points were given under.

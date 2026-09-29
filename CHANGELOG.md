@@ -5,6 +5,19 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-09-29
+
+- **`render/native` fills a rectangle on the device's axes in whole pixels, as pdfium does.**
+  ADR 0026. The corpus mean against pdfium went from 4.87658 to 3.98128: 681 of the 682 pages
+  with such a fill moved closer, and none moved farther.
+  - **The rule is `CFX_RenderDevice::DrawPath`'s**: the outer bounds, less the pixel on the side
+    the rectangle covers less, in int32 as the WebAssembly build computes it, when no stroke is
+    visible. `B` and `b` that take it draw no stroke.
+  - **Whether a path is such a rectangle** is asked of its points as pdfium records and
+    transforms them, in float32, including the page's `/Rotate`.
+  - **ADR 0025's regressions are explained.** Each of the 456 pages its clip rule moved away is
+    back at or below its figure from before it.
+
 ### Added — 2026-09-29
 
 - **`render/native` draws axial shadings and luminosity soft masks: all 1,251 of the corpus's

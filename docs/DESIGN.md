@@ -1078,13 +1078,21 @@ pages the dash blocked draw, and each is closer to pdfium dashed than solid. How
   under a mask are refused by reason.
 - A clip that is a rectangle on the device's axes admits whole pixels, as pdfium's SetClip_PathFill
   does. 1,103 corpus pages have one: 131 moved closer, 456 further by at most 0.015, and 516 did
-  not move, and the corpus mean went from 5.06554 to 5.06454.
+  not move, and their mean went from 5.06554 to 5.06454.
 
-**The worklist is empty.** Every corpus page draws natively. Seven accuracy items affect no page
+**Rectangle fills are done — see ADR 0026.** A rectangle on the device's axes that no visible
+stroke covers is filled in whole pixels, as pdfium's `CFX_RenderDevice::DrawPath` fills it: the
+outer bounds, less the pixel on the side it covers less, in the WebAssembly build's int32. Whether
+a path qualifies is asked of its points as pdfium records and transforms them, in float32. `B` and
+`b` that take the rule draw no stroke, as `DrawPath` returns after the fill. 682 corpus pages fill
+one: 681 moved closer and none farther, and the corpus mean went from 4.87658 to 3.98128. The 456
+pages the clip rule had moved away are each back at or below their figure from before it.
+
+**The worklist is empty.** Every corpus page draws natively. Eight accuracy items affect no page
 count:
 
-- pdfium's fill of an axis-aligned rectangle in whole pixels, which may be what moved the 456
-  pages further under the rectangle-clip rule
+- pdfium's knockout of a fill and a stroke whose alpha byte is 1 to 254 (`DrawFillStrokePath`)
+- pdfium's one-pixel line for a filled path of two points, and for a zero-area subpath
 - pdfium's own CMYK-to-sRGB table
 - an image `/ColorSpace` that names a resource, which no corpus image uses
 - pdfium's grid-fitting of a glyph's origin to the device pixel

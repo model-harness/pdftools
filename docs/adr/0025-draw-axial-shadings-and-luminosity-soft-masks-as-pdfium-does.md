@@ -203,7 +203,8 @@ already record. The logo box holds the masked shading and the text over it.
   with `FillRectWithBlend`. This backend antialiases it. `40 20 100 50 re f` at 200 dpi has pixel
   x=111 at 0 in pdfium and 51 here, and row 83 at 0 and 96, with no mask. The soft-mask fixtures
   therefore take their hard edge from a triangle. This is the likeliest next rule, and the test
-  of the hypothesis above.
+  of the hypothesis above. *ADR 0026 follows it, and confirms the hypothesis. It also finds that
+  the "corpus mean" above is the mean over the 1,103 pages with a rectangle clip.*
 - **The masked shading's origin.** Under a mask, pdfium draws the shading into the layer, whose
   origin is the layer's rectangle, not the clip's box. This backend uses the clip's box in both
   cases. The fixture's masked shading agrees on every pixel, so the difference has not been seen.

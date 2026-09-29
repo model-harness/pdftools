@@ -24,6 +24,52 @@ func (t matrix) apply(p point) point {
 
 func (t matrix) mul(n geom.Matrix) matrix { return matrix{n.Mul(t.m)} }
 
+// pt32 is a point as pdfium holds it, in float32.
+type pt32 struct{ x, y float32 }
+
+func f32(p point) pt32 { return pt32{float32(p.x), float32(p.y)} }
+
+// mat32 is a matrix as pdfium's CFX_Matrix holds it, in float32, for the few decisions pdfium
+// takes on its own arithmetic (fillRect). Every product is rounded before it is summed, as the
+// WebAssembly build computes it, so no platform fuses one.
+type mat32 struct{ a, b, c, d, e, f float32 }
+
+func f32m(m geom.Matrix) mat32 {
+	return mat32{float32(m.A), float32(m.B), float32(m.C), float32(m.D), float32(m.E), float32(m.F)}
+}
+
+// then is t followed by n, CFX_Matrix's t * n.
+func (t mat32) then(n mat32) mat32 {
+	return mat32{
+		float32(t.a*n.a) + float32(t.b*n.c), float32(t.a*n.b) + float32(t.b*n.d),
+		float32(t.c*n.a) + float32(t.d*n.c), float32(t.c*n.b) + float32(t.d*n.d),
+		float32(float32(t.e*n.a)+float32(t.f*n.c)) + n.e, float32(float32(t.e*n.b)+float32(t.f*n.d)) + n.f,
+	}
+}
+
+func (t mat32) apply(x, y float32) pt32 {
+	return pt32{float32(float32(t.a*x)+float32(t.c*y)) + t.e, float32(float32(t.b*x)+float32(t.d*y)) + t.f}
+}
+
+// display32 is pdfium's page-to-device matrix for a pw×ph bitmap, in float32: the page matrix
+// CPDF_Page::UpdateDimensions makes of the box and /Rotate, then GetDisplayMatrixForFloatRect's
+// scale onto the bitmap, which flips y.
+func display32(box geom.Rect, pw, ph, rotate int) mat32 {
+	l, b, r, t := float32(box.X0), float32(box.Y0), float32(box.X1), float32(box.Y1)
+	w, h := r-l, t-b
+	pm := mat32{1, 0, 0, 1, -l, -b}
+	switch rotate {
+	case 90:
+		w, h, pm = h, w, mat32{0, -1, 1, 0, -b, r}
+	case 180:
+		pm = mat32{-1, 0, 0, -1, r, t}
+	case 270:
+		w, h, pm = h, w, mat32{0, 1, -1, 0, t, -l}
+	}
+	fw, fh := float32(pw), float32(ph)
+	return pm.then(mat32{fw / w, 0, 0, -fh / h, 0, fh})
+}
+
 // pageMatrix maps a page's user space to device pixels, at a scale per axis.
 //
 // The y flip is the whole of it: PDF user space has y increasing up the page and an image has
@@ -168,6 +214,21 @@ func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64, soft *mas
 			c.img.Pix[o+2] = blend(c.img.Pix[o+2], pb, al)
 		}
 	})
+}
+
+// fillRect fills the pixels [x0,x1)×[y0,y1) whole, as CFX_AggDeviceDriver::FillRect does:
+// each one merged at the fill's alpha byte, times the clip's coverage and the mask's.
+func (c *canvas) fillRect(x0, y0, x1, y1 int, col paint, alpha float64, soft *mask) {
+	src, a8 := [3]uint8{channel(col.r), channel(col.g), channel(col.b)}, int(float32(alpha)*255)
+	w := c.clip.w
+	x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, c.clip.h)
+	for y := y0; y < y1; y++ {
+		for x := x0; x < x1; x++ {
+			if cl := c.clip.a[y*w+x]; cl != 0 {
+				c.merge(y*w+x, src, a8, soft, cl)
+			}
+		}
+	}
 }
 
 func blend(dst uint8, src, alpha float64) uint8 {

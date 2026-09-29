@@ -232,7 +232,7 @@ func (w *walker) drawXObject(m *content.Machine, name objects.Name, depth int) {
 		// The form is clipped to its /BBox, in form space (§8.10.1). Installed as a pending clip
 		// ended by nothing, which is what "re W n" does.
 		if bb, ok := numRect(w.s, x.st.Dict, "BBox"); ok {
-			w.path.rect(bb.X0, bb.Y0, bb.Width(), bb.Height(), w.base.mul(sub.GS.CTM))
+			w.path.rect(bb.X0, bb.Y0, bb.Width(), bb.Height(), w.base.mul(sub.GS.CTM), w.matrix32(sub))
 			w.pending, w.pendingEO = true, false
 			w.endPath()
 		}

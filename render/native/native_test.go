@@ -551,6 +551,98 @@ func TestARectangleClipAdmitsWholePixels(t *testing.T) {
 	}
 }
 
+// TestARectangleFillIsWholePixels pins pdfium's rule for filling a rectangle on the device's axes
+// that nothing visible strokes: CFX_RenderDevice::DrawPath fills its outer bounds in whole pixels,
+// less one on the side it covers less when those are a pixel wider than the rectangle rounded up.
+//
+// The cases are the rule's own — fractional and integer edges, the pixel given back on each side
+// and on a tie, m l l l h, flipped, scaled, mirrored and quarter-turned by a cm, off the page, no
+// width, no height, thinner than a pixel — then what it fills under: a colour, an alpha, a soft
+// mask, a rectangle clip, a sloped one — and last each /Rotate of a box off the origin, with a
+// quarter-turned cm on it. Off the page and "a sum in float32" are pdfium's float32 arithmetic:
+// 150.3 70.6 80 60 re is 60.000008 tall to it, and a row taller at 72 dpi. At 150 dpi a rotated
+// page's two scales differ, which is what tells the matrix's b and c terms apart. A stroke with an alpha byte of 0 (CA 0.0039) leaves the rule on for
+// B and b, and DrawPath returns after the fill, so nothing strokes; an alpha byte of 1 (CA 0.004)
+// leaves it on for f, which does not stroke. Then come the int32 limits of the WebAssembly build,
+// where pdfium's CheckedNumeric draws nothing or its wrapped width+1 gives back column 0; the four
+// marked "past int32" would fill whole rows or columns if the pixel given back wrapped.
+//
+// A sloped clip's edge is antialiased, and agrees only to that. An opaque stroke turns the rule off
+// and agrees only as far as this backend's stroke does, within 64 levels; skipping it, as the rule
+// does, puts the whole stroke's colour in.
+func TestARectangleFillIsWholePixels(t *testing.T) {
+	const res = "/ExtGState<</GA<</ca 0.5>>/GS<</CA 0.0039>>/GT<</CA 0.004>>" +
+		"/GM<</SMask<</S/Luminosity/G 5 0 R>>>>>>/Shading<</Sh0 6 0 R>>"
+	extra := []string{
+		maskGroup("0 0 200 100", "/Resources<</Shading<</Sh0 6 0 R>>>>", "/Sh0 sh"),
+		axialSh("/DeviceGray", "0 0 200 0", "/Extend[true true]", expFn("0", "1", "1")),
+	}
+	const col = "0.2 0.4 0.6 rg 0.9 0.1 0.1 RG 3 w "
+	for _, c := range []struct {
+		name, stream string
+		mean, worst  float64 // the most pdfium may differ by: 0 is every pixel equal
+	}{
+		{"re", "10.4 10.6 80.3 50.2 re f", 0, 0},
+		{"integer", "10 10 80 50 re f", 0, 0},
+		{"less covered on the left", "10.8 10.2 79.8 50.4 re f", 0, 0},
+		{"less covered on the right", "10.2 10.8 80.5 49.7 re f", 0, 0},
+		{"covered alike on each side", "10.5 10.5 10 40 re f", 0, 0},
+		{"a sum in float32", "20.2 10.7 60 53.6 re f", 0, 0},
+		{"m l l l h", "10.4 10.6 m 90.7 10.6 l 90.7 60.8 l 10.4 60.8 l h f", 0, 0},
+		{"m h l l l h", "10.4 10.6 m h 90.7 10.6 l 90.7 60.8 l 10.4 60.8 l h f", 0, 0},
+		{"even-odd", "10.4 10.6 80.3 50.2 re f*", 0, 0},
+		{"flipped", "90.7 60.8 -80.3 -50.2 re f", 0, 0},
+		{"scaled", "1.7 0 0 1.3 5.3 3.1 cm 10.4 10.6 40.3 30.2 re f", 0, 0},
+		{"mirrored", "-1.7 0 0 -1.3 190.3 97.1 cm 10.4 10.6 40.3 30.2 re f", 0, 0},
+		{"quarter-turned", "0 1 -1 0 150.2 10.3 cm 10.4 10.6 40.3 30.2 re f", 0, 0},
+		{"off the page", "-20.3 -10.4 80.2 60.7 re f 150.3 70.6 80 60 re f", 0, 0},
+		{"no width", "50.5 10.3 0 60.2 re f", 0, 0},
+		{"no height", "10.3 50.5 60.2 0 re f", 0, 0},
+		{"thin", "20.1 20.1 0.2 0.3 re f 60.9 40.4 0.15 0.15 re f", 0, 0},
+		{"alpha", "/GA gs 10.4 10.6 80.3 50.2 re f", 0, 0},
+		{"soft mask", "/GM gs 10.4 10.6 80.3 50.2 re f", 0, 0},
+		{"rectangle clip", "20.3 20.3 100 50 re W n 10.4 10.6 80.3 50.2 re f", 0, 0},
+		{"sloped clip", "20 20 m 180 30 l 100 90 l h W n 10.4 10.6 160.3 70.2 re f", 0.02, 5},
+		{"B under an alpha byte of 0", "/GS gs 10.4 10.6 80.3 50.2 re B", 0, 0},
+		{"b under an alpha byte of 0", "/GS gs 10.4 10.6 80.3 50.2 re b", 0, 0},
+		{"B stroked", "10.4 10.6 80.3 50.2 re B", 0.1, 64},
+		{"f under an alpha byte of 1", "/GT gs 10.4 10.6 80.3 50.2 re f", 0, 0},
+		{"huge", "-10000000000.0 -10000000000.0 20000000000.0 20000000000.0 re f", 0, 0},
+		{"huge to the right", "0 10 10000000000.0 50 re f", 0, 0},
+		{"huge upward", "10 0 50 10000000000.0 re f", 0, 0},
+		{"huge across", "-10000000000.0 10 20000000000.0 50 re f", 0, 0},
+		{"huge down the page", "10 -10000000000.0 50 20000000000.0 re f", 0, 0},
+		{"past int32 on the left", "3000000000.0 10 3000000000.0 40 re f", 0, 0},
+		{"past int32 on the right", "-6000000000.0 10 3000000000.0 40 re f", 0, 0},
+		{"past int32 at the top", "10 3000000000.0 40 6000000000.0 re f", 0, 0},
+		{"past int32 at the bottom", "10 -6000000000.0 40 3000000000.0 re f", 0, 0},
+	} {
+		for _, dpi := range []float64{72, 144, 200} {
+			t.Run(fmt.Sprintf("%s/%g", c.name, dpi), func(t *testing.T) {
+				path := shadePDF(t, 200, 100, res, col+c.stream, extra...)
+				mean, worst := compareRGB(t, path, dpi)
+				if mean > c.mean || worst > c.worst {
+					t.Errorf("mean %.4f, worst %.0f against pdfium; want at most %g and %g", mean, worst, c.mean, c.worst)
+				}
+			})
+		}
+	}
+	for _, rot := range []int{0, 90, 180, 270} {
+		page := fmt.Sprintf("<</Type/Page/Parent 2 0 R/MediaBox[5.3 7.1 205.3 107.1]/Rotate %d/Contents 4 0 R>>", rot)
+		path := buildPDF(t, pageObjs(page, col+"15.7 17.7 80.3 50.2 re f 155.6 77.7 80 60 re f 100.1 20.2 0.3 70.4 re f "+
+			"q 0 1 -1 0 150.2 10.3 cm 10.4 10.6 40.3 30.2 re f 11 -40.6 41 30.2 re f Q"), "rotate.pdf")
+		// At 150 dpi the page is 417×209 pixels, so its two scales differ, and each term of the
+		// display matrix is seen on its own.
+		for _, dpi := range []float64{72, 150, 200} {
+			t.Run(fmt.Sprintf("rotated %d/%g", rot, dpi), func(t *testing.T) {
+				if mean, worst := compareRGB(t, path, dpi); worst > 0 {
+					t.Errorf("mean %.4f, worst %.0f against pdfium; want every pixel equal", mean, worst)
+				}
+			})
+		}
+	}
+}
+
 // TestQRestoresTheFillColourAndTheFont pins the two parameters Q restored nowhere until form
 // XObjects needed a real q.
 //

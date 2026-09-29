@@ -346,10 +346,13 @@ func TestIntersectRoundsRatherThanTruncates(t *testing.T) {
 // rule thinner than a quarter of a pixel: a 0.1pt hairline covers a sixteenth of a row, which
 // rounds to nothing at four samples and to a sixth of full ink at sixteen. Producers draw
 // hairlines constantly — a table rule is one — so this is the case that prices the constant.
+//
+// The hairline leans by 0.2pt over its length. pdfium fills a rectangle on the device's axes in
+// whole pixels, and so does this backend (fillRect), so a level one would not be sampled at all.
 func TestHairlineNeedsVerticalSampling(t *testing.T) {
-	r := renderNative(t, onePagePDF(t, "0 g 20 100 160 0.1 re f", 200, 200), 72)
+	r := renderNative(t, onePagePDF(t, "0 g 20 100 m 180 100.2 l 180 100.3 l 20 100.1 l h f", 200, 200), 72)
 	px, w, _ := ink(r.Image)
-	// Device row for user y = 100 is 200 − 100 − 1 = 99 downward of the top edge.
+	// At x = 100 the hairline is user y 100.1 to 100.2, which is in device row 200 − 100 − 1 = 99.
 	got := px[99*w+100]
 	if got == 0 {
 		t.Errorf("a 0.1pt hairline left no ink: vertical sampling is too coarse to represent it")
