@@ -124,3 +124,9 @@ desktop.ini
 *.swp
 coverage.out
 coverage.html
+
+# --- Scratch ---
+#
+# Spikes, mutation trees and corpus measurements, one folder per ADR. A tree here
+# may junction docs/ to the corpus, so remove the junction before deleting it.
+/.tmp/
