@@ -193,6 +193,16 @@ func TestFillsAgreeWithPdfium(t *testing.T) {
 		{"y takes the endpoint as its second control", "0 g 40 40 m 120 40 120 120 y f", 5},
 		{"F is f", "0 g 30 30 140 90 re F", 0},
 		{"h closes the subpath", "0 g 40 40 m 160 40 l 100 150 l h f", 0},
+		// A curve with no current point adds nothing, as a line with none adds nothing, to a fill
+		// or a clip; and a clip pdfium recorded no point of is no clip, where a lone m clips
+		// everything away.
+		{"c with no current point", "0 g 100 50 30 80 150 90 c 10 10 m 50 10 l 30 40 l h f", 0},
+		{"c with no current point, as a clip", "100 50 30 80 150 90 c W n 0 g 0 0 200 200 re f", 0},
+		{"l with no current point, as a clip", "50 50 l 80 80 l W n 0 g 0 0 200 200 re f", 0},
+		{"W n with no path", "W n 0 g 0 0 200 200 re f", 0},
+		{"W b* with no path", "W b* 0 g 0 0 200 200 re f", 0},
+		{"W h n with no path", "W h n 0 g 0 0 200 200 re f", 0},
+		{"a lone m, as a clip", "50 50 m W n 0 g 0 0 200 200 re f", 0},
 		{"a rotating cm inside q", "q 0.866 0.5 -0.5 0.866 100 100 cm 0 g 0 0 40 40 re f Q 0 g 0 0 30 30 re f", 0},
 		{"a scaling cm", "q 2 0 0 3 20 20 cm 0 g 0 0 40 30 re f Q", 0},
 		// Colour, which a red-channel-only comparison could not see at all.
@@ -590,6 +600,7 @@ func TestARectangleFillIsWholePixels(t *testing.T) {
 		{"a sum in float32", "20.2 10.7 60 53.6 re f", 0, 0},
 		{"m l l l h", "10.4 10.6 m 90.7 10.6 l 90.7 60.8 l 10.4 60.8 l h f", 0, 0},
 		{"m h l l l h", "10.4 10.6 m h 90.7 10.6 l 90.7 60.8 l 10.4 60.8 l h f", 0, 0},
+		{"a curve around a box", "10.4 10.6 m 90.7 10.6 90.7 60.8 10.4 60.8 c f", 0.051, 25},
 		{"even-odd", "10.4 10.6 80.3 50.2 re f*", 0, 0},
 		{"flipped", "90.7 60.8 -80.3 -50.2 re f", 0, 0},
 		{"scaled", "1.7 0 0 1.3 5.3 3.1 cm 10.4 10.6 40.3 30.2 re f", 0, 0},
@@ -760,12 +771,14 @@ func TestManySegmentsIsNotQuadratic(t *testing.T) {
 	if _, err := New(s).Page(1, o); err != nil {
 		t.Fatalf("Page: %v", err)
 	}
-	// 100 ms, from both measurements rather than from taste: as shipped this is 5.5 ms and with
-	// the edges rescanned per sample it is 154 ms, so the bound sits 18× above the one and
-	// 1.5× below the other. A loaded machine has room; a rescan does not.
+	// 100 ms, from both measurements rather than from taste: as shipped this is 20 ms and with
+	// the edges rescanned per sample the fill alone is 154 ms, so the bound sits 5× above the one
+	// and 1.5× below the other. A loaded machine has room; a rescan does not. Of the 20, the fill
+	// is 8; the rest is the hairlines pdfium strokes where the zig-zag folds back along itself,
+	// on the rows where its integer y repeats, which go through the same scan (zeroArea).
 	if d := time.Since(start); d > 100*time.Millisecond {
-		t.Errorf("10,000 segments took %v, want under 100ms — 5.5ms is the measured figure and"+
-			" 154ms is what rescanning every edge per sample costs", d)
+		t.Errorf("10,000 segments took %v, want under 100ms — 20ms is the measured figure and"+
+			" 154ms is what rescanning every edge per sample costs the fill alone", d)
 	} else {
 		t.Logf("10,000 segments in %v", d)
 	}

@@ -5,6 +5,25 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-02
+
+- **`render/native` draws a path as pdfium's `CFX_RenderDevice::DrawPath` does.** ADR 0027.
+  The corpus mean against pdfium went from 3.98128 to 3.98125. 6 pages moved closer, all from a
+  stroke that goes nowhere, and none moved farther.
+  - **A path keeps pdfium's points**, in float32, as its content parser records them, and every
+    routing question is asked of them.
+  - **A path of two points is a cosmetic one-pixel line**, and a filled subpath with no area is
+    drawn as `GetZeroAreaPath`'s hairlines in the fill colour.
+  - **A fill and a translucent stroke are a knockout**, drawn into one layer in bytes as
+    `DrawFillStrokePath` draws them, so the fill does not show through the stroke.
+  - **Alpha is a byte.** A fill or stroke whose alpha byte is 0 is not drawn.
+  - **A stroke that goes nowhere is a pixel long** under every cap, from `BuildAggPath`'s +1,
+    along the CTM's first row, so a mirrored one goes left. A curve that goes nowhere draws
+    nothing. A closed subpath of two points is stroked open, as AGG strokes it. Open dashes of
+    zero length are drawn, and closed ones are still refused.
+  - **A curve with no current point adds nothing** to a fill or a clip, as a line with none adds
+    nothing; it filled from (0, 0) before. A `W n` or `W b*` with no recorded point sets no clip.
+
 ### Changed — 2026-09-29
 
 - **`render/native` fills a rectangle on the device's axes in whole pixels, as pdfium does.**

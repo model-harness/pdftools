@@ -523,15 +523,11 @@ func (w *walker) survey(m *content.Machine, data []byte, depth int) {
 		case "n":
 			w.path = path{}
 		case "S", "s":
-			if op.Name == "s" {
-				w.path.close()
-			}
+			w.path.rec.closeFor(op.Name)
 			w.checkStroke(m)
 			w.path = path{}
 		case "B", "B*", "b", "b*":
-			if op.Name == "b" || op.Name == "b*" {
-				w.path.close()
-			}
+			w.path.rec.closeFor(op.Name)
 			if w.soft != nil {
 				// pdfium draws the fill and the stroke into one layer and masks the layer, so
 				// where they overlap the stroke covers the fill before the mask applies; masking
@@ -805,50 +801,49 @@ func blendNames(s objects.Store, g objects.Dict) []objects.Name {
 	return out
 }
 
-// buildPath applies op if it is a path construction operator, and reports whether it was.
+// buildPath applies op if it is a path construction operator, and reports whether it was. Each
+// operator adds its edges to the path and its points to the path's recording (points.go).
 //
 // Called from both passes: the survey builds the path paint will stroke, because a dash's cost is
 // in the length of the path it dashes (checkDash).
 func (w *walker) buildPath(m *content.Machine, op content.Op) bool {
 	ctm := w.base.mul(m.GS.CTM)
+	p := &w.path
+	at := func(i int) ppoint { return operand(op.Num(i), op.Num(i+1), ctm) }
 	switch op.Name {
 	case "m":
 		if len(op.Operands) >= 2 {
-			x, y := op.Num(0), op.Num(1)
-			w.path.moveTo32(ctm.apply(point{x, y}), w.matrix32(m).apply(float32(x), float32(y)))
+			to := at(0)
+			p.moveTo(to.dev)
+			p.rec.add(to, pmove)
 		}
 	case "l":
 		if len(op.Operands) >= 2 {
-			x, y := op.Num(0), op.Num(1)
-			w.path.lineTo32(ctm.apply(point{x, y}), w.matrix32(m).apply(float32(x), float32(y)))
+			to := at(0)
+			p.lineTo(to.dev)
+			p.rec.add(to, pline)
 		}
 	case "c":
 		if len(op.Operands) >= 6 {
-			w.path.curveTo(
-				ctm.apply(point{op.Num(0), op.Num(1)}),
-				ctm.apply(point{op.Num(2), op.Num(3)}),
-				ctm.apply(point{op.Num(4), op.Num(5)}))
+			p.curve(at(0), at(2), at(4))
 		}
 	case "v":
 		// The first control point is the current point (§8.5.2.2), so the curve leaves the
 		// pen in the direction it was already going.
 		if len(op.Operands) >= 4 {
-			c2 := ctm.apply(point{op.Num(0), op.Num(1)})
-			to := ctm.apply(point{op.Num(2), op.Num(3)})
-			w.path.curveTo(w.path.cur, c2, to)
+			p.curve(ppoint{at: p.rec.cur.at, dev: p.cur}, at(0), at(2))
 		}
 	case "y":
 		// The second control point is the endpoint, so the curve arrives straight.
 		if len(op.Operands) >= 4 {
-			c1 := ctm.apply(point{op.Num(0), op.Num(1)})
-			to := ctm.apply(point{op.Num(2), op.Num(3)})
-			w.path.curveTo(c1, to, to)
+			p.curve(at(0), at(2), at(2))
 		}
 	case "h":
-		w.path.close()
+		p.close()
+		p.rec.close()
 	case "re":
 		if len(op.Operands) >= 4 {
-			w.path.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm, w.matrix32(m))
+			p.rect(op.Num(0), op.Num(1), op.Num(2), op.Num(3), ctm)
 		}
 	default:
 		return false
@@ -895,29 +890,13 @@ func (w *walker) op(m *content.Machine, op content.Op, depth int) {
 	case "W", "W*":
 		w.pending, w.pendingEO = true, op.Name == "W*"
 
-	// Painting.
-	case "f", "F":
-		w.paintPath(false)
-	case "f*":
-		w.paintPath(true)
-	case "n":
-		w.endPath()
-	case "S":
-		w.strokePath(m)
-		w.endPath()
-	case "s":
-		w.path.close()
-		w.strokePath(m)
-		w.endPath()
-	case "B", "B*":
-		if !w.fillPath(op.Name == "B*", true) {
-			w.strokePath(m)
-		}
-		w.endPath()
-	case "b", "b*":
-		w.path.close()
-		if !w.fillPath(op.Name == "b*", true) {
-			w.strokePath(m)
+	// Painting. s and b close the path as h does; b* adds the closing line whether or not the pen is
+	// at the start, as pdfium's parser does.
+	case "f", "F", "f*", "n", "S", "s", "B", "B*", "b", "b*":
+		w.path.rec.closeFor(op.Name)
+		fill, stroked := strings.ContainsAny(op.Name, "fFBb"), strings.ContainsAny(op.Name, "SsBb")
+		if fill || stroked {
+			w.drawPath(m, fill, strings.HasSuffix(op.Name, "*"), stroked)
 		}
 		w.endPath()
 	case "J", "j", "M", "d":
@@ -1035,56 +1014,97 @@ func marks(op string) bool {
 	return true
 }
 
-// paintPath fills the current path and applies any clip the stream marked.
+// drawPath paints the current path as CFX_RenderDevice::DrawPath decides to, from the path's points
+// as pdfium's parser recorded them (points.go) and the alpha bytes of the fill and the stroke, which
+// are 0 for an operator that does not paint one. In DrawPath's order, the first that applies:
 //
-// Nothing is painted once the page is known to be refused. The walk still runs to the end —
-// lexing a stream is cheap and the list of *everything* missing is what makes the error a
-// worklist rather than a complaint — but rasterizing for an image that will not be returned is
-// the expensive half, and skipping it took the corpus-wide refusal pass from minutes to
-// seconds.
-func (w *walker) paintPath(evenOdd bool) {
-	w.fillPath(evenOdd, false)
-	w.endPath()
-}
-
-// fillPath fills the current path, in whole pixels when it is a rectangle on the device's axes and
-// nothing visible strokes it, as CFX_RenderDevice::DrawPath does. stroked says a stroke follows; one
-// whose alpha byte is 0 does not count. whole reports the rule taken, after which DrawPath returns
-// without the stroke.
-func (w *walker) fillPath(evenOdd, stroked bool) (whole bool) {
-	if w.path.empty() {
-		return false
+//   - a path of two points, with no stroke to see, is a cosmetic line: one device pixel wide, butt
+//     capped, in the fill colour, whatever it was filled with;
+//   - a rectangle on the device's axes, with no stroke to see, fills whole pixels (rectFill);
+//   - a fill with no stroke at all first strokes each subpath's zero-area parts a pixel wide, at a
+//     quarter of the fill's alpha where GetZeroAreaPath calls them thin, and then fills;
+//   - a fill and a stroke that is not opaque are drawn as one knockout layer (canvas.fillStroke);
+//   - otherwise the fill, then the stroke.
+//
+// Nothing is painted once the page is known to be refused. The walk still runs to the end — lexing
+// a stream is cheap and the list of *everything* missing is what makes the error a worklist rather
+// than a complaint — but rasterizing for an image that will not be returned is the expensive half,
+// and skipping it took the corpus-wide refusal pass from minutes to seconds.
+func (w *walker) drawPath(m *content.Machine, fill, evenOdd, stroked bool) {
+	pts := w.path.rec.points(w.pen.cap == 1)
+	if len(pts) == 0 {
+		return
 	}
-	c := w.canvasFor()
-	if !stroked || int(float32(w.strokeAlpha)*255) == 0 {
-		if x0, y0, x1, y1, ok := w.path.fillRect(); ok {
+	fa, sa := 0, 0
+	if fill {
+		fa = alpha8(w.alpha)
+	}
+	if stroked {
+		sa = alpha8(w.strokeAlpha)
+	}
+	if fa == 0 && sa == 0 {
+		return
+	}
+	c, m32 := w.canvasFor(), w.matrix32(m)
+	if sa == 0 {
+		if len(pts) == 2 {
+			c.hairlines([][2]pt32{plusOne(m32.apply(pts[0].at.x, pts[0].at.y), m32.apply(pts[1].at.x, pts[1].at.y))},
+				w.fill, w.alpha, w.soft)
+			return
+		}
+		if x0, y0, x1, y1, ok := rectFill(pts, m32); ok {
 			c.fillRect(x0, y0, x1, y1, w.fill, w.alpha, w.soft)
-			return true
+			return
 		}
 	}
-	c.fill(&w.path, w.fill, evenOdd, w.alpha, w.soft)
-	return false
+	if sa == 0 && !stroked {
+		for _, sub := range subpathsOf(pts) {
+			if segs, thin := zeroArea(sub, m32); len(segs) > 0 {
+				al := w.alpha
+				if thin {
+					al = float64(fa>>2) / 255
+				}
+				c.hairlines(segs, w.fill, al, w.soft)
+			}
+		}
+	}
+	// The stroke is shaped by the CTM in force at the painting operator, which §8.5.3.1 makes the one
+	// that shapes the pen, whatever CTM the path's points were given under.
+	var line *path
+	if sa > 0 {
+		ctm := w.base.mul(m.GS.CTM).m
+		line = stroke(traced(pts, ctm), m.GS.LineWidth, ctm, w.pen)
+	}
+	if fa > 0 && sa < 255 && stroked {
+		c.fillStroke(&w.path, evenOdd, w.fill, w.alpha, line, w.stroke, w.strokeAlpha)
+		return
+	}
+	// A fill whose alpha byte is 0 is not drawn, as a stroke's is not: AGG composites nothing at it.
+	if fa > 0 {
+		c.fill(&w.path, w.fill, evenOdd, w.alpha, w.soft)
+	}
+	if line != nil {
+		c.fill(line, w.stroke, false, w.strokeAlpha, w.soft)
+	}
 }
+
+// alpha8 is a constant alpha as the byte pdfium's GetFillArgb and GetStrokeArgb make of it.
+func alpha8(a float64) int { return int(float32(a) * 255) }
 
 // matrix32 is the matrix pdfium transforms a path's points by: the CTM, then the page's display
 // matrix, in float32. The CTM is this walker's own rounded to float32, which is pdfium's after at
 // most one cm; pdfium concatenates each cm, and a form's /Matrix, in float32 as it goes.
 func (w *walker) matrix32(m *content.Machine) mat32 { return f32m(m.GS.CTM).then(w.base32) }
 
-// strokePath strokes the current path under the CTM in force at the painting operator, which
-// §8.5.3.1 makes the one that shapes the pen, whatever CTM the path's points were given under.
-func (w *walker) strokePath(m *content.Machine) {
-	out := stroke(&w.path, m.GS.LineWidth, w.base.mul(m.GS.CTM).m, w.pen)
-	w.canvasFor().fill(out, w.stroke, false, w.strokeAlpha, w.soft)
-}
-
 // endPath clears the path and installs a pending clip.
 //
 // The clip takes effect *after* the painting operator that ends the path (§8.5.4), which is
 // why it is applied here and not at W: a W n sequence clips everything after it, and a W f
 // fills the path first and clips with it afterwards.
+//
+// A path pdfium recorded no point of sets no clip: AddPathObject returns before it clips.
 func (w *walker) endPath() {
-	if w.pending {
+	if w.pending && len(w.path.rec.pts) > 0 {
 		c := w.canvasFor()
 		if x0, y0, x1, y1, ok := w.path.pixelRect(c.clip.w, c.clip.h); ok {
 			c.clip.intersect(rectMask(c.clip.w, c.clip.h, x0, y0, x1, y1))

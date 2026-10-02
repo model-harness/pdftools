@@ -144,13 +144,16 @@ func TestStrokeGeometryIsExact(t *testing.T) {
 			grey(100, 98, paper), grey(100, 99, black0), grey(100, 100, paper)}},
 		{"a zero width is a pixel too", "0 G 0 w 40 100.5 m 160 100.5 l S", []pixel{
 			grey(100, 99, black0), grey(100, 100, paper)}},
-		// §8.5.3.2: a subpath that goes nowhere is a dot under round caps and nothing otherwise, and
-		// a lone m is nothing even then.
-		{"a zero-length segment is a dot under round caps", "0 G 10 w 1 J 100.5 100.5 m 100.5 100.5 l S",
-			[]pixel{grey(100, 99, black0), grey(104, 99, black0), grey(106, 99, paper)}},
-		{"a closed single point is a dot", "0 G 10 w 1 J 100.5 100.5 m h S", []pixel{grey(100, 99, black0)}},
-		{"a zero-length segment under butt caps is nothing", "0 G 10 w 0 J 100.5 100.5 m 100.5 100.5 l S",
-			[]pixel{grey(100, 99, paper)}},
+		// A subpath that goes nowhere is a line a device pixel long, to the right, as pdfium's
+		// BuildAggPath makes it, where §8.5.3.2 would paint a dot under round caps and nothing under
+		// the others: here from x 100.5 to 101.5, so a round cap reaches 106.5 and a butt-capped
+		// line half covers the pixels at 100 and 101. A lone m is nothing.
+		{"a zero-length segment is a pixel long under round caps", "0 G 10 w 1 J 100.5 100.5 m 100.5 100.5 l S",
+			[]pixel{grey(100, 99, black0), grey(105, 99, black0), grey(107, 99, paper), grey(94, 99, paper)}},
+		{"a closed single point is a pixel long", "0 G 10 w 1 J 100.5 100.5 m h S", []pixel{
+			grey(100, 99, black0), grey(105, 99, black0), grey(107, 99, paper)}},
+		{"a zero-length segment is a pixel long under butt caps", "0 G 10 w 0 J 100.5 100.5 m 100.5 100.5 l S",
+			[]pixel{grey(99, 99, paper), grey(100, 99, 128), grey(101, 99, 128), grey(100, 95, 128), grey(102, 99, paper)}},
 		{"a lone m is nothing", "0 G 10 w 1 J 100.5 100.5 m S", []pixel{grey(100, 99, paper)}},
 		// A closed subpath has a join where it meets itself and no caps: the miter at the start
 		// corner of a square fills the corner pixel.
@@ -259,8 +262,9 @@ func TestStrokeAlphaIsCAAndFillAlphaIsCa(t *testing.T) {
 		extg string
 		want []pixel
 	}{
-		// Inside the fill, and outside it on the stroke.
-		{"<</CA 0.5>>", []pixel{{100, 100, 0, 0, 255}, {46, 100, 255, 128, 128}, {52, 100, 128, 0, 128}}},
+		// Inside the fill, and outside it on the stroke. On the fill the stroke knocks it out
+		// (§11.7.4.4), so the fill does not show through: the stroke's half is the same either side.
+		{"<</CA 0.5>>", []pixel{{100, 100, 0, 0, 255}, {46, 100, 255, 128, 128}, {52, 100, 255, 128, 128}}},
 		{"<</ca 0.5>>", []pixel{{100, 100, 128, 128, 255}, {46, 100, 255, 0, 0}, {52, 100, 255, 0, 0}}},
 	} {
 		t.Run(c.extg, func(t *testing.T) {

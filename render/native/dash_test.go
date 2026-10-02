@@ -234,17 +234,18 @@ func TestUndrawableDashesAreRefusedByReason(t *testing.T) {
 		// Taken modulo the period, and not walked off one element at a time.
 		{"a positive phase inside float32", "", "[3 2] " + top + " d" + line, ""},
 		{"a lone m", "", "[3 3] 0 d 1 J 10 w 100 100 m S", ""},
-		{"a subpath of zero length", "", "[3 3] 0 d 1 J 10 w 100 100 m 100 100 l S",
-			"stroke: a dashed subpath of zero length"},
-		{"a subpath of zero length with butt caps", "", "[3 3] 0 d 10 w 100 100 m 100 100 l S",
-			"stroke: a dashed subpath of zero length"},
-		{"m h", "", "[3 3] 0 d 1 J 10 w 100 100 m h S", "stroke: a dashed subpath of zero length"},
+		// Open, a subpath that goes nowhere is drawn a pixel long or not at all, as pdfium draws it.
+		{"a subpath of zero length", "", "[3 3] 0 d 1 J 10 w 100 100 m 100 100 l S", ""},
+		{"a subpath of zero length with butt caps", "", "[3 3] 0 d 10 w 100 100 m 100 100 l S", ""},
+		{"a subpath of zero length beside another", "", "[3 3] 0 d 1 J 10 w 50 50 m 150 150 l 100 100 m 100 100 l S", ""},
+		{"m h", "", "[3 3] 0 d 1 J 10 w 100 100 m h S", "stroke: a closed dashed subpath of zero length"},
 		// The survey closes the path at s, as paint does, and a closed m is not a lone one.
-		{"m s", "", "[3 3] 0 d 1 J 10 w 100 100 m s", "stroke: a dashed subpath of zero length"},
-		{"m b", "", "[3 3] 0 d 1 J 10 w 100 100 m b", "stroke: a dashed subpath of zero length"},
-		{"m b*", "", "[3 3] 0 d 1 J 10 w 100 100 m b*", "stroke: a dashed subpath of zero length"},
-		{"a subpath of zero length beside another", "", "[3 3] 0 d 1 J 10 w 50 50 m 150 150 l 100 100 m 100 100 l S",
-			"stroke: a dashed subpath of zero length"},
+		{"m s", "", "[3 3] 0 d 1 J 10 w 100 100 m s", "stroke: a closed dashed subpath of zero length"},
+		{"m b", "", "[3 3] 0 d 1 J 10 w 100 100 m b", "stroke: a closed dashed subpath of zero length"},
+		{"m b*", "", "[3 3] 0 d 1 J 10 w 100 100 m b*", "stroke: a closed dashed subpath of zero length"},
+		{"m l h", "", "[3 3] 0 d 2 J 10 w 100 100 m 100 100 l h S", "stroke: a closed dashed subpath of zero length"},
+		// Under butt caps pdfium's content parser drops a closed m: there is nothing to dash.
+		{"m h under butt caps", "", "[3 3] 0 d 10 w 100 100 m h S", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			extg := c.extg

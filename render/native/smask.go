@@ -178,7 +178,7 @@ func (w *walker) paintSoftMask(m *content.Machine, g objects.Dict, depth int) {
 	}
 	w.inSoftMask(m, sm, func(sub *content.Machine) {
 		if bb, ok := numRect(w.s, sm.g.st.Dict, "BBox"); ok {
-			w.path.rect(bb.X0, bb.Y0, bb.Width(), bb.Height(), w.base.mul(sub.GS.CTM), w.matrix32(sub))
+			w.path.rect(bb.X0, bb.Y0, bb.Width(), bb.Height(), w.base.mul(sub.GS.CTM))
 			w.pending, w.pendingEO = true, false
 			w.endPath()
 		}

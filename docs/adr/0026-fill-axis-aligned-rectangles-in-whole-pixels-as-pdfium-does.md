@@ -126,7 +126,7 @@ On its own, the float32 chain changes 9 rectangles on 4 pages, and all 4 move cl
 below its figure from before the clip rule.
 
 **Findings, documented and not followed.** Each is read from `DrawPath` or measured on a fixture.
-No corpus page has been shown to need one.
+No corpus page has been shown to need one. ADR 0027 follows the first four.
 
 - **A path of two points with no visible stroke** goes to `DrawCosmeticLine` before `GetRect` is
   asked, and is drawn as a one-pixel line in the fill colour. This backend fills nothing.

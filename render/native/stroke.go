@@ -3,6 +3,7 @@ package native
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/model-harness/pdftools/content"
 	"github.com/model-harness/pdftools/geom"
@@ -155,13 +156,12 @@ func period(dash []float64) float64 {
 const maxDashes = 1 << 20
 
 // checkDash charges the page for the dashes this stroke can draw, and refuses the dashed subpath
-// the survey can see that pdfium and §8.5.3.2 draw differently.
+// the survey can see that pdfium and this dasher draw differently.
 //
-// That subpath is one that goes nowhere. §8.5.3.2 paints it only under round caps, as a dot.
-// pdfium draws a path that is nothing but m and l to the same point as a line one unit long, under
-// every cap, and dashes that line; the same subpath beside another it does not draw at all, nor one
-// with two such l, and closed by h it draws a part of the dot. Measured against pdfium, dashed and
-// not. Only a lone m, which neither draws, is not refused.
+// That subpath is a closed one that goes nowhere. pdfium strokes the path traced gives it, so the
+// subpath is a closed line a pixel long, which AGG's dasher walks there and back as one open dash:
+// two caps at its start, which this dasher joins as §8.4.3.3 asks (dashed). An open one that goes
+// nowhere is drawn alike by both, a pixel long or not at all.
 //
 // The charge is dashBound's, computed from the path the paint pass will stroke, which the survey
 // builds for the purpose (buildPath): a bound taken from a second reading of the operators could
@@ -171,16 +171,17 @@ func (w *walker) checkDash(m *content.Machine, refuse func(string, ...any)) {
 	if !ok {
 		return // a stroke with no area, which paint does not dash
 	}
-	for _, sp := range w.path.subpaths() {
-		edges := w.path.edges[sp.from:sp.to]
-		pts := s.points(edges, sp)
-		if len(pts) == 1 {
-			if !lone(edges, sp) {
-				refuse("a dashed subpath of zero length, which pdfium draws by rules of its own")
-			}
-			continue
+	rec := w.path.rec.points(w.pen.cap == 1)
+	for _, sub := range subpathsOf(rec) {
+		if nowhere(sub) && slices.ContainsFunc(sub, func(q ppoint) bool { return q.close }) {
+			refuse("a closed dashed subpath of zero length, which pdfium dashes open")
 		}
-		w.dashes += s.dashBound(pts, sp.closed)
+	}
+	p := traced(rec, w.base.mul(m.GS.CTM).m)
+	for _, sp := range p.subpaths() {
+		if pts := s.points(p.edges[sp.from:sp.to], sp); len(pts) > 1 {
+			w.dashes += s.dashBound(pts, sp.closed)
+		}
 	}
 	if !(w.dashes <= maxDashes) {
 		refuse("the page's dashes run past %d", maxDashes)
@@ -289,17 +290,17 @@ func (s *stroker) subpath(edges []edge, sp subpath) {
 	case len(pts) > 1 && s.pen.dash != nil:
 		s.dashed(pts, sp.closed)
 	case len(pts) > 1:
-		s.polyline(pts, sp.closed)
-	case s.pen.dash == nil && s.pen.cap == 1 && !lone(edges, sp):
-		// A subpath that goes nowhere is painted only with round caps, as a dot (§8.5.3.2).
-		// Dashed, checkDash has refused it.
-		s.arc(pts[0], point{s.hw, 0}, 2*math.Pi)
+		// AGG's vcgen_stroke strokes a closed figure of two points open, with its caps.
+		s.polyline(pts, sp.closed && len(pts) > 2)
 	}
+	// A subpath that goes nowhere, which traced has not made a pixel long, AGG does not draw: §8.5.3.2
+	// paints it under round caps as a dot.
 }
 
-// lone is whether a subpath is an m and nothing more, which marks nothing: the stream neither
-// drew from it nor closed it.
-func lone(edges []edge, sp subpath) bool { return !sp.closed && len(edges) == 0 }
+// nowhere is whether every point of a recorded subpath is the one it starts at.
+func nowhere(sub []ppoint) bool {
+	return !slices.ContainsFunc(sub, func(q ppoint) bool { return q.at != sub[0].at })
+}
 
 // points is a subpath's points in pen space, each distinct from the one before it, without a
 // closed subpath's last point when that is its first again.

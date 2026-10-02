@@ -48,12 +48,7 @@ type point struct{ x, y float64 }
 //
 // A path arrives as lines and cubics and leaves as edges: the rasterizer never sees a curve,
 // which is what keeps the fill rules to one implementation rather than one per segment kind.
-type edge struct {
-	x0, y0, x1, y1 float64
-
-	// end is (x1, y1) as pdfium computes the point it records there, in float32 (fillRect).
-	end pt32
-}
+type edge struct{ x0, y0, x1, y1 float64 }
 
 // path accumulates one PDF path: subpaths of flattened edges, plus the pen state a content
 // stream's operators move around.
@@ -68,18 +63,12 @@ type path struct {
 	cur   point // where the pen is
 	start point // where the current subpath began, for h and for the implicit close
 
-	// start32 and first32 are the subpath's start and the first edge's start as pdfium records
-	// them, in float32 (fillRect). An edge only ever begins away from a subpath's start at the end
-	// of another edge, so the pen needs no float32 copy of its own.
-	start32, first32 pt32
-
 	open bool // a subpath is being built
 	from int  // the current subpath's first edge
 
-	// figures counts the subpaths with an edge, and curved says a curve was flattened into the
-	// edges, which is what pixelRect needs to see the path as pdfium's points.
-	figures int
-	curved  bool
+	// rec is the path as pdfium's parser records it, which is what pdfium decides how to draw the
+	// path from (points.go). The walker records each operator there as it adds its edges here.
+	rec recording
 }
 
 // subpath is edges[from:to] of its path. A subpath the fill closed implicitly ends before the
@@ -91,18 +80,12 @@ type subpath struct {
 	at       point
 }
 
-func (p *path) moveTo(to point) { p.moveTo32(to, f32(to)) }
-
-func (p *path) lineTo(to point) { p.lineTo32(to, f32(to)) }
-
-// moveTo32 is moveTo, with the point as pdfium records it.
-func (p *path) moveTo32(to point, f pt32) {
+func (p *path) moveTo(to point) {
 	p.end(false)
-	p.cur, p.start, p.start32, p.open, p.from = to, to, f, true, len(p.edges)
+	p.cur, p.start, p.open, p.from = to, to, true, len(p.edges)
 }
 
-// lineTo32 is lineTo, with the point as pdfium records it.
-func (p *path) lineTo32(to point, f pt32) {
+func (p *path) lineTo(to point) {
 	// A lineTo with no current subpath is not an error in a content stream — a producer may
 	// emit one after a paint operator cleared the path — and the segment has no start, so
 	// there is nothing to add. Silently ignoring it is what every reader does and what the
@@ -112,16 +95,10 @@ func (p *path) lineTo32(to point, f pt32) {
 	// from it begins a new subpath there. pdfium draws that one, and ignoring it too left 791
 	// pixels of a stroked `h l` undrawn.
 	if !p.open && len(p.subs) > 0 {
-		p.moveTo32(p.cur, p.start32)
+		p.moveTo(p.cur)
 	}
 	if p.open {
-		if len(p.edges) == p.from {
-			p.figures++
-		}
-		if len(p.edges) == 0 {
-			p.first32 = p.start32
-		}
-		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, to.x, to.y, f})
+		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, to.x, to.y})
 	}
 	p.cur = to
 }
@@ -136,12 +113,18 @@ func (p *path) lineTo32(to point, f pt32) {
 // The 0.2-device-unit target is a fifth of a pixel: below the coverage this rasterizer can
 // represent, so flattening stops being visible before it stops being cheap.
 func (p *path) curveTo(c1, c2, to point) {
+	if !p.open && len(p.subs) == 0 {
+		return // no start, as lineTo has none
+	}
 	if !p.open {
 		p.moveTo(p.cur)
 	}
-	p.curved = true
 	from := p.cur
 	span := hypot(from, c1) + hypot(c1, c2) + hypot(c2, to)
+	if span == 0 {
+		p.lineTo(to)
+		return
+	}
 	n := int(math.Min(256, math.Max(4, span/0.2)))
 	for i := 1; i <= n; i++ {
 		t := float64(i) / float64(n)
@@ -152,6 +135,15 @@ func (p *path) curveTo(c1, c2, to point) {
 			y: a*from.y + b*c1.y + c*c2.y + d*to.y,
 		})
 	}
+}
+
+// curve is c, v and y, with the control points the operator resolves to, added to the edges and the
+// recording both.
+func (p *path) curve(c1, c2, to ppoint) {
+	p.curveTo(c1.dev, c2.dev, to.dev)
+	p.rec.add(c1, pbezier)
+	p.rec.add(c2, pbezier)
+	p.rec.add(to, pbezier)
 }
 
 // close is h: it ends the current subpath with a segment back to its start, which is then the
@@ -177,22 +169,20 @@ func (p *path) end(closed bool) {
 	// closing segment from the subpath's own points when closed says so, and never otherwise.
 	to := len(p.edges)
 	if p.cur != p.start {
-		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, p.start.x, p.start.y, p.start32})
+		p.edges = append(p.edges, edge{p.cur.x, p.cur.y, p.start.x, p.start.y})
 	}
 	p.subs = append(p.subs, subpath{from: p.from, to: to, closed: closed, at: p.start})
 	p.open = false
 }
 
-// rect adds a closed rectangle, which is the re operator. m32 is pdfium's matrix for the path,
-// and pdfium adds the width and height in float32 before it transforms the corners.
-func (p *path) rect(x, y, w, h float64, m matrix, m32 mat32) {
-	x0, y0 := float32(x), float32(y)
-	x1, y1 := x0+float32(w), y0+float32(h)
-	p.moveTo32(m.apply(point{x, y}), m32.apply(x0, y0))
-	p.lineTo32(m.apply(point{x + w, y}), m32.apply(x1, y0))
-	p.lineTo32(m.apply(point{x + w, y + h}), m32.apply(x1, y1))
-	p.lineTo32(m.apply(point{x, y + h}), m32.apply(x0, y1))
+// rect adds a closed rectangle, which is the re operator, to the edges and the recording both.
+func (p *path) rect(x, y, w, h float64, m matrix) {
+	p.moveTo(m.apply(point{x, y}))
+	p.lineTo(m.apply(point{x + w, y}))
+	p.lineTo(m.apply(point{x + w, y + h}))
+	p.lineTo(m.apply(point{x, y + h}))
 	p.close()
+	p.rec.rect(x, y, w, h, m)
 }
 
 func (p *path) empty() bool { return len(p.edges) == 0 }
@@ -205,8 +195,16 @@ func (p *path) empty() bool { return len(p.edges) == 0 }
 //
 // SetClip_PathFill intersects the rectangle with the device before it takes the outer bounds, so a
 // clip that runs off the page cannot overflow.
+//
+// The question is asked of the recorded points where the edges put them, rounded to float32, which is
+// what the rule was measured against; pdfium transforms a clip by the CTM and the page's matrix in two
+// steps of float32 of its own.
 func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
-	l, t, r, b, ok := p.deviceRect(false)
+	pts := append([]ppoint(nil), p.rec.points(false)...)
+	for i := range pts {
+		pts[i].at = f32(pts[i].dev)
+	}
+	l, t, r, b, ok := rectOf(pts, mat32{a: 1, d: 1})
 	if !ok {
 		return 0, 0, 0, 0, false
 	}
@@ -218,9 +216,9 @@ func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
 		int(math.Ceil(float64(r))), int(math.Ceil(float64(b))), true
 }
 
-// fillRect is the rectangle pdfium fills for p when p is a rectangle on the device's axes and
-// nothing strokes it: whole pixels, as many as the rectangle is wide and tall rounded up. ok is
-// false for any other path, which pdfium rasterizes.
+// rectFill is the rectangle pdfium fills for the points pts, which m takes to the device, when they
+// are a rectangle on the device's axes (rectOf) and nothing strokes it: whole pixels, as many as the
+// rectangle is wide and tall rounded up. ok is false for any other path, which pdfium rasterizes.
 //
 // CFX_RenderDevice::DrawPath takes the outer bounds, then gives back the pixel on whichever side the
 // rectangle covers less when they are a pixel wider than ceil(r-l): 10.4 to 20.2 fills columns 11 to
@@ -230,8 +228,8 @@ func (p *path) pixelRect(w, h int) (x0, y0, x1, y1 int, ok bool) {
 // back is the one exception that matters: +1 past the widest int32 reads as the narrowest, which
 // would fill every column where pdfium fills none. The column added to a rectangle with no width
 // wraps too, but only on a rectangle 2³¹ pixels off the canvas, so it fills nothing either way.
-func (p *path) fillRect() (x0, y0, x1, y1 int, ok bool) {
-	l, t, r, b, ok := p.deviceRect(true)
+func rectFill(pts []ppoint, m mat32) (x0, y0, x1, y1 int, ok bool) {
+	l, t, r, b, ok := rectOf(pts, m)
 	if !ok {
 		return 0, 0, 0, 0, false
 	}
@@ -297,72 +295,6 @@ func sat32(v float32) int32 {
 
 func floor32(v float32) float32 { return float32(math.Floor(float64(v))) }
 func ceil32(v float32) float32  { return float32(math.Ceil(float64(v))) }
-
-// deviceRect is p's bounds in device space, in float32, when p is a rectangle on the device's axes.
-// recorded asks it of the points as pdfium records and transforms them for a fill, which rounds the
-// width a re adds and each product of the matrix to float32; otherwise it is asked of p's own points
-// rounded to float32, which is what the clip rule was measured against. The two differ in the last
-// bit, which is enough to move ceil(r-l) past an integer: to pdfium's fill, 150.3 70.6 80 60 re is
-// 60.000008 tall.
-//
-// Whether p is a rectangle is CFX_Path::GetRect's question, asked of the points pdfium's parser
-// would have recorded: a move, then the end of each line, in float32. re makes five, and so does
-// m l l l h, which closes with a line back to the start; more than five are first rid of the lines
-// that go nowhere, as GetNormalizedPoints does. Only one subpath, and no curve, can be four or five
-// points.
-func (p *path) deviceRect(recorded bool) (l, t, r, b float32, ok bool) {
-	if p.curved || p.figures != 1 {
-		return 0, 0, 0, 0, false
-	}
-	pts := []pt32{p.first32}
-	if !recorded {
-		pts[0] = pt32{float32(p.edges[0].x0), float32(p.edges[0].y0)}
-	}
-	for _, e := range p.edges {
-		if recorded {
-			pts = append(pts, e.end)
-		} else {
-			pts = append(pts, pt32{float32(e.x1), float32(e.y1)})
-		}
-	}
-	if n := len(pts); n > 5 {
-		// GetNormalizedPoints refuses a path whose last point is not its first, which the five-point
-		// test below does too: what survives is five points, the fifth the path's last point.
-		//
-		// The closing line of a closed subpath carries pdfium's close flag, which keeps it.
-		closed := !p.open
-		norm := pts[:1:1]
-		for i := 1; i < n; i++ {
-			if len(norm)+n-i == 5 {
-				norm = append(norm, pts[i:]...)
-				break
-			}
-			if pts[i] == norm[len(norm)-1] && !(closed && i == n-1) {
-				continue
-			}
-			if norm = append(norm, pts[i]); len(norm) > 5 {
-				return 0, 0, 0, 0, false
-			}
-		}
-		pts = norm
-	}
-	n := len(pts)
-	if n != 4 && n != 5 || n == 5 && pts[0] != pts[4] || pts[0] == pts[2] || pts[1] == pts[3] {
-		return 0, 0, 0, 0, false
-	}
-	askew := func(a, b pt32) bool { return a.x != b.x && a.y != b.y }
-	for i := 1; i < n; i++ {
-		if askew(pts[i], pts[i-1]) {
-			return 0, 0, 0, 0, false
-		}
-	}
-	if askew(pts[0], pts[3]) {
-		return 0, 0, 0, 0, false
-	}
-	l, r = min(pts[0].x, pts[2].x), max(pts[0].x, pts[2].x)
-	t, b = min(pts[0].y, pts[2].y), max(pts[0].y, pts[2].y)
-	return l, t, r, b, true
-}
 
 // rectMask admits the pixels [x0,x1)×[y0,y1) wholly and nothing else.
 func rectMask(w, h, x0, y0, x1, y1 int) *mask {
@@ -492,6 +424,25 @@ func (m *mask) clone() *mask {
 	return c
 }
 
+// fillRule is how scan turns the winding at a point into coverage.
+type fillRule uint8
+
+const (
+	ruleNonzero fillRule = iota
+	ruleEvenOdd
+	// ruleSum counts each outline over a point, as AGG's nonzero rule does before it clamps: AGG sums
+	// every edge's signed area, so outlines that overlap and wind alike add, where nonzero winding
+	// covers their union once.
+	ruleSum
+)
+
+func ruleOf(evenOdd bool) fillRule {
+	if evenOdd {
+		return ruleEvenOdd
+	}
+	return ruleNonzero
+}
+
 // rasterize computes the coverage of a path as a full-page mask.
 //
 // Used for clips, which have to persist past the operator that set them, and not for fills:
@@ -501,7 +452,7 @@ func (m *mask) clone() *mask {
 func (p *path) rasterize(w, h int, evenOdd bool) *mask {
 	out := newMask(w, h)
 	out.y0, out.y1 = h, 0
-	p.scan(w, h, evenOdd, func(py int, row []float64) {
+	p.scan(w, h, ruleOf(evenOdd), func(py int, row []float64) {
 		out.y0, out.y1 = minInt(out.y0, py), maxInt(out.y1, py+1)
 		base := py * w
 		for x, v := range row {
@@ -527,12 +478,12 @@ func (p *path) rasterize(w, h int, evenOdd bool) *mask {
 // copies what it needs, and neither wants the page-sized allocation that returning them all
 // would take.
 //
-// evenOdd selects §8.5.3.3.2's even-odd rule over §8.5.3.3.1's nonzero winding. The two differ
+// rule selects §8.5.3.3.2's even-odd rule or §8.5.3.3.1's nonzero winding, or ruleSum. They differ
 // only in how a crossing count becomes an inside test, which is why they are one function with
-// a flag rather than two rasterizers: everything expensive — flattening, sorting, span
+// a flag rather than separate rasterizers: everything expensive — flattening, sorting, span
 // accumulation — is shared, and a page that used both would otherwise pay for two
 // implementations of it.
-func (p *path) scan(w, h int, evenOdd bool, emit func(py int, row []float64)) {
+func (p *path) scan(w, h int, rule fillRule, emit func(py int, row []float64)) {
 	// The closing edge is computed here and appended to a local slice, so scanning a path leaves
 	// it as the caller built it. Closing in place made scan a mutator of its receiver, which
 	// combined with rasterizing a clip at the W rather than at the end of the path object to
@@ -545,7 +496,7 @@ func (p *path) scan(w, h int, evenOdd bool, emit func(py int, row []float64)) {
 	// is a glyph cache, which will scan one outline many times.
 	edges := p.edges
 	if p.open && p.cur != p.start {
-		edges = append(edges[:len(edges):len(edges)], edge{p.cur.x, p.cur.y, p.start.x, p.start.y, p.start32})
+		edges = append(edges[:len(edges):len(edges)], edge{p.cur.x, p.cur.y, p.start.x, p.start.y})
 	}
 	if len(edges) == 0 {
 		return
@@ -668,14 +619,17 @@ func (p *path) scan(w, h int, evenOdd bool, emit func(py int, row []float64)) {
 			wind := 0
 			for i := 0; i+1 < len(xs); i++ {
 				wind += xs[i].dir
-				in := wind != 0
-				if evenOdd {
+				in, weight := wind != 0, 1.0
+				switch rule {
+				case ruleEvenOdd:
 					in = (i+1)%2 == 1
+				case ruleSum:
+					weight = math.Abs(float64(wind))
 				}
 				if !in {
 					continue
 				}
-				if addSpan(acc, xs[i].x, xs[i+1].x, 1.0/coverSamples) {
+				if addSpan(acc, xs[i].x, xs[i+1].x, weight/coverSamples) {
 					hit = true
 				}
 			}

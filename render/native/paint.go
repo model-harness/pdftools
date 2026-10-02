@@ -150,6 +150,14 @@ type canvas struct {
 	// page-area clone when there is nothing to save — which is every q on a page that never
 	// clips, and most of them on a page that does.
 	clipped bool
+
+	layer []knocked // fillStroke's, kept between paths
+}
+
+// knocked is a pixel of fillStroke's layer: a colour and an alpha, in bytes as pdfium's are.
+type knocked struct {
+	c [3]uint8
+	a uint8
 }
 
 func newCanvas(w, h int) *canvas {
@@ -183,10 +191,15 @@ func newCanvas(w, h int) *canvas {
 // it: the colour in whole 255ths, the alpha truncated to them as pdfium's GetFillArgb truncates it
 // — a shading's is rounded — and the coverage the layer's alpha is drawn at.
 func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64, soft *mask) {
+	c.paintScan(p, ruleOf(evenOdd), col, alpha, soft)
+}
+
+// paintScan is fill under any of scan's rules.
+func (c *canvas) paintScan(p *path, rule fillRule, col paint, alpha float64, soft *mask) {
 	pr, pg, pb := col.r*255, col.g*255, col.b*255
 	src, a8 := [3]uint8{channel(col.r), channel(col.g), channel(col.b)}, int(float32(alpha)*255)
 	w := c.clip.w
-	p.scan(w, c.clip.h, evenOdd, func(py int, row []float64) {
+	p.scan(w, c.clip.h, rule, func(py int, row []float64) {
 		base := py * w
 		for x, v := range row {
 			if v <= 0 {
@@ -226,6 +239,101 @@ func (c *canvas) fillRect(x0, y0, x1, y1 int, col paint, alpha float64, soft *ma
 		for x := x0; x < x1; x++ {
 			if cl := c.clip.a[y*w+x]; cl != 0 {
 				c.merge(y*w+x, src, a8, soft, cl)
+			}
+		}
+	}
+}
+
+// hairlines strokes segs, in device space, a pixel wide with butt caps and as one path, which is how
+// pdfium draws a cosmetic line and the zero-area parts of a fill: where segments overlap their
+// coverage adds before it is clamped, rather than each compositing in turn.
+//
+// Every segment's outline winds the same way, so the sum is ruleSum's.
+func (c *canvas) hairlines(segs [][2]pt32, col paint, alpha float64, soft *mask) {
+	var p path
+	for _, s := range segs {
+		p.moveTo(point{float64(s[0].x), float64(s[0].y)})
+		p.lineTo(point{float64(s[1].x), float64(s[1].y)})
+	}
+	c.paintScan(stroke(&p, 1, geom.Identity, defaultPen), ruleSum, col, alpha, soft)
+}
+
+// fillStroke draws a fill and its stroke as CFX_RenderDevice::DrawFillStrokePath does when the stroke
+// is not opaque: into a transparent layer, the fill as any fill is drawn, then the stroke as a
+// knockout, which replaces what the fill drew wherever it covers a pixel wholly and mixes with it by
+// coverage at its edges; then the layer onto the page through the clip. So the fill does not show
+// through a translucent stroke, where compositing each in turn would show it. line is the stroke's
+// outline, or nil when its alpha byte is 0, which AGG skips.
+//
+// The layer is transparent because pdfium's bitmap has an alpha channel, as go-pdfium creates it:
+// DrawFillStrokePath copies the device's pixels into the layer only for a bitmap without one.
+//
+// A soft mask never reaches here: the survey refuses a path filled and stroked under one.
+func (c *canvas) fillStroke(fp *path, evenOdd bool, fcol paint, fa float64, line *path, scol paint, sa float64) {
+	w, h := c.clip.w, c.clip.h
+	// The layer is every pixel either outline can mark, bounded as scan bounds them.
+	edges := fp.edges
+	if line != nil {
+		edges = append(edges[:len(edges):len(edges)], line.edges...)
+	}
+	if len(edges) == 0 {
+		return
+	}
+	top, bot := minMax(edges, false)
+	left, right := minMax(edges, true)
+	y0, y1 := clampRange(top, bot, h)
+	x0, x1 := clampRange(left, right, w)
+	if x1 < w {
+		x1++
+	}
+	if y0 >= y1 || x0 >= x1 {
+		return
+	}
+	// The layer is bytes, as pdfium's is, and each step is CompositeSpan's integer arithmetic. It is
+	// the canvas's, reused, so a page of such paths holds one layer at a time however many it paints.
+	cover := func(v float64) int { return int(math.Round(min(v, 1) * 255)) }
+	lw := x1 - x0
+	if n := lw * (y1 - y0); cap(c.layer) < n {
+		c.layer = make([]knocked, n)
+	}
+	layer := c.layer[:lw*(y1-y0)]
+	clear(layer)
+	f, fa8 := [3]uint8{channel(fcol.r), channel(fcol.g), channel(fcol.b)}, alpha8(fa)
+	fp.scan(w, h, ruleOf(evenOdd), func(py int, row []float64) {
+		for x, v := range row {
+			if v > 0 {
+				// #nosec G115 -- a byte times a coverage of at most 255, over 255.
+				layer[(py-y0)*lw+x-x0] = knocked{f, uint8(fa8 * cover(v) / 255)}
+			}
+		}
+	})
+	if line != nil {
+		s, sa8 := [3]uint8{channel(scol.r), channel(scol.g), channel(scol.b)}, alpha8(sa)
+		line.scan(w, h, ruleNonzero, func(py int, row []float64) {
+			for x, v := range row {
+				cv := cover(v)
+				if v <= 0 || sa8*cv/255 == 0 {
+					continue
+				}
+				l := &layer[(py-y0)*lw+x-x0]
+				if l.a == 0 {
+					// #nosec G115 -- a byte times a coverage of at most 255, over 255.
+					*l = knocked{s, uint8(sa8 * cv / 255)}
+					continue
+				}
+				// #nosec G115 -- each a weighted mean of two bytes by weights summing to 255, so at most 255.
+				for j := range 3 {
+					l.c[j] = uint8((int(l.c[j])*(255-cv) + int(s[j])*cv) / 255)
+				}
+				// #nosec G115 -- as above.
+				l.a = uint8((int(l.a)*(255-cv) + sa8*cv) / 255)
+			}
+		})
+	}
+	for y := y0; y < y1; y++ {
+		for x := x0; x < x1; x++ {
+			if l, cl := layer[(y-y0)*lw+x-x0], c.clip.a[y*w+x]; l.a != 0 && cl != 0 {
+				c.merge(y*w+x, l.c, int(l.a), nil, cl)
 			}
 		}
 	}

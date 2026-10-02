@@ -1088,11 +1088,29 @@ a path qualifies is asked of its points as pdfium records and transforms them, i
 one: 681 moved closer and none farther, and the corpus mean went from 4.87658 to 3.98128. The 456
 pages the clip rule had moved away are each back at or below their figure from before it.
 
+**DrawPath's other rules are done — see ADR 0027.** A path keeps pdfium's recorded points beside
+its edges, in float32 as `CPDF_StreamContentParser` keeps them, and `drawPath` asks
+`CFX_RenderDevice::DrawPath`'s questions of them, in its order:
+- a cosmetic one-pixel line for a path of two points;
+- the whole-pixel rectangle;
+- `GetZeroAreaPath`'s hairlines, with the thin ones at a quarter of the fill's alpha;
+- `DrawFillStrokePath`'s knockout layer, in bytes, for a fill and a translucent stroke;
+- otherwise the fill, then the stroke.
+
+Every rule asks of the alpha *bytes*, and a fill or stroke whose byte is 0 is not drawn.
+`BuildAggPath`'s +1 makes a stroke that goes nowhere a pixel long under every cap, along the CTM's
+first row. A curve with no current point adds nothing, and a clip pdfium recorded no point of is no
+clip.
+6 corpus pages moved closer and none farther, all from the +1, and the corpus mean went from
+3.98128 to 3.98125.
+
 **The worklist is empty.** Every corpus page draws natively. Eight accuracy items affect no page
 count:
 
-- pdfium's knockout of a fill and a stroke whose alpha byte is 1 to 254 (`DrawFillStrokePath`)
-- pdfium's one-pixel line for a filled path of two points, and for a zero-area subpath
+- AGG's summing of coverage across a path's overlapping outlines, which this backend does only
+  within one set of hairlines, planned as ADR 0028
+- the byte compositing of an unmasked fill or stroke, which this backend composites in float and
+  so misses a translucent fill by a level on one channel
 - pdfium's own CMYK-to-sRGB table
 - an image `/ColorSpace` that names a resource, which no corpus image uses
 - pdfium's grid-fitting of a glyph's origin to the device pixel
