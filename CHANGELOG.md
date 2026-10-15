@@ -5,6 +5,20 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-15
+
+- **`render/native` strokes with AGG's outline and sums overlapping coverage, as pdfium does.**
+  ADR 0028. The corpus mean against pdfium went from 3.98125 to 3.98114. 32 pages moved closer and
+  none moved farther.
+  - **A stroke is `vcgen_stroke`'s outline**: one polygon around an open polyline and two around a
+    closed one, with AGG's caps and joins and its inner miter of 1.01. It was a polygon per segment,
+    join and cap. The worst difference at a join fell from 41 to 4 against pdfium.
+  - **An arc is cut at AGG's step** for the pen's radius under `DrawPath`'s `matrix1`, floored at
+    π/64 so a huge pen stays bounded.
+  - **Nonzero sums each outline's coverage before it clamps**, as AGG's `fill_non_zero` does, in
+    fills, clips and strokes alike. Folds, overlapping subpaths and overlapping dashes add where
+    they meet. A pixel that holds windings of both signs still adds where AGG cancels.
+
 ### Changed — 2026-10-02
 
 - **`render/native` draws a path as pdfium's `CFX_RenderDevice::DrawPath` does.** ADR 0027.

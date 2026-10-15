@@ -32,7 +32,7 @@ func againstPdfium(t *testing.T, res, col string, cases []pdfiumCase) {
 // colour. A path of two points is a cosmetic line. Otherwise each subpath is asked GetZeroAreaPath's
 // three questions — a line there and back, a palindrome, a line that folds back along itself — in
 // user space, under a cm too, and each segment a subpath gives is stroked with the others as one
-// path, where segments that cross count twice (ruleSum). A thin one is drawn at a quarter of the
+// path, where segments that cross count twice (scan). A thin one is drawn at a quarter of the
 // fill's alpha; a figure with area beside one is filled as well.
 func TestAFillWithNoAreaIsAHairline(t *testing.T) {
 	const res = "/ExtGState<</GA<</ca 0.5>>>>"
@@ -70,20 +70,22 @@ func TestAFillWithNoAreaIsAHairline(t *testing.T) {
 // §11.7.4.4's exception for overprint. A stroke with an alpha byte of 0 is not stroked at all, and a
 // fill with one is not filled; nor does an S take the layer, whatever its alpha.
 //
-// The worst differences are at the corners, where this backend's joins differ from AGG's: by 41
-// levels at 144 dpi on the triangle under an opaque stroke, which DrawFillStrokePath does not take,
-// by 28 under one at half alpha, and by 45 at the star's points. A translucent fill differs by a
-// level inside, because this backend composites it in float and pdfium in bytes.
+// The worst difference is at the star's top point, by 20 levels at 144 dpi and 45 at 200, where
+// pdfium cuts off the miter's tip. DrawFillStrokePath's layer is GetBoundingBoxForStrokePath's
+// box, which gives a closed figure's first point a cap and not a join, so a miter there can reach
+// past the layer. This backend draws the tip. Elsewhere no pixel differs by more than 8. A
+// translucent fill differs by a level inside, because this backend composites it in float and
+// pdfium in bytes.
 func TestFillAndStrokeKnockOut(t *testing.T) {
 	const res = "/ExtGState<</GA<</ca 0.5>>/GF<</ca 0.0039>>/GH<</CA 0.5>>/GS<</CA 0.0039>>>>"
 	const tri = "20.3 15.2 m 170.6 30.4 l 90.2 85.7 l "
 	againstPdfium(t, res, "0.2 0.4 0.6 rg 0.9 0.1 0.1 RG 3 w ", []pdfiumCase{
-		{"B", "/GH gs " + tri + "h B", 0.014, 28},
-		{"B*", "/GH gs " + tri + "h B*", 0.014, 28},
-		{"b", "/GH gs " + tri + "b", 0.014, 28},
-		{"b*", "/GH gs " + tri + "b*", 0.014, 28},
-		{"an opaque stroke", tri + "h B", 0.025, 41},
-		{"a translucent fill", "/GA gs /GH gs " + tri + "h B", 0.01, 20},
+		{"B", "/GH gs " + tri + "h B", 0.014, 3},
+		{"B*", "/GH gs " + tri + "h B*", 0.014, 3},
+		{"b", "/GH gs " + tri + "b", 0.014, 3},
+		{"b*", "/GH gs " + tri + "b*", 0.014, 3},
+		{"an opaque stroke", tri + "h B", 0.024, 4},
+		{"a translucent fill", "/GA gs /GH gs " + tri + "h B", 0.01, 2},
 		{"a stroke with an alpha byte of 0", "/GS gs " + tri + "h B", 0.011, 3},
 		{"on a line", "/GH gs 20.3 15.2 m 170.6 80.4 l B", 0.007, 2},
 		{"b* on a line", "/GH gs 20.3 15.2 m 170.6 80.4 l b*", 0.007, 2},
@@ -91,14 +93,14 @@ func TestFillAndStrokeKnockOut(t *testing.T) {
 		{"a sloped clip", "20 20 m 180 30 l 100 90 l h W n /GH gs 10.4 10.6 m 160 12 l 120 90 l h B", 0.01, 3},
 		{"m b* under a stroke with an alpha byte of 0", "/GS gs 100.3 50.4 m b*", 0.001, 6},
 		{"a fold under a stroke with an alpha byte of 0", "/GS gs 20.3 50.4 m 170.6 50.4 l 90.2 50.4 l B", 0, 0},
-		{"S", "/GH gs " + tri + "h S", 0.018, 26},
-		{"B after a smaller B", "/GH gs 175.3 80.4 m 195.2 80.4 l 185.1 95.6 l h B " + tri + "h B", 0.02, 28},
-		{"B after a larger B", "/GH gs " + tri + "h B 175.3 80.4 m 195.2 80.4 l 185.1 95.6 l h B", 0.02, 28},
-		{"B* on a star", "/GH gs 100 95 m 130 10 l 55 65 l 145 65 l 70 10 l h B*", 0.03, 45},
-		{"B on a star", "/GH gs 100 95 m 130 10 l 55 65 l 145 65 l 70 10 l h B", 0.031, 45},
-		{"a rectangle", "/GH gs 30.3 20.4 140 60 re B", 0.076, 22},
-		{"a rectangle under an opaque stroke and a translucent fill", "/GA gs 30.3 20.4 140 60 re B", 0.25, 33},
-		{"a rectangle under a fill with an alpha byte of 0", "/GF gs /GH gs 30.3 20.4 140 60 re B", 0.075, 22},
+		{"S", "/GH gs " + tri + "h S", 0.017, 2},
+		{"B after a smaller B", "/GH gs 175.3 80.4 m 195.2 80.4 l 185.1 95.6 l h B " + tri + "h B", 0.019, 4},
+		{"B after a larger B", "/GH gs " + tri + "h B 175.3 80.4 m 195.2 80.4 l 185.1 95.6 l h B", 0.019, 4},
+		{"B* on a star", "/GH gs 100 95 m 130 10 l 55 65 l 145 65 l 70 10 l h B*", 0.015, 45},
+		{"B on a star", "/GH gs 100 95 m 130 10 l 55 65 l 145 65 l 70 10 l h B", 0.015, 45},
+		{"a rectangle", "/GH gs 30.3 20.4 140 60 re B", 0.076, 8},
+		{"a rectangle under an opaque stroke and a translucent fill", "/GA gs 30.3 20.4 140 60 re B", 0.249, 7},
+		{"a rectangle under a fill with an alpha byte of 0", "/GF gs /GH gs 30.3 20.4 140 60 re B", 0.074, 4},
 	})
 }
 
@@ -110,17 +112,17 @@ func TestFillAndStrokeKnockOut(t *testing.T) {
 // AGG does not draw. Dashed, the line is dashed like any other. The pixel is along the CTM's first
 // row, so a mirrored line goes a pixel to the left and a quarter-turned one a pixel up the page.
 //
-// The worst differences are round caps', which differ from AGG's by as much on any line.
+// No case differs by more than 7 levels, as much as the edges of any line (TestStrokesAgreeWithPdfium).
 func TestAStrokeThatGoesNowhereIsAPixelLong(t *testing.T) {
 	const at = "100.3 50.4 m 100.3 50.4 l "
 	againstPdfium(t, "", "0.9 0.1 0.1 RG 10 w ", []pdfiumCase{
-		{"round", "1 J " + at + "S", 0.01, 25},
+		{"round", "1 J " + at + "S", 0.002, 5},
 		{"butt", at + "S", 0.001, 6},
 		{"square", "2 J " + at + "S", 0.006, 7},
-		{"m h", "1 J 100.3 50.4 m h S", 0.01, 25},
+		{"m h", "1 J 100.3 50.4 m h S", 0.002, 5},
 		{"m h under butt caps", "100.3 50.4 m h S", 0, 0},
-		{"m s", "1 J 100.3 50.4 m s", 0.01, 25},
-		{"m l h", "1 J " + at + "h S", 0.01, 25},
+		{"m s", "1 J 100.3 50.4 m s", 0.002, 5},
+		{"m l h", "1 J " + at + "h S", 0.002, 5},
 		{"m l h under square caps", "2 J " + at + "h S", 0.006, 7},
 		{"two l", "1 J " + at + "100.3 50.4 l S", 0, 0},
 		{"a curve", "1 J 100.3 50.4 m 100.3 50.4 100.3 50.4 100.3 50.4 c S", 0, 0},
@@ -129,13 +131,13 @@ func TestAStrokeThatGoesNowhereIsAPixelLong(t *testing.T) {
 		{"after another", "20 20.5 m 60 20.5 l " + at + "S", 0.006, 6},
 		{"before another", at + "20 20.5 m 60 20.5 l S", 0.006, 6},
 		{"between two l", "20 20.5 m 60 20.5 l " + at + "100.3 50.4 l S", 0.006, 6},
-		{"under a cm", "2 0 0 2 0 0 cm 1 J 5 w 50.3 25.2 m 50.3 25.2 l S", 0.01, 25},
+		{"under a cm", "2 0 0 2 0 0 cm 1 J 5 w 50.3 25.2 m 50.3 25.2 l S", 0.002, 4},
 		{"mirrored", "-1 0 0 1 200 0 cm " + at + "S", 0.001, 6},
 		{"quarter-turned", "0 1 -1 0 150 0 cm 50.3 50.4 m 50.3 50.4 l S", 0.002, 7},
 		{"turned an eighth", "0.7071 0.7071 -0.7071 0.7071 100 0 cm 50.3 20.4 m 50.3 20.4 l S", 0.001, 2},
-		{"m h mirrored", "-1 0 0 1 200 0 cm 1 J 100.3 50.4 m h S", 0.01, 25},
+		{"m h mirrored", "-1 0 0 1 200 0 cm 1 J 100.3 50.4 m h S", 0.003, 6},
 		{"dashed and mirrored", "-1 0 0 1 200 0 cm [3 3] 0 d " + at + "S", 0.001, 6},
-		{"dashed", "[3 3] 0 d 1 J " + at + "S", 0.01, 25},
+		{"dashed", "[3 3] 0 d 1 J " + at + "S", 0.002, 5},
 		{"dashed under butt caps", "[3 3] 0 d " + at + "S", 0.001, 6},
 		{"dashed under square caps", "[3 3] 0 d 2 J " + at + "S", 0.006, 7},
 		{"dashed from a gap", "[3 3] 4 d 1 J " + at + "S", 0, 0},

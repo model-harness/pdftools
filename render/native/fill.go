@@ -424,25 +424,6 @@ func (m *mask) clone() *mask {
 	return c
 }
 
-// fillRule is how scan turns the winding at a point into coverage.
-type fillRule uint8
-
-const (
-	ruleNonzero fillRule = iota
-	ruleEvenOdd
-	// ruleSum counts each outline over a point, as AGG's nonzero rule does before it clamps: AGG sums
-	// every edge's signed area, so outlines that overlap and wind alike add, where nonzero winding
-	// covers their union once.
-	ruleSum
-)
-
-func ruleOf(evenOdd bool) fillRule {
-	if evenOdd {
-		return ruleEvenOdd
-	}
-	return ruleNonzero
-}
-
 // rasterize computes the coverage of a path as a full-page mask.
 //
 // Used for clips, which have to persist past the operator that set them, and not for fills:
@@ -452,7 +433,7 @@ func ruleOf(evenOdd bool) fillRule {
 func (p *path) rasterize(w, h int, evenOdd bool) *mask {
 	out := newMask(w, h)
 	out.y0, out.y1 = h, 0
-	p.scan(w, h, ruleOf(evenOdd), func(py int, row []float64) {
+	p.scan(w, h, evenOdd, func(py int, row []float64) {
 		out.y0, out.y1 = minInt(out.y0, py), maxInt(out.y1, py+1)
 		base := py * w
 		for x, v := range row {
@@ -478,12 +459,19 @@ func (p *path) rasterize(w, h int, evenOdd bool) *mask {
 // copies what it needs, and neither wants the page-sized allocation that returning them all
 // would take.
 //
-// rule selects §8.5.3.3.2's even-odd rule or §8.5.3.3.1's nonzero winding, or ruleSum. They differ
-// only in how a crossing count becomes an inside test, which is why they are one function with
-// a flag rather than separate rasterizers: everything expensive — flattening, sorting, span
+// evenOdd selects §8.5.3.3.2's even-odd rule over §8.5.3.3.1's nonzero winding. They differ
+// only in how a crossing count becomes coverage, which is why they are one function with a flag
+// rather than separate rasterizers: everything expensive — flattening, sorting, span
 // accumulation — is shared, and a page that used both would otherwise pay for two
 // implementations of it.
-func (p *path) scan(w, h int, rule fillRule, emit func(py int, row []float64)) {
+//
+// Nonzero is AGG's fill_non_zero, which sums each outline's signed area over a pixel and clamps
+// the sum to a whole pixel after: outlines that overlap and wind alike add where they meet, so two
+// edges in one pixel cover it by their sum, and a stroke's outline that folds back over itself
+// counts twice there (stroke). §8.5.3.3.1 covers their union once. Here a span's weight is the
+// size of its winding number, so the two differ in a pixel that holds windings of both signs,
+// which AGG sums to their difference and this to their total.
+func (p *path) scan(w, h int, evenOdd bool, emit func(py int, row []float64)) {
 	// The closing edge is computed here and appended to a local slice, so scanning a path leaves
 	// it as the caller built it. Closing in place made scan a mutator of its receiver, which
 	// combined with rasterizing a clip at the W rather than at the end of the path object to
@@ -619,12 +607,9 @@ func (p *path) scan(w, h int, rule fillRule, emit func(py int, row []float64)) {
 			wind := 0
 			for i := 0; i+1 < len(xs); i++ {
 				wind += xs[i].dir
-				in, weight := wind != 0, 1.0
-				switch rule {
-				case ruleEvenOdd:
-					in = (i+1)%2 == 1
-				case ruleSum:
-					weight = math.Abs(float64(wind))
+				in, weight := wind != 0, math.Abs(float64(wind))
+				if evenOdd {
+					in, weight = (i+1)%2 == 1, 1
 				}
 				if !in {
 					continue

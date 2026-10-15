@@ -17,7 +17,8 @@ import (
 //
 // Measured at 72, 144 and 200 dpi, with the bounds set from it: every mean is at most 0.03 of 255
 // and no pixel differs by more than 32, except the curve, whose flattening puts its mean at 0.071
-// and 4 pixels past 32 at 144 dpi, as for the solid curve in TestStrokesAgreeWithPdfium.
+// and 4 pixels past 32 at 144 dpi, as for the solid curve in TestStrokesAgreeWithPdfium, and dashes
+// that overlap, whose mean is 0.039 for the reason their case gives.
 func TestDashesAgreeWithPdfium(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -66,6 +67,10 @@ func TestDashesAgreeWithPdfium(t *testing.T) {
 		{"a dash that ends on a corner in pen space", "0 G 6 w [37 3] 0 d 1 150 m 38 150 l 28 180 l S", 0.03, 0},
 		// And one that goes 0.8% of the segment past it, which is a join and not a rounding.
 		{"a dash that crosses a corner", "0 G 2 w [100.8 3] 0 d 0 150 m 100 150 l 90 180 l S", 0.03, 0},
+		// Dashes that overlap sum their coverage, as two subpaths do. Covered once, 683 pixels at 200
+		// dpi differed by more than 32. That one's mean is 0.039: an edge row two dashes cover differs
+		// by twice the 8 levels a line's edge does at 200 dpi.
+		{"dashes that go back over each other", "0 G 6 w [30 5] 0 d 20 100 m 180 100 l 20 100 l S", 0.04, 0},
 		{"thin, under a uniform ctm", "q 0.67188 0 0 0.67188 0 0 cm 0 G 0.5 w [1.85 0.8] 0 d 20 100 m 280 100 l S Q", 0.03, 0},
 		// d with one operand, and d whose first operand is not an array, are ignored: a solid line.
 		{"d with no phase", "0 G 4 w [6 6] d 20 100 m 180 100 l S", 0.03, 0},

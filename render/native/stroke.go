@@ -213,10 +213,16 @@ func (w *walker) checkStroke(m *content.Machine) {
 	}
 }
 
-// strokeTolerance is how far, in device pixels, a flattened round cap or join may fall inside
-// the true arc. The same fifth of a pixel curveTo flattens to, halved, because an arc's error
-// is on the outside of a mark where the eye finds it first.
-const strokeTolerance = 0.1
+// innerMiter is the miter limit of the side of a join inside its turn: vcgen_stroke's
+// m_inner_miter_limit, which pdfium leaves at AGG's 1.01.
+const innerMiter = 1.01
+
+// maxArcSteps bounds the chords of one round cap or join. AGG steps an arc by an angle that falls
+// as the pen grows, with no floor for a join, so a pen a million pixels wide would cut each join
+// into thousands of chords. Past a radius of about 415 pixels in matrix1's space, where AGG's chords
+// fall an eighth of a pixel inside the arc, this backend's fall 0.0003 of the radius inside it: a
+// fifth of a pixel at a radius of 650, and three pixels at 10,000.
+const maxArcSteps = 64
 
 // stroke returns the outline of p stroked with a pen of width w under the linear part of ctm,
 // as a path whose nonzero fill is the stroke.
@@ -230,13 +236,23 @@ const strokeTolerance = 0.1
 // takes the circle to the ellipse and every offset with it — where offsetting in device space
 // by a transformed width is exact only along the ellipse's axes.
 //
-// # Why pieces
+// pdfium strokes in a space of its own too, CFX_AggDeviceDriver::DrawPath's matrix1: the user
+// space under a uniform scale of max(|a|, |b|) of the CTM, which is this one scaled. The stroke's
+// shape is the same in both. Only how finely an arc is cut depends on the scale, so the stroker
+// keeps it for that (newStroker).
 //
-// Every segment, join and cap is a convex polygon wound the same way, so their union is what
-// nonzero fills and the overlaps where they meet count once: a winding number is one or more
-// inside any of them and zero outside all of them. Stitching one outline around the whole
-// stroke is what a renderer does to save edges, and it is where the inner side of a sharp join
-// folds back over itself; pieces have no inner side.
+// # Why AGG's outline
+//
+// The outline is the one AGG's vcgen_stroke makes, which is what pdfium strokes with: one polygon
+// around each open polyline, which is a cap, the joins along one side, the other cap and the joins
+// back along the other side; and for a closed one, two polygons, one for each side. On the side
+// inside a turn, a join is the miter when that is within 1.01 of the pen's radius. Otherwise it is
+// the two segments' ends, so at a sharp turn the outline folds back over itself.
+//
+// pdfium fills the outline with AGG's nonzero rule, which sums the coverage of each outline before
+// it clamps it, and scan does the same. So a fold counts twice, and so do two subpaths or two
+// dashes where they overlap. Under a translucent stroke this changes no pixel inside the stroke.
+// At its edges, an edge pixel two outlines both cover counts as their sum, as in pdfium.
 func stroke(p *path, w float64, ctm geom.Matrix, pn pen) *path {
 	out := &path{}
 	s, ok := newStroker(out, w, ctm, pn)
@@ -249,7 +265,7 @@ func stroke(p *path, w float64, ctm geom.Matrix, pn pen) *path {
 	return out
 }
 
-// newStroker is the stroker that adds to out the pieces of a stroke of width w under ctm, or false
+// newStroker is the stroker that adds to out the outline of a stroke of width w under ctm, or false
 // when ctm collapses the plane.
 func newStroker(out *path, w float64, ctm geom.Matrix, pn pen) (stroker, bool) {
 	a, b, c, d := ctm.A, ctm.B, ctm.C, ctm.D
@@ -267,11 +283,14 @@ func newStroker(out *path, w float64, ctm geom.Matrix, pn pen) (stroker, bool) {
 		w = unit
 	}
 	hw := w / 2
+	// An arc's step is AGG's for its pen radius in matrix1's space, where an eighth of a pixel is
+	// as far as a chord falls from the radius it is cut at.
+	r := hw * math.Max(math.Abs(a), math.Abs(b))
 	return stroker{
 		out: out, hw: hw, pen: pn,
 		fwd:  func(q point) point { return point{a*q.x + c*q.y, b*q.x + d*q.y} },
 		back: func(q point) point { return point{(d*q.x - c*q.y) / det, (a*q.y - b*q.x) / det} },
-		rdev: hw * math.Max(math.Hypot(a, b), math.Hypot(c, d)),
+		da:   math.Max(2*math.Acos(r/(r+1.0/8)), math.Pi/maxArcSteps),
 	}, true
 }
 
@@ -280,7 +299,8 @@ type stroker struct {
 	hw        float64
 	pen       pen
 	fwd, back func(point) point
-	rdev      float64 // the pen's largest radius on the device, which sets how finely arcs flatten
+	da        float64 // the angle a round cap or join steps by
+	ring      []point // the outline being built, in pen space
 }
 
 // subpath strokes one subpath's edges.
@@ -317,27 +337,31 @@ func (s *stroker) points(edges []edge, sp subpath) []point {
 	return pts
 }
 
-// polyline strokes two or more points, each distinct from the one before it: a segment between
-// each pair, a join at each corner, and caps at the ends of an open one or a join where a closed
-// one meets itself.
+// polyline strokes two or more points, each distinct from the one before it, in the order
+// vcgen_stroke's vertex takes them. An open one is one polygon: a cap, the joins out, the other cap
+// and the joins back. A closed one is two polygons, the joins around each side.
 func (s *stroker) polyline(pts []point, closed bool) {
 	n := len(pts)
-	segs := n - 1
 	if closed {
-		segs = n
-	}
-	for i := 0; i < segs; i++ {
-		s.segment(pts[i], pts[(i+1)%n])
-	}
-	for i := 1; i < segs; i++ {
-		s.joinAt(pts[i-1], pts[i], pts[(i+1)%n])
-	}
-	if closed {
-		s.joinAt(pts[n-1], pts[0], pts[1])
+		for i := range n {
+			s.join(pts[(i+n-1)%n], pts[i], pts[(i+1)%n])
+		}
+		s.end()
+		for i := n - 1; i >= 0; i-- {
+			s.join(pts[(i+1)%n], pts[i], pts[(i+n-1)%n])
+		}
+		s.end()
 		return
 	}
-	s.capAt(pts[0], unit(pts[1], pts[0]))
-	s.capAt(pts[n-1], unit(pts[n-2], pts[n-1]))
+	s.capAt(pts[0], pts[1])
+	for i := 1; i < n-1; i++ {
+		s.join(pts[i-1], pts[i], pts[i+1])
+	}
+	s.capAt(pts[n-1], pts[n-2])
+	for i := n - 2; i > 0; i-- {
+		s.join(pts[i+1], pts[i], pts[i-1])
+	}
+	s.end()
 }
 
 // dashed strokes a subpath's points in §8.4.3.6's dashes. Each dash is an open polyline, capped at
@@ -465,111 +489,137 @@ func (s *stroker) dashBound(pts []point, closed bool) float64 {
 	return float64(len(s.pen.dash)/2) * (l/period(s.pen.dash) + 2)
 }
 
-func unit(from, to point) point {
-	l := math.Hypot(to.x-from.x, to.y-from.y)
-	return point{(to.x - from.x) / l, (to.y - from.y) / l}
+// offsets are AGG's two offsets of the segment from a to b, and of the next one from b to c, as
+// stroke_calc_join computes them: each the segment's direction turned a quarter, scaled to the
+// pen's radius, and kept as AGG keeps it, as (dx, dy) for the offset (dx, -dy).
+func (s *stroker) offset(a, b point) point {
+	l := hypot(a, b)
+	return point{s.hw * (b.y - a.y) / l, s.hw * (b.x - a.x) / l}
 }
 
-// left is the normal to a direction on its left, scaled to the pen's radius.
-func (s *stroker) left(dir point) point { return point{-dir.y * s.hw, dir.x * s.hw} }
-
-func add(a, b point) point { return point{a.x + b.x, a.y + b.y} }
-
-func sub(a, b point) point { return point{a.x - b.x, a.y - b.y} }
-
-func (s *stroker) segment(a, b point) {
-	n := s.left(unit(a, b))
-	s.poly(add(a, n), add(b, n), sub(b, n), sub(a, n))
-}
-
-// joinAt fills the wedge at b between the segment arriving from a and the one leaving for c, on
-// the outside of the turn. The inside is already covered by the two segments.
-func (s *stroker) joinAt(a, b, c point) {
-	d1, d2 := unit(a, b), unit(b, c)
-	cross := d1.x*d2.y - d1.y*d2.x
-	dot := d1.x*d2.x + d1.y*d2.y
-	if cross == 0 && dot > 0 {
-		return // straight on: the segments already meet edge to edge
-	}
-	// The outside of a left turn is on the right, and the wedge sweeps from the arriving
-	// segment's offset to the leaving one's through the turn angle.
-	o1, o2, sweep := s.left(d1), s.left(d2), -math.Atan2(math.Abs(cross), dot)
-	if cross > 0 {
-		o1, o2, sweep = point{-o1.x, -o1.y}, point{-o2.x, -o2.y}, -sweep
+// join is stroke_calc_join: the vertices at v1 between the segment from v0 and the one to v2. The
+// side inside the turn takes a miter within innerMiter of the radius, or else the two segments'
+// ends. The side outside takes the pen's join, which for a miter over its limit is the bevel:
+// RasterizeStroke gives AGG miter_join_revert for every join that is not round or bevel.
+func (s *stroker) join(v0, v1, v2 point) {
+	d1, d2 := s.offset(v0, v1), s.offset(v1, v2)
+	// calc_point_location: which side of the segment from v0 v2 is on.
+	if (v2.x-v1.x)*(v1.y-v0.y)-(v2.y-v1.y)*(v1.x-v0.x) > 0 {
+		s.miter(v0, v1, v2, d1, d2, innerMiter)
+		return
 	}
 	switch s.pen.join {
 	case 1:
-		s.arc(b, o1, sweep)
-	case 0:
-		// The miter is where the two offset edges meet, |o1+o2|/(1+cos θ) from b, and the ratio
-		// §8.4.3.5 limits is its length over the width: 1/sin(φ/2) for the angle φ between the
-		// segments, which is 2/(1+cos θ) squared for the turn θ. Compared squared, so a right
-		// angle's √2 is not a rounding away from its own limit.
-		if dot > -1 && 2/(1+dot) <= s.pen.miter*s.pen.miter {
-			k := 1 / (1 + dot)
-			s.poly(b, add(b, o1), add(b, point{(o1.x + o2.x) * k, (o1.y + o2.y) * k}), add(b, o2))
-			return
-		}
-		s.poly(b, add(b, o1), add(b, o2))
-	default:
-		s.poly(b, add(b, o1), add(b, o2))
-	}
-}
-
-// capAt ends an open subpath at p, where dir points out of the stroke.
-func (s *stroker) capAt(p, dir point) {
-	n := s.left(dir)
-	switch s.pen.cap {
-	case 1:
-		s.arc(p, n, -math.Pi)
+		s.arc(v1, point{d1.x, -d1.y}, point{d2.x, -d2.y})
 	case 2:
-		f := point{dir.x * s.hw, dir.y * s.hw}
-		s.poly(add(p, n), add(add(p, n), f), add(sub(p, n), f), sub(p, n))
+		s.vertex(point{v1.x + d1.x, v1.y - d1.y})
+		s.vertex(point{v1.x + d2.x, v1.y - d2.y})
+	default:
+		s.miter(v0, v1, v2, d1, d2, s.pen.miter)
 	}
 }
 
-// arc adds the fan at centre from offset o through sweep radians.
-func (s *stroker) arc(centre, o point, sweep float64) {
-	steps := 64.0
-	if s.rdev <= strokeTolerance {
-		steps = 1
-	} else if s.rdev < 1e6 {
-		steps = math.Ceil(math.Abs(sweep) / (2 * math.Acos(1-strokeTolerance/s.rdev)))
-	}
-	if !(steps >= 1) {
-		steps = 1
-	}
-	steps = math.Min(steps, 64)
-	pts := make([]point, 0, int(steps)+2)
-	pts = append(pts, centre)
-	for i := 0.0; i <= steps; i++ {
-		sn, cs := math.Sincos(sweep * i / steps)
-		pts = append(pts, add(centre, point{o.x*cs - o.y*sn, o.x*sn + o.y*cs}))
-	}
-	s.poly(pts...)
-}
-
-// poly adds one convex piece in pen space, taken to the device and wound positively there.
-func (s *stroker) poly(pts ...point) {
-	for i := range pts {
-		pts[i] = s.fwd(pts[i])
-	}
-	area := 0.0
-	for i := range pts {
-		j := (i + 1) % len(pts)
-		area += pts[i].x*pts[j].y - pts[j].x*pts[i].y
-	}
-	if area == 0 {
+// miter is stroke_calc_miter under miter_join_revert. The vertex is where the two offset edges
+// meet, when that is within limit radii of v1. Otherwise the join is the two segments' ends.
+//
+// Where the edges are parallel and the path goes straight on, stroke_calc_miter adds the one end
+// the segments share. The two ends are the same point to within rounding, so this adds both.
+//
+// limit is §8.4.3.5's ratio, the miter's length over the line's width, which is the meeting point's
+// distance from v1 over the pen's radius. So one exactly at its limit is kept, as §8.4.3.5's
+// "exceeds" asks.
+func (s *stroker) miter(v0, v1, v2, d1, d2 point, limit float64) {
+	p1, p2 := point{v1.x + d1.x, v1.y - d1.y}, point{v1.x + d2.x, v1.y - d2.y}
+	if x, ok := intersection(point{v0.x + d1.x, v0.y - d1.y}, p1, p2, point{v2.x + d2.x, v2.y - d2.y}); ok && hypot(v1, x) <= s.hw*limit {
+		s.vertex(x)
 		return
 	}
-	if area < 0 {
-		for i, j := 0, len(pts)-1; i < j; i, j = i+1, j-1 {
-			pts[i], pts[j] = pts[j], pts[i]
+	s.vertex(p1)
+	s.vertex(p2)
+}
+
+// intersection is calc_intersection: where the line through a and b meets the line through c and
+// d, or false when they are parallel to within AGG's 1e-30.
+func intersection(a, b, c, d point) (point, bool) {
+	num := (a.y-c.y)*(d.x-c.x) - (a.x-c.x)*(d.y-c.y)
+	den := (b.x-a.x)*(d.y-c.y) - (b.y-a.y)*(d.x-c.x)
+	if math.Abs(den) < 1e-30 {
+		return point{}, false
+	}
+	return point{a.x + (b.x-a.x)*num/den, a.y + (b.y-a.y)*num/den}, true
+}
+
+// capAt is stroke_calc_cap: the vertices that end a polyline at v0, whose segment goes to v1.
+func (s *stroker) capAt(v0, v1 point) {
+	d := s.offset(v0, v1)
+	if s.pen.cap != 1 {
+		var e point // how far a square cap reaches past v0
+		if s.pen.cap == 2 {
+			e = point{d.y, d.x}
+		}
+		s.vertex(point{v0.x - d.x - e.x, v0.y + d.y - e.y})
+		s.vertex(point{v0.x + d.x - e.x, v0.y - d.y - e.y})
+		return
+	}
+	a1 := math.Atan2(d.y, -d.x)
+	s.vertex(point{v0.x - d.x, v0.y + d.y})
+	for a, a2 := a1+s.da, a1+math.Pi-s.da/4; a < a2; a += s.da {
+		s.vertex(s.around(v0, a))
+	}
+	s.vertex(point{v0.x + d.x, v0.y - d.y})
+}
+
+func add(a, b point) point { return point{a.x + b.x, a.y + b.y} }
+
+// arc is stroke_calc_arc: the vertices of the arc about c from offset o1 to offset o2, a step of
+// da apart and none within a quarter step of its end. It turns the way the angle grows, unless o1's
+// angle is within a half turn above o2's.
+//
+// A join's offsets turn with the path, so a join outside a turn takes the other way only where
+// join's side test and the two angles disagree. That happens where three points are in a line to
+// within rounding, and the arc there is its two ends: turning the way the angle grows drew nearly a
+// whole circle. It also happens where a path turns back to within rounding of a reversal.
+//
+// Where a path goes back to its own start, the angles differ by ±π in float64, and the arc turns
+// the way the angle grows. AGG's float32 can put the difference just under π, and then the arc goes
+// back over the line: pdfium leaves a round join's tip flat in some directions of a reversal, where
+// this backend draws it round (ADR 0028).
+func (s *stroker) arc(c, o1, o2 point) {
+	a1, a2 := math.Atan2(o1.y, o1.x), math.Atan2(o2.y, o2.x)
+	s.vertex(add(c, o1))
+	if a1-a2 > 0 && a1-a2 < math.Pi {
+		for a1, a2 = a1-s.da, a2+s.da/4; a1 > a2; a1 -= s.da {
+			s.vertex(s.around(c, a1))
+		}
+	} else {
+		if a1 > a2 {
+			a2 += 2 * math.Pi
+		}
+		for a1, a2 = a1+s.da, a2-s.da/4; a1 < a2; a1 += s.da {
+			s.vertex(s.around(c, a1))
 		}
 	}
-	s.out.moveTo(pts[0])
-	for _, q := range pts[1:] {
-		s.out.lineTo(q)
+	s.vertex(add(c, o2))
+}
+
+// around is the point at angle a on the pen's circle about c.
+func (s *stroker) around(c point, a float64) point {
+	sn, cs := math.Sincos(a)
+	return point{c.x + s.hw*cs, c.y + s.hw*sn}
+}
+
+// vertex adds a vertex to the outline being built.
+func (s *stroker) vertex(q point) { s.ring = append(s.ring, q) }
+
+// end closes the outline being built, taken to the device, as a polygon of the stroke's path.
+func (s *stroker) end() {
+	for i, q := range s.ring {
+		if i == 0 {
+			s.out.moveTo(s.fwd(q))
+		} else {
+			s.out.lineTo(s.fwd(q))
+		}
 	}
 	s.out.close()
+	s.ring = s.ring[:0]
 }

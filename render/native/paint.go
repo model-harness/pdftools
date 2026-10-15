@@ -191,15 +191,10 @@ func newCanvas(w, h int) *canvas {
 // it: the colour in whole 255ths, the alpha truncated to them as pdfium's GetFillArgb truncates it
 // — a shading's is rounded — and the coverage the layer's alpha is drawn at.
 func (c *canvas) fill(p *path, col paint, evenOdd bool, alpha float64, soft *mask) {
-	c.paintScan(p, ruleOf(evenOdd), col, alpha, soft)
-}
-
-// paintScan is fill under any of scan's rules.
-func (c *canvas) paintScan(p *path, rule fillRule, col paint, alpha float64, soft *mask) {
 	pr, pg, pb := col.r*255, col.g*255, col.b*255
 	src, a8 := [3]uint8{channel(col.r), channel(col.g), channel(col.b)}, int(float32(alpha)*255)
 	w := c.clip.w
-	p.scan(w, c.clip.h, rule, func(py int, row []float64) {
+	p.scan(w, c.clip.h, evenOdd, func(py int, row []float64) {
 		base := py * w
 		for x, v := range row {
 			if v <= 0 {
@@ -247,15 +242,13 @@ func (c *canvas) fillRect(x0, y0, x1, y1 int, col paint, alpha float64, soft *ma
 // hairlines strokes segs, in device space, a pixel wide with butt caps and as one path, which is how
 // pdfium draws a cosmetic line and the zero-area parts of a fill: where segments overlap their
 // coverage adds before it is clamped, rather than each compositing in turn.
-//
-// Every segment's outline winds the same way, so the sum is ruleSum's.
 func (c *canvas) hairlines(segs [][2]pt32, col paint, alpha float64, soft *mask) {
 	var p path
 	for _, s := range segs {
 		p.moveTo(point{float64(s[0].x), float64(s[0].y)})
 		p.lineTo(point{float64(s[1].x), float64(s[1].y)})
 	}
-	c.paintScan(stroke(&p, 1, geom.Identity, defaultPen), ruleSum, col, alpha, soft)
+	c.fill(stroke(&p, 1, geom.Identity, defaultPen), col, false, alpha, soft)
 }
 
 // fillStroke draws a fill and its stroke as CFX_RenderDevice::DrawFillStrokePath does when the stroke
@@ -299,7 +292,7 @@ func (c *canvas) fillStroke(fp *path, evenOdd bool, fcol paint, fa float64, line
 	layer := c.layer[:lw*(y1-y0)]
 	clear(layer)
 	f, fa8 := [3]uint8{channel(fcol.r), channel(fcol.g), channel(fcol.b)}, alpha8(fa)
-	fp.scan(w, h, ruleOf(evenOdd), func(py int, row []float64) {
+	fp.scan(w, h, evenOdd, func(py int, row []float64) {
 		for x, v := range row {
 			if v > 0 {
 				// #nosec G115 -- a byte times a coverage of at most 255, over 255.
@@ -309,7 +302,7 @@ func (c *canvas) fillStroke(fp *path, evenOdd bool, fcol paint, fa float64, line
 	})
 	if line != nil {
 		s, sa8 := [3]uint8{channel(scol.r), channel(scol.g), channel(scol.b)}, alpha8(sa)
-		line.scan(w, h, ruleNonzero, func(py int, row []float64) {
+		line.scan(w, h, false, func(py int, row []float64) {
 			for x, v := range row {
 				cv := cover(v)
 				if v <= 0 || sa8*cv/255 == 0 {

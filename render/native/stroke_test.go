@@ -7,24 +7,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/model-harness/pdftools/geom"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/render"
 )
 
 // TestStrokesAgreeWithPdfium is the stroke's acceptance test, on shapes chosen for what separates
 // them: each cap and join style on its own, a miter over its limit, a subpath closed by h and by s,
-// a curve, a pen made elliptical by the CTM, the fill-and-stroke operators, and lines below a pixel.
+// a curve, a pen made elliptical by the CTM, the fill-and-stroke operators, lines below a pixel, and
+// outlines that overlap.
 //
 // At 72 and 144 dpi, where a 200pt page is a whole number of pixels, and at 200, where it is 555.56
 // and both backends map it onto 556. That third one is TestThePageFillsTheImageAtEveryScale's case:
 // it put hundreds of each shape's edge pixels over 32 until the page scale was pdfium's.
 //
-// Measured, with the bounds set from it: every mean is at most 0.024 of 255 and no pixel differs by
-// more than 32, except where a case's comment says otherwise; a curve's flattening, which puts the
-// mean near 0.1 and a few edge pixels past 32 on the inside of a tight bend (worst 42 at 144 dpi, as
-// for the filled curves in TestFillsAgreeWithPdfium, and 78 at 200); and the CMYK stroke, whose mean is 0.444 because pdfium does not
-// convert CMYK by §8.6.4.4's naive formula. A wrong cap, join, width or pen shape moves the mean by
-// whole units and puts hundreds of pixels over 32.
+// Measured, with the bounds set from it: every mean is at most 0.031 of 255 and no pixel differs by
+// more than 32, except a curve's flattening, which puts the mean near 0.1 and a few edge pixels past
+// 32 on the inside of a tight bend (worst 37 at 144 dpi and 36 at 200, as for the filled curves in
+// TestFillsAgreeWithPdfium); and the CMYK stroke, whose mean is 0.446 because pdfium does not
+// convert CMYK by §8.6.4.4's naive formula. Elsewhere no pixel differs by more than 8. A wrong cap,
+// join, width or pen shape moves the mean by whole units and puts hundreds of pixels over 32.
 func TestStrokesAgreeWithPdfium(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -37,26 +39,47 @@ func TestStrokesAgreeWithPdfium(t *testing.T) {
 		{"square cap", "0 G 10 w 2 J 40 100 m 160 100 l S", 0.03, 0},
 		{"miter join", "0 G 10 w 40 40 m 100 160 l 160 40 l S", 0.03, 0},
 		{"round join", "0 G 10 w 1 j 40 40 m 100 160 l 160 40 l S", 0.03, 0},
+		// Three joins whose arcs between them go all the way round, so one of them crosses the angle
+		// where atan2 wraps from π to -π.
+		{"round joins all the way round", "0 G 12 w 1 j 40 40 m 160 50 l 90 160 l h S", 0.03, 0},
 		{"bevel join", "0 G 10 w 2 j 40 40 m 100 160 l 160 40 l S", 0.03, 0},
+		// A turn of 15° under a pen 100 wide puts the miter inside it within innerMiter of the radius,
+		// 6.6 back along each segment, which is past the end of one 2 long. pdfium draws that miter;
+		// the two segments' ends there differed from it by 255.
+		{"a short segment after a gentle turn", "0 G 100 w 20 100 m 100 100 l 101.9319 100.5176 l S", 0.03, 0},
+		// A path that goes straight on has offset edges that never meet, and the join is the segments'
+		// ends. Pen space's origin is the page's top left, so a join there tells the two apart from a
+		// meeting point read where there is none.
+		{"going straight on at the page's top left", "0 G 20 w 0 220 m 0 200 l 0 180 l S", 0.03, 0},
+		// TestANearlyStraightRoundJoinHasNoArc's page.
+		{"a round join on three points nearly in a line", "0 G 10 w 1 j 0.1 20.3 m 1.0 22.1 l 1.3 22.7 l S", 0.03, 0},
 		{"miter over its limit", "0 G 10 w 2 M 40 40 m 100 160 l 160 40 l S", 0.03, 0},
 		{"closed with h", "0 G 8 w 40 40 m 160 40 l 100 160 l h S", 0.03, 0},
 		{"s closes", "0 G 8 w 40 40 m 160 40 l 100 160 l s", 0.03, 0},
-		// After h the current point is the subpath's start, so what follows begins there. pdfium
-		// differs by 3 pixels at that corner, where its new subpath's cap meets the closed one's miter.
-		{"a segment after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 160 160 l S", 0.03, 3},
-		// At 200 dpi, 6: two at that corner and four inside the curve's tightest bend, as for "a curve".
-		{"a curve after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 40 160 40 160 160 160 c S", 0.12, 6},
+		// After h the current point is the subpath's start, so what follows begins there.
+		{"a segment after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 160 160 l S", 0.03, 0},
+		// At 200 dpi, 4 inside the curve's tightest bend, as for "a curve".
+		{"a curve after h", "0 G 4 w 40 40 m 160 40 l 100 160 l h 40 160 40 160 160 160 c S", 0.12, 4},
 		{"a segment with no current point", "0 G 10 w 40 150 m 160 150 l S 100 100 l 150 150 l S", 0.03, 0},
 		{"a curve", "0 G 6 w 30 30 m 60 190 140 190 170 30 c S", 0.12, 6},
 		{"non-uniform ctm", "q 3 0 0 1 0 0 cm 0 G 4 w 1 J 20 40 m 50 160 l S Q", 0.03, 0},
-		// At 200 dpi, one pixel at the miter's tip, which pdfium covers whole and this backend at 198.
-		{"rotated non-uniform ctm", "q 2 1 -0.5 1 100 20 cm 0 G 4 w 0 0 m 0 60 l 40 60 l S Q", 0.03, 1},
+		{"rotated non-uniform ctm", "q 2 1 -0.5 1 100 20 cm 0 G 4 w 0 0 m 0 60 l 40 60 l S Q", 0.03, 0},
 		{"B fills then strokes", "0 0 1 rg 1 0 0 RG 8 w 50 50 100 100 re B", 0.03, 0},
 		{"b* closes and fills even-odd",
 			"0 0 1 rg 0 1 0 RG 3 w 150 150 m 168 105 l 123 133 l 177 133 l 132 105 l b*", 0.03, 0},
 		{"cmyk stroke", "0 1 1 0 K 6 w 30 30 m 170 170 l S", 0.46, 0},
 		{"lines below a pixel", "0 G 0.25 w 20 50 m 180 50 l S 0.5 w 20 100 m 180 100 l S 1 w 20 150 m 180 150 l S", 0.03, 0},
 		{"a zero-width line", "0 G 0 w 20 50 m 180 150 l S", 0.03, 0},
+		// Where two outlines overlap, AGG sums their coverage before it clamps it, so an edge pixel
+		// both cover is the sum of the two. Covered once, two subpaths along one line differed by 32
+		// at 200 dpi, and a closed path's two outlines where it crosses itself by 35 at 144.
+		{"two subpaths along one line", "0 G 10 w 20 100 m 180 100 l 60 100 m 140 100 l S", 0.03, 0},
+		// Its mean is 0.031 at 72 dpi from the edge pixels of two long diagonals, none more than 2 off.
+		{"two lines that cross", "0 G 10 w 20 20 m 180 180 l 20 180 m 180 20 l S", 0.032, 0},
+		{"a closed path that crosses itself", "0 G 6 w 100 180 m 150 20 l 30 120 l 170 120 l 50 20 l h S", 0.03, 0},
+		// The side inside a sharp turn folds back over itself, and the fold counts twice.
+		{"a sharp turn", "0 G 10 w 20 40 m 180 60 l 20 80 l S", 0.03, 0},
+		{"a tight curve", "0 G 12 w 30 100 m 100 200 100 0 170 100 c S", 0.09, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			for _, dpi := range []float64{72, 144, 200} {
@@ -423,7 +446,7 @@ func TestStrokeClipIsTheStrokedPath(t *testing.T) {
 }
 
 // TestManyStrokedSegmentsIsNotQuadratic is TestManySegmentsIsNotQuadratic stroked with round joins,
-// which are the piece a stroke adds the most edges for: every vertex of a zig-zag is a sharp turn.
+// which add the most edges to a stroke's outline: every vertex of a zig-zag is a sharp turn.
 func TestManyStrokedSegmentsIsNotQuadratic(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("0 G 4 w 1 j 1 J 0 0 m ")
@@ -453,28 +476,27 @@ func TestManyStrokedSegmentsIsNotQuadratic(t *testing.T) {
 // ratio is over the limit, so one exactly at it is kept. No page can put a ratio exactly on a limit
 // through a CTM and a flip, so this is the join alone, on a 60° apex whose ratio is exactly 2.
 func TestAMiterAtExactlyItsLimitIsKept(t *testing.T) {
-	id := func(q point) point { return q }
 	a, b, c := point{-1, 0}, point{0, 0}, point{-1, math.Sqrt(3)}
-	if d := unit(b, c); d.x != -0.5 {
-		t.Fatalf("the apex is not exactly 60°: direction %v", d)
+	if hypot(b, c) != 2 {
+		t.Fatalf("the apex is not exactly 60°: the second segment is %v long", hypot(b, c))
 	}
 	for _, c2 := range []struct {
-		miter float64
-		edges int
-	}{{2, 4}, {math.Nextafter(2, 0), 3}} {
-		s := stroker{out: &path{}, hw: 1, pen: pen{miter: c2.miter}, fwd: id, back: id, rdev: 1}
-		s.joinAt(a, b, c)
-		if got := len(s.out.edges); got != c2.edges {
-			t.Errorf("limit %v: the join has %d edges, want %d (4 is a miter, 3 a bevel)", c2.miter, got, c2.edges)
+		miter    float64
+		vertices int
+	}{{2, 1}, {math.Nextafter(2, 0), 2}} {
+		s := stroker{hw: 1, pen: pen{miter: c2.miter}}
+		s.join(a, b, c)
+		if got := len(s.ring); got != c2.vertices {
+			t.Errorf("limit %v: the join has %d vertices, want %d (1 is a miter, 2 a bevel)", c2.miter, got, c2.vertices)
 		}
 	}
 }
 
 // TestRoundCapsFlattenByThePensLongAxis is how finely an arc is cut, which no pixel of an ordinary
-// stroke can see: it is set by the pen's largest radius on the device, and under a CTM that
-// stretches x a hundredfold a cap cut by the smallest would be three chords, a sixth short of the
-// ellipse. The whole stroke's ink is its area, and that is exact: an 80-pixel body one pixel tall
-// and two half ellipses with semi-axes 50 and 0.5.
+// stroke can see: it is set by the pen's radius under DrawPath's matrix1, the CTM's scale max(|a|,
+// |b|), and under a CTM that stretches x a hundredfold a cap cut by the pen's short axis would be
+// three chords, a sixth short of the ellipse. The whole stroke's ink is its area, and that is
+// exact: an 80-pixel body one pixel tall and two half ellipses with semi-axes 50 and 0.5.
 func TestRoundCapsFlattenByThePensLongAxis(t *testing.T) {
 	ra := strokeAt72(t, "q 100 0 0 1 0 0 cm 0 G 1 w 1 J 0.6 100.5 m 1.4 100.5 l S Q")
 	b := ra.Image.Bounds()
@@ -488,5 +510,109 @@ func TestRoundCapsFlattenByThePensLongAxis(t *testing.T) {
 	want := 80 + math.Pi*50*0.5
 	if math.Abs(ink-want) > want/100 {
 		t.Errorf("the stroke's ink is %.2f pixels, want %.2f within 1%%", ink, want)
+	}
+}
+
+// TestAnArcIsCutAtMatrix1sRadius is the radius an arc's step is set by: the pen's under DrawPath's
+// matrix1, whose scale is max(|a|, |b|), and not the pen's largest on the device. Under a CTM that
+// doubles and turns an eighth, a pen 4 wide has a radius of 2.83 in matrix1 and 4 on the device,
+// and AGG cuts a round cap at the first into 7 vertices, where the second would give 8.
+func TestAnArcIsCutAtMatrix1sRadius(t *testing.T) {
+	out := &path{}
+	k := math.Sqrt2
+	s, _ := newStroker(out, 4, geom.Matrix{A: k, B: k, C: -k, D: k}, pen{cap: 1})
+	s.polyline([]point{{0, 0}, {10, 0}}, false)
+	if got, want := len(out.edges), 7+7; got != want {
+		t.Errorf("the outline has %d edges, want %d", got, want)
+	}
+}
+
+// TestAJoinsArcEndsAQuarterStepShort is stroke_calc_arc's two bounds on a join's arc: it turns the
+// way the angle grows, across the angle where atan2 wraps from π to -π too, and it stops a quarter
+// step short of its end. A million-pixel pen steps by π/64, and a corner turned an eighth of a step
+// past a quarter turn is 31 steps and its two ends, where a whole 32nd step would fit without the
+// quarter. Turned eight ways, the arc crosses the wrap in two. Each outline is two butt caps of two
+// vertices, the arc outside the corner, and the two segments' ends inside it.
+func TestAJoinsArcEndsAQuarterStepShort(t *testing.T) {
+	turn := math.Pi/2 + math.Pi/maxArcSteps/8
+	for k := range 8 {
+		a := float64(k)*math.Pi/4 + 0.2
+		v1 := point{1e7 * math.Cos(a), 1e7 * math.Sin(a)}
+		v2 := add(v1, point{1e7 * math.Cos(a+turn), 1e7 * math.Sin(a+turn)})
+		out := &path{}
+		s, _ := newStroker(out, 1e6, geom.Identity, pen{join: 1})
+		s.polyline([]point{{0, 0}, v1, v2}, false)
+		if got, want := len(out.edges), 2+33+2+2; got != want {
+			t.Errorf("first segment at %.2f radians: the outline has %d edges, want %d", a, got, want)
+		}
+	}
+}
+
+// TestANearlyStraightRoundJoinHasNoArc is three points in a line to within rounding, taken to pen
+// space as a page at 72 dpi takes them. join's side test is 0 both ways, so the round join is
+// outside the turn going out and coming back. Going out, the two offsets' angles are 1e-16 the other
+// way, and stroke_calc_arc then turns that way and takes no step. Turning the way the angle grows
+// took 13 steps, nearly a whole circle. Coming back they are 4e-16 apart the way the angle grows,
+// which takes no step either. The outline is two butt caps and two arcs, each of its two ends.
+func TestANearlyStraightRoundJoinHasNoArc(t *testing.T) {
+	out := &path{}
+	s, _ := newStroker(out, 10, geom.Matrix{A: 1, D: -1}, pen{join: 1})
+	var pts []point
+	for _, q := range []point{{0.1, 20.3}, {1.0, 22.1}, {1.3, 22.7}} {
+		pts = append(pts, s.back(point{q.x, 200 - q.y}))
+	}
+	s.polyline(pts, false)
+	if got, want := len(out.edges), 2+2+2+2; got != want {
+		t.Errorf("the outline has %d edges, want %d", got, want)
+	}
+}
+
+// TestARoundJoinAtAReversalTurnsAsAGGDoes is a path that goes back to its start, and one that goes
+// back to a point an ulp short of it. At the reversal both joins at the tip are outside it, the two
+// offsets' angles differ by π, and each arc turns the way the angle grows, round the tip: 9 vertices
+// each past it. An ulp short, the join going out is outside by join's side test, and its angles
+// differ by just under π. stroke_calc_arc turns that one the other way, back over the line, and the
+// join coming back is inside, so the tip is flat. pdfium leaves the tip flat at some reversals too,
+// from float32 (ADR 0028). The pen's half turn is 10.1 steps, so an arc a quarter step short of its
+// end takes 9.
+func TestARoundJoinAtAReversalTurnsAsAGGDoes(t *testing.T) {
+	v0, v1 := point{115.1, 81.3}, point{40.3, 123.1}
+	for _, c := range []struct {
+		name         string
+		v2           point
+		edges, round int
+	}{
+		{"back to its start", v0, 2 + 11 + 2 + 11, 18},
+		{"back to an ulp short of it", point{math.Nextafter(115.1, 0), 81.3}, 2 + 11 + 2 + 2, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			out := &path{}
+			s, _ := newStroker(out, 20.5, geom.Identity, pen{join: 1})
+			s.polyline([]point{v0, v1, c.v2}, false)
+			dx, dy := v1.x-v0.x, v1.y-v0.y
+			past := 0 // vertices more than a pixel past the tip
+			for _, e := range out.edges {
+				if ((e.x0-v1.x)*dx+(e.y0-v1.y)*dy)/math.Hypot(dx, dy) > 1 {
+					past++
+				}
+			}
+			if len(out.edges) != c.edges || past != c.round {
+				t.Errorf("the outline has %d edges, %d of them past the tip; want %d and %d",
+					len(out.edges), past, c.edges, c.round)
+			}
+		})
+	}
+}
+
+// TestAnArcIsCutInAtMostMaxArcSteps is the bound on a round cap or join that AGG has only for a cap:
+// a pen a million pixels wide, whose arcs AGG would cut into some two thousand chords each, is cut
+// into maxArcSteps a half turn. The outline of a right-angled corner is two caps of 65 vertices
+// each, a quarter-turn join of 33 outside it, and the two segments' ends inside it.
+func TestAnArcIsCutInAtMostMaxArcSteps(t *testing.T) {
+	out := &path{}
+	s, _ := newStroker(out, 1e6, geom.Identity, pen{cap: 1, join: 1})
+	s.polyline([]point{{0, 0}, {1e7, 0}, {1e7, 1e7}}, false)
+	if got, want := len(out.edges), 65+33+65+2; got != want {
+		t.Errorf("the outline has %d edges, want %d", got, want)
 	}
 }

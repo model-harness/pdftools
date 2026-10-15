@@ -1104,11 +1104,24 @@ clip.
 6 corpus pages moved closer and none farther, all from the +1, and the corpus mean went from
 3.98128 to 3.98125.
 
-**The worklist is empty.** Every corpus page draws natively. Eight accuracy items affect no page
+**A stroke is AGG's outline, and nonzero sums — see ADR 0028.** `polyline` builds `vcgen_stroke`'s
+outline: one polygon around an open polyline, two around a closed one, with AGG's caps, its joins
+and its inner miter of 1.01, so the side inside a sharp turn folds back over itself. An arc is cut
+at AGG's step for the pen's radius under `matrix1`, floored at π/64. `scan` weights a nonzero span
+by its |winding|, so overlapping outlines, folds, subpaths and dashes add before the clamp, as AGG's
+`fill_non_zero` adds them. A pixel that holds windings of both signs adds where AGG cancels.
+32 corpus pages moved closer and none farther, and the corpus mean went from 3.98125 to 3.98114.
+
+**The worklist is empty.** Every corpus page draws natively. Eleven accuracy items affect no page
 count:
 
-- AGG's summing of coverage across a path's overlapping outlines, which this backend does only
-  within one set of hairlines, planned as ADR 0028
+- `DrawFillStrokePath`'s layer, which is `GetBoundingBoxForStrokePath`'s box and so cuts off a miter
+  at a closed figure's first point, by up to 45 levels at a star's tip
+- AGG's `curve4` flattening, which this backend's curves miss by up to 37 levels
+- AGG's signed sum in a pixel that holds windings of both signs, which this backend misses by 61
+  at the corners of two rectangles wound opposite ways
+- AGG's float32 arc at a reversal, which leaves a round join's tip flat in 33 of 120 directions of
+  ADR 0028's line, where this backend draws a path that goes back to its own start round
 - the byte compositing of an unmasked fill or stroke, which this backend composites in float and
   so misses a translucent fill by a level on one channel
 - pdfium's own CMYK-to-sRGB table

@@ -184,6 +184,17 @@ func TestFillsAgreeWithPdfium(t *testing.T) {
 		{"self-intersecting star, even-odd", "0 g 150 150 m 168 105 l 123 133 l 177 133 l 132 105 l f*", 0},
 		{"closed pair of cubics", "0 g 40 140 m 60 195 100 195 120 140 c 90 170 70 170 40 140 c f", 0},
 		{"rectangle from re", "0 g 30 30 140 90 re f", 0},
+		// Nonzero sums each outline's coverage of a pixel before it clamps it, as AGG does, so two
+		// edges in one pixel add. Covered once, 398 pixels at 72 dpi differed by more than 32.
+		{"two rectangles whose edges share pixels", "0 g 20.3 20.3 100 100 re 20.6 20.6 100 100 re f", 0},
+		// And so does a clip's, which pdfium builds with the same rasterizer.
+		{"a clip of two rectangles whose edges share pixels", "20.3 20.3 100 100 re 20.6 20.6 100 100 re W n 0 g 0 0 200 200 re f", 0},
+		// Even-odd weighs a span inside by 1, whatever its winding: the innermost of three rectangles
+		// wound alike is inside at a winding of 3, and its edge pixels are half covered.
+		{"three rectangles nested, even-odd", "0 g 20 20 160 160 re 40 40 120 120 re 60.5 60.5 80 80 re f*", 0},
+		// AGG sums signed areas, so in a pixel that holds both windings they cancel, where scan adds
+		// each span's |winding|: the two corners where both rectangles' edges cross differ by 61.
+		{"two rectangles wound opposite ways", "0 g 20.3 20.3 100 100 re 20.6 120.6 m 120.6 120.6 l 120.6 20.6 l 20.6 20.6 l h f", 2},
 		{"grey and a second path", "0.5 g 20 20 60 60 re f 0 g 100 100 m 180 100 l 140 180 l f", 0},
 		// Operators no other case reaches. Each was a surviving mutant before it was here: the
 		// v and y curves take their control points from the current point and the endpoint, F

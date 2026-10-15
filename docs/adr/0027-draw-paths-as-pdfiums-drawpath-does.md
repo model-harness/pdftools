@@ -215,9 +215,9 @@ page moved without a counter firing on it.
   before it clamps. So two subpaths, or two dashes, that overlap are darker where they meet. This
   backend sums only within one set of hairlines. A zero-length line beside another in one dashed
   path is 74 levels from pdfium, and the two caps of a dashed `m h` are 119.
-  It is planned as ADR 0028.
+  ADR 0028 follows it.
 - **Joins.** This backend's joins differ from AGG's by up to 45 levels at a corner. That is the
-  residual in every case above with a corner.
+  residual in every case above with a corner. ADR 0028 follows `vcgen_stroke`'s outline.
 - **A closed dashed figure** still joins at its start where AGG's dasher caps it (ADR 0024). A
   round-capped closed dashed figure differs by 229 at that point.
 - **Float compositing.** An unmasked fill or stroke is composited in float, at `v × alpha`, where
@@ -302,7 +302,7 @@ Three live:
 - **`fillStroke`'s test for a transparent layer pixel** only skips work. `merge` at alpha 0 writes
   the pixel back unchanged, as in ADR 0026.
 - **The knockout stroke's rule** is nonzero, as the direct stroke's is. Summing it would be
-  ADR 0028's change, made for both at once.
+  ADR 0028's change, made for both at once. ADR 0028 made it.
 
 ## Consequences
 
