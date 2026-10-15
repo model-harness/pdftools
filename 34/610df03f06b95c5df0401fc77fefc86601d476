@@ -1,0 +1,88 @@
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_96d5fa4c22ba23 8,21
+  s_5cd1b28ed520c1::t_bf1dbc31732b3f 10-20
+  s_5cd1b28ed520c1::t_8b9b9757eaf8c4 9
+render/native/drawpath_test.go
+  s_5cd1b28ed520c1::t_8be3bd14ba1190 73-78,83-88,96-103,115,119,122,124-125,134,138,140
+  s_5cd1b28ed520c1::t_d9d0b68f7d48e4 35
+docs/adr/0027-draw-paths-as-pdfiums-drawpath-does.md
+  s_5cd1b28ed520c1::t_adc64ee4e974fc 218,220,305
+render/native/native_test.go
+  s_5cd1b28ed520c1::t_677b30a9ab641b 190-194
+  s_5cd1b28ed520c1::t_5df444a555727f 187-189,195-197
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_adc64ee4e974fc 1107-1114,1118-1122
+  s_5cd1b28ed520c1::t_2591e1222daa3b 1115
+  s_5cd1b28ed520c1::t_e2d946c9444e5e 1123-1124
+render/native/fill.go
+  s_5cd1b28ed520c1::t_d9d0b68f7d48e4 436,462-464,467-474,610-612
+render/native/stroke.go
+  s_5cd1b28ed520c1::t_1d9ca0efa6eee6 587-589,602-621,624
+  s_5cd1b28ed520c1::t_8b065d9bbe0ed3 577
+  s_5cd1b28ed520c1::t_fcbd2e89408046 523,525-527,533-534
+  s_5cd1b28ed520c1::t_ea94bca0f9e929 216-221,225
+  s_5cd1b28ed520c1::t_5d7d0787243eb9 239-250,252-255,268,286-288,293,302-303,340-342,346-354,356-358,360-362,364,492-497,500-509,513-516,518,522,524,528-532,535,537-538,541-549,552-561,564-572
+  s_5cd1b28ed520c1::t_0b2a4068427f8a 582,595-599
+  s_5cd1b28ed520c1::t_8fce9ca387c89c 222-224
+  s_5cd1b28ed520c1::t_f1cf7a2d31cab8 574-576,578-581,590-594
+  s_5cd1b28ed520c1::t_cc78a4c41c1743 583-586
+  s_5cd1b28ed520c1::t_7ef87f4cbc3c13 573
+docs/adr/0028-stroke-with-aggs-outline-and-sum-overlapping-coverage.md
+  s_5cd1b28ed520c1::t_eba290f4e4bb89 117
+  s_5cd1b28ed520c1::t_58f2537efb3358 161-162
+  s_5cd1b28ed520c1::t_758118fb62800b 182,202-209,214-216,221,253
+  s_5cd1b28ed520c1::t_0f4a6df721726c 118
+  s_5cd1b28ed520c1::t_f1df17a2affc44 115
+  s_5cd1b28ed520c1::t_e2d946c9444e5e 181,183-201,210-213,222,241,244-252
+  s_5cd1b28ed520c1::t_faa8454a5b82e7 167-175,178-180,218-220,223
+  s_5cd1b28ed520c1::t_e66097cab46114 1-2,4-114,121,129-131,147-160,163-166,227-240,254-264
+  s_5cd1b28ed520c1::t_96d5fa4c22ba23 3
+  s_5cd1b28ed520c1::t_61ff25335e1daf 116,122-123,126-127
+  s_5cd1b28ed520c1::t_342377faf923c2 176-177,217,224-226
+  s_5cd1b28ed520c1::t_9a13ccbaac315c 132-139
+  s_5cd1b28ed520c1::t_01440ce59116a2 119-120,124-125,128,140-142
+  s_5cd1b28ed520c1::t_00c9f11e0f5b22 242-243
+  s_5cd1b28ed520c1::t_3c49191b3670db 143-146
+render/native/paint.go
+  s_5cd1b28ed520c1::t_d9d0b68f7d48e4 197,251,295,305
+render/native/stroke_test.go
+  s_5cd1b28ed520c1::t_0fe1a8bce8eaab 28-29
+  s_5cd1b28ed520c1::t_cc78a4c41c1743 552-556
+  s_5cd1b28ed520c1::t_7a3536789ae921 24,77-78
+  s_5cd1b28ed520c1::t_e2258183d21137 66
+  s_5cd1b28ed520c1::t_4bfbd2d4e63ff6 579,586
+  s_5cd1b28ed520c1::t_37db25755d084d 25-27
+  s_5cd1b28ed520c1::t_5df444a555727f 10,73-76,79-82,567-569,607-616
+  s_5cd1b28ed520c1::t_726e79f71bb52a 50-53
+  s_5cd1b28ed520c1::t_fb742f411cde04 449
+  s_5cd1b28ed520c1::t_aa89683d2ab389 59-62
+  s_5cd1b28ed520c1::t_edc6757d8b2740 570-575,578,580-585,587-589,591-606,617-618
+  s_5cd1b28ed520c1::t_6e21a26928101c 576-577,590
+  s_5cd1b28ed520c1::t_26a461a8e44f07 480-481,484-490
+  s_5cd1b28ed520c1::t_afebaed83c8b0e 496-497
+  s_5cd1b28ed520c1::t_a8c00bcf7ed8b0 46-49
+  s_5cd1b28ed520c1::t_763f6a428e62ec 498-499,515-526
+  s_5cd1b28ed520c1::t_6f8420f8d59b33 42-44,527-547
+  s_5cd1b28ed520c1::t_56effce5ecdfbb 17-18
+  s_5cd1b28ed520c1::t_c9bf0af3b62043 54-55,548-551,557-566
+render/native/dash_test.go
+  s_5cd1b28ed520c1::t_822da971d62dab 20
+  s_5cd1b28ed520c1::t_777a65532ff021 21
+  s_5cd1b28ed520c1::t_5df444a555727f 70-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34610df03f06b95c5df0401fc77fefc86601d476",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
