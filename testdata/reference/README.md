@@ -1,6 +1,6 @@
 # Reference fixtures — the yardstick
 
-Twenty-nine small PDFs, each exercising one thing, each beside the Markdown it *should*
+Thirty small PDFs, each exercising one thing, each beside the Markdown it *should*
 produce. Everything here is ours: generated from the `.tex` sources in this
 directory, one `.html` that Chrome prints, and `degrade.go`, which makes the scans.
 All of it is licensed MIT with the rest of the repo, and therefore committable —
@@ -147,6 +147,7 @@ work.
 | `superscripts.tex` | Raised and lowered runs of more than one glyph | no |
 | `two-column.tex` | Two columns under a spanning title, a paragraph cut by the column break | no |
 | `three-column.tex` | Three balanced columns, read a column at a time | no |
+| `two-column-ragged.tex` | Two-column's break under ragged-right type, carried by a lower-case word | no |
 | `unnumbered-headings.tex` | Three heading levels with no numbers, only size and weight | no |
 | `table-unruled.tex` | A table held apart by alignment alone | no |
 | `table-merged.tex` | A cell spanning two columns and one spanning two rows | no |

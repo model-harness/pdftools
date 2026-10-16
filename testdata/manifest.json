@@ -62,7 +62,8 @@
         { "path": "reference/scan-paragraphs.jpg", "upstream": "reference/degrade.go", "sha256": "eb5d57c2d6421d3605dc988ae339faea9d3c999a420fe3d2189471095d92e576", "size": 309814, "why": "paragraphs.pdf rendered at 200 dpi and degraded by degrade.go; scan-paragraphs.pdf embeds it" },
         { "path": "reference/scan-table.jpg", "upstream": "reference/degrade.go", "sha256": "d9893f994450f270d0f4627f3129216f2144fb173553e2da9c0513473e854f9b", "size": 269970, "why": "table.pdf rendered at 200 dpi and degraded by degrade.go; scan-table.pdf embeds it" },
         { "path": "reference/scan-two-column.jpg", "upstream": "reference/degrade.go", "sha256": "4177d31128214dcf87d484adfd9e0820bbcb3f05ba764f2c7b429adb237d2459", "size": 105777, "why": "two-column.pdf rendered at 200 dpi and degraded by degrade.go; scan-two-column.pdf embeds it" },
-        { "path": "reference/scan-unnumbered-headings.jpg", "upstream": "reference/degrade.go", "sha256": "3410b1d43f7cdcab8830dd2d36852d33d4f27fb175c5263f61b17dd1bb6d3157", "size": 287879, "why": "unnumbered-headings.pdf rendered at 200 dpi and degraded by degrade.go; scan-unnumbered-headings.pdf embeds it" }
+        { "path": "reference/scan-unnumbered-headings.jpg", "upstream": "reference/degrade.go", "sha256": "3410b1d43f7cdcab8830dd2d36852d33d4f27fb175c5263f61b17dd1bb6d3157", "size": 287879, "why": "unnumbered-headings.pdf rendered at 200 dpi and degraded by degrade.go; scan-unnumbered-headings.pdf embeds it" },
+        { "path": "reference/two-column-ragged.pdf", "upstream": "reference/two-column-ragged.tex", "sha256": "1251c59e7f8412201798ee512e7176d83ec258b5600aa01e1d7e06c1da1ac861", "size": 29410, "why": "two-column's break under ragged-right type and spaced paragraphs, where only a lower-case word says the sentence carries on" }
       ]
     },
     {

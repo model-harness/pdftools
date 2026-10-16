@@ -1,0 +1,25 @@
+% two-column-ragged — two-column's concern under ragged-right type and spaced paragraphs.
+%
+% two-column.tex is justified, so a line that wraps runs to the column's edge and that
+% is what tells its break from a paragraph's end. Ragged right takes that away: every
+% line stops short. What is left is the word the next column starts with, here "column",
+% lower case because the sentence carries on. The paragraphs are set flush with space
+% between them, as most word processors set them, so no indent marks them either.
+\documentclass[twocolumn]{article}
+\usepackage{lmodern}
+\usepackage[paperwidth=6in,paperheight=2.0in,margin=0.5in]{geometry}
+\pagestyle{empty}
+\raggedright
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+% No hyphenation: that is the hyphenation fixture's concern.
+\hyphenpenalty=10000 \exhyphenpenalty=10000
+\begin{document}
+The first paragraph is short and sits at the top of the left column.
+
+The second paragraph is long enough to run down the rest of the left column and on
+into the right one, so the column break falls in the middle of a sentence, which goes
+on after the break as if nothing had happened at all.
+
+The third paragraph starts with a capital and closes the right column.
+\end{document}

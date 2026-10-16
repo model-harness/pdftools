@@ -745,14 +745,6 @@ func maxf(a, b float64) float64 {
 	return b
 }
 
-// blocks assembles the collected lines into paragraph blocks.
-//
-// Lines keep the order they were drawn in rather than being sorted top to bottom.
-// That is a deliberate limit, not an oversight: stream order is the producer's
-// reading order and is right for the large majority of documents, while sorting by
-// position interleaves the columns of every two-column page. Recovering reading
-// order from geometry is what layout owns, and doing a half version of it here
-// would make the good case worse to improve the bad one.
 // sortLines puts every line's fragments in position order.
 //
 // Fragments within a line are ordered by position, not by when they were drawn.
@@ -783,6 +775,18 @@ func (r *run) sortLines() {
 	}
 }
 
+// blocks assembles the collected lines into paragraph blocks.
+//
+// Lines keep the order they were drawn in rather than being sorted top to bottom.
+// That is a deliberate limit, not an oversight: stream order is the producer's
+// reading order and is right for the large majority of documents, while sorting by
+// position interleaves the columns of every two-column page. Recovering reading
+// order from geometry is what layout owns, and doing a half version of it here
+// would make the good case worse to improve the bad one.
+//
+// A column break is where that order steps back up the page, and a paragraph can run
+// on through it. columns decides whether it does, and carries the paragraph indent
+// across the break either way (ADR 0030).
 func (r *run) blocks(opt Options) []doc.Block {
 	r.closeLine()
 	if len(r.lines) == 0 {
@@ -796,6 +800,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	var cur *doc.Block
 	var prev *line
 	var shape indent
+	cols := r.columns(opt)
 
 	for i := range r.lines {
 		ln := &r.lines[i]
@@ -816,11 +821,21 @@ func (r *run) blocks(opt Options) []doc.Block {
 		// see that: the two levels of a fraction are more than ParaFrac apart whenever the
 		// type is small relative to the stack, and a tagged document is rescued only by
 		// sameElement, which an untagged one has no MCID to satisfy.
-		if cur == nil || (!ln.joinPrev && (!continues(prev, ln, r.tol) || shape.startsParagraph(ln, r.tol))) {
+		top := cols.at[i].top && prev != nil && !ln.joinPrev
+		switch {
+		case top && cols.continues(prev, ln, i, r.tol):
+			// The column break fell inside a paragraph. The block runs on, measured from
+			// here against the new column's margin.
+			shape = shape.atColumnTop(ln)
+		case cur == nil || (!ln.joinPrev && (!continues(prev, ln, r.tol) || shape.startsParagraph(ln, r.tol))):
 			out = append(out, doc.Block{Role: roleOf(art)})
 			cur = &out[len(out)-1]
-			shape = newIndent(ln)
-		} else {
+			if top && cols.flush(ln, i, r.tol) {
+				shape = shape.atColumnTop(ln)
+			} else {
+				shape = newIndent(ln)
+			}
+		default:
 			shape.observe(ln)
 		}
 		appendLine(cur, ln, r.tol, r.page)
@@ -984,6 +999,133 @@ type indent struct {
 func newIndent(ln *line) indent {
 	lo, _ := lineExtent(ln)
 	return indent{first: lo, edge: math.NaN(), space: lineSpace(ln)}
+}
+
+// atColumnTop is the indent state for a line that opens a column flush with its margin.
+// The margin is that line's own left edge, and the indent a paragraph opens with is the
+// one this block was measuring, because the line, being flush, says nothing about it.
+//
+// Without it a block that starts with the rest of a paragraph has an indent of its own
+// of 0, so the next paragraph's indent never matches it: in reference/two-column.pdf
+// the third paragraph ran on into the second.
+func (in indent) atColumnTop(ln *line) indent {
+	lo, _ := lineExtent(ln)
+	own := 0.0
+	if !math.IsNaN(in.edge) && in.space > 0 {
+		own = (in.first - in.edge) / in.space
+	}
+	sp := lineSpace(ln)
+	return indent{first: lo + own*sp, edge: lo, space: sp}
+}
+
+// lineFull is how many space widths short of its column's right edge a line can stop and
+// still be full. A justified line that wraps ends on the edge; a paragraph's last line,
+// as a rule, ends well short of it.
+const lineFull = 1.0
+
+// column is one line's place among the page's columns. A column is a run of lines each at
+// or below the one before it, so a line that steps back up the page opens the next one.
+// left and right are the run's edges, and lines is how many lines set them.
+type column struct {
+	top         bool
+	left, right float64
+	lines       int
+}
+
+// columns is every line's column, and bottom, the lowest baseline of the page's text in
+// each orientation.
+type columns struct {
+	at     []column
+	bottom map[int]float64
+}
+
+// columns finds the page's columns. A dropped artifact belongs to none: a running header
+// drawn after the text steps up the page, and would otherwise open a column of its own.
+func (r *run) columns(opt Options) columns {
+	c := columns{at: make([]column, len(r.lines)), bottom: map[int]float64{}}
+	dropped := func(ln *line) bool { return lineIsArtifact(ln) && !opt.KeepArtifacts }
+	edges := func(from, to int) {
+		lo, hi, n := math.Inf(1), math.Inf(-1), 0
+		for j := from; j < to; j++ {
+			if dropped(&r.lines[j]) {
+				continue
+			}
+			a, b := lineExtent(&r.lines[j])
+			lo, hi, n = math.Min(lo, a), math.Max(hi, b), n+1
+		}
+		for j := from; j < to; j++ {
+			c.at[j].left, c.at[j].right, c.at[j].lines = lo, hi, n
+		}
+	}
+	start := 0
+	var prev *line
+	for i := range r.lines {
+		ln := &r.lines[i]
+		if dropped(ln) {
+			continue
+		}
+		if prev != nil && (prev.orient != ln.orient || ln.cross > prev.cross) {
+			edges(start, i)
+			start = i
+			c.at[i].top = true
+		}
+		if b, ok := c.bottom[ln.orient]; !ok || ln.cross < b {
+			c.bottom[ln.orient] = ln.cross
+		}
+		prev = ln
+	}
+	edges(start, len(r.lines))
+	return c
+}
+
+// flush reports whether line i starts at its column's left edge, less than the smallest
+// first-line indent, IndentFrac space widths, right of it. The edge has to be the other
+// lines' as well as this one's, so a column of one line is never flush.
+func (c columns) flush(ln *line, i int, t geom.Tolerance) bool {
+	if c.at[i].lines < 2 {
+		return false
+	}
+	lo, _ := lineExtent(ln)
+	sp := lineSpace(ln)
+	return sp > 0 && (lo-c.at[i].left)/sp < t.IndentFrac
+}
+
+// continues reports whether line i, which opens a column, carries on the paragraph that
+// prev, the last line of the column before, was in.
+//
+// It must start flush, at the same size, and prev must be at the foot of the page's text.
+// A column breaks because it is full, so its last line is the lowest text on the page,
+// while a table cell ends at its row with the rest of the table below it. Without that
+// condition the rule made 18 joins across the corpus, each a table cell, a matrix entry
+// or a formula.
+//
+// Then one of two things says the paragraph had not ended. Either the new line starts
+// lower case, which a paragraph rarely does and a sentence carried over a break usually
+// does, or prev runs to its column's right edge, as a justified line that wraps does.
+func (c columns) continues(prev, ln *line, i int, t geom.Tolerance) bool {
+	if prev.orient != ln.orient || sizeBreak(prev, ln, t) || !c.flush(ln, i, t) {
+		return false
+	}
+	if prev.cross-c.bottom[prev.orient] > prev.height {
+		return false
+	}
+	if startsLower(ln) {
+		return true
+	}
+	pc := c.at[i-1]
+	_, hi := lineExtent(prev)
+	sp := lineSpace(prev)
+	return pc.lines >= 2 && sp > 0 && (pc.right-hi)/sp <= lineFull
+}
+
+// startsLower reports whether a line's text begins with a lower-case letter.
+func startsLower(ln *line) bool {
+	for i := range ln.frags {
+		for _, r := range string(ln.frags[i].text) {
+			return unicode.IsLower(r)
+		}
+	}
+	return false
 }
 
 // observe records a line that stayed in the block, which is what establishes the

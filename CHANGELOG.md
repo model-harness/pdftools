@@ -5,6 +5,19 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-16
+
+- **A paragraph runs on across a column break.** ADR 0030, issue #3. A column's first line carries
+  on the previous column's paragraph when all of these hold:
+  - it is flush and at the same size;
+  - the previous line is at the foot of the page's text;
+  - the line starts lower case, or the previous line runs to its column's edge.
+
+  The paragraph indent carries over the break, so the paragraph after it is still found.
+  Blocks went from 0.500 to 1.000 on `two-column`, and from 0.571 to 1.000 on `three-column`
+  and on the new `two-column-ragged`. 68 of 70 corpus and testdata documents are unchanged.
+  Order's v1 target is now enforced.
+
 ### Added — 2026-10-16
 
 - **A benchmark: the converter scored against a gold set, on each dimension apart.** ADR

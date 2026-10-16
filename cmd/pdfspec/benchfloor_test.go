@@ -43,8 +43,9 @@ var benchFloors = map[string]benchFigures{
 	"tagged-lists":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"tagged-table":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"text-styles":              {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"three-column":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 0.571, headings: 1.000, tables: 1.000, style: 1.000},
-	"two-column":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 0.500, headings: 0.000, tables: 1.000, style: 0.000},
+	"three-column":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"two-column-ragged":        {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"two-column":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 0.000, tables: 1.000, style: 0.000},
 	"type3-unmapped":           {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"unnumbered-headings":      {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 0.000, tables: 1.000, style: 0.000},
 	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.000, tables: 1.000, style: 0.571},
@@ -58,8 +59,11 @@ var benchTargets = benchFigures{
 	blocks: 0.90, headings: 0.90, tables: 0.85, style: 0.85,
 }
 
-// benchEnforced names the dimensions whose v1 target now fails the build.
-var benchEnforced = map[string]bool{}
+// benchEnforced names the dimensions whose v1 target now fails the build, each from the
+// goal that closed it.
+var benchEnforced = map[string]bool{
+	"order": true, // #3, ADR 0030
+}
 
 func TestBenchmarkFloors(t *testing.T) {
 	rows, err := benchRows(filepath.Join("..", "..", "testdata", "reference"))
