@@ -964,11 +964,13 @@ func TestBlockMCIDsAreTheUnionOfTheirSpans(t *testing.T) {
 		t.Errorf("%d blocks in total disagree with the union", bad)
 	}
 	// A floor rather than an equality: the identity is the assertion, and these only have to
-	// establish that it was asked of a real population. Measured at 72218 blocks of which 71299
+	// establish that it was asked of a real population. Measured at 71971 blocks of which 71052
 	// carry a set — the extractor's page blocks, the same pages after the layout passes, and the
 	// rebuilt section copies, which is deliberate: all three are separate slices written by
-	// separate code, and each of the four write sites touches only one of them.
-	if blocks < 72000 || withSet < 71000 {
+	// separate code, and each of the four write sites touches only one of them. ADR 0032's join
+	// accounts for 88 fewer: it drops the header cells a table repeats across a page break from
+	// the layout copy, and it was 72059 without them.
+	if blocks < 71900 || withSet < 71000 {
 		t.Errorf("walked %d blocks, %d with a set; want a corpus-sized population", blocks, withSet)
 	}
 	t.Logf("%d blocks, %d with a set, %d disagreeing", blocks, withSet, bad)

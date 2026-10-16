@@ -7,6 +7,10 @@ All notable changes to this project are documented here, following
 
 ### Changed — 2026-10-16
 
+- **A table a page break split is one table again.** ADR 0032, issue #5. A page's opening
+  table joins the previous page's closing one when its header row repeats, cell for cell,
+  at the same width, with nothing but artifacts between them. The repeated header is
+  dropped. `table-across-pages` cells went from 0.632 to 1.000.
 - **Unnumbered headings in untagged files.** ADR 0031, issue #4. A candidate with no section
   number is a heading when the block after it is the body it heads: a long paragraph in lighter
   type, a list or a table, starting at its own left edge. Its level comes from the numbered

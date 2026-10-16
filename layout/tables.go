@@ -2,6 +2,7 @@ package layout
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/geom"
@@ -85,7 +86,158 @@ func Tables(d *doc.Document, opt Options) TableStats {
 		}
 		p.Blocks = rebuild(p.Blocks, bands)
 	}
+	st.Joined = joinAcrossPages(d)
 	return st
+}
+
+// joinAcrossPages makes a table that a page break splits one table again, and returns how
+// many continuations it joined.
+//
+// The evidence is the one a reader uses: the next page opens with a table whose header row
+// repeats this page's last table's, cell for cell, at the same width. A table that runs on
+// with no repeated header is left as two, because two adjacent tables of one width are
+// common and a header is the only statement that they are one.
+//
+// The continuation's cells move to the page the table began on, after its other cells, so
+// the sink emits one grid. Each span keeps its own Page, which is how the model already
+// carries a block that crosses a break. The repeated header is dropped. Only whole-document
+// output runs this pass: a page-scoped one, md -split, never infers roles.
+func joinAcrossPages(d *doc.Document) int {
+	joined := 0
+	var open *openTable
+	for pi := range d.Pages {
+		p := &d.Pages[pi]
+		if open != nil {
+			if t, ok := firstTable(p.Blocks); ok && sameHeader(open.header, header(p.Blocks, t)) && width(p.Blocks, t) == open.width {
+				host := &d.Pages[open.page]
+				kept := p.Blocks[:0]
+				for _, b := range p.Blocks {
+					if tableOf(b) != t {
+						kept = append(kept, b)
+						continue
+					}
+					if b.Cell.Row == 0 {
+						continue
+					}
+					c := *b.Cell
+					c.Table, c.Row = open.table, c.Row+open.rows-1
+					b.Cell = &c
+					host.Blocks = append(host.Blocks, b)
+				}
+				p.Blocks = kept
+				open.rows = rowCount(host.Blocks, open.table)
+				joined++
+				if hasContent(p.Blocks) {
+					open = nil
+				}
+			} else if hasContent(p.Blocks) {
+				open = nil
+			}
+		}
+		// A continuation's cells have left this page, so a table it ends with is a new one.
+		if t, ok := lastTable(p.Blocks); ok {
+			open = &openTable{table: t, page: pi, header: header(p.Blocks, t), width: width(p.Blocks, t), rows: rowCount(p.Blocks, t)}
+		}
+	}
+	return joined
+}
+
+// openTable is the table the pages so far end with, which the next page may continue.
+type openTable struct {
+	table, page, width, rows int
+	header                   []string
+}
+
+// tableOf is a block's table number, or 0 when it is not a positioned cell.
+func tableOf(b doc.Block) int {
+	if b.Role != doc.RoleTableCell || b.Cell == nil {
+		return 0
+	}
+	return b.Cell.Table
+}
+
+// firstTable and lastTable return the table a page's content opens or closes with, past
+// any artifacts and empty blocks, which a running header or a folio is.
+func firstTable(blocks []doc.Block) (int, bool) {
+	for _, b := range blocks {
+		if b.Role == doc.RoleArtifact || b.IsEmpty() {
+			continue
+		}
+		t := tableOf(b)
+		return t, t != 0
+	}
+	return 0, false
+}
+
+func lastTable(blocks []doc.Block) (int, bool) {
+	for i := len(blocks) - 1; i >= 0; i-- {
+		b := blocks[i]
+		if b.Role == doc.RoleArtifact || b.IsEmpty() {
+			continue
+		}
+		t := tableOf(b)
+		return t, t != 0
+	}
+	return 0, false
+}
+
+func hasContent(blocks []doc.Block) bool {
+	for _, b := range blocks {
+		if b.Role != doc.RoleArtifact && !b.IsEmpty() {
+			return true
+		}
+	}
+	return false
+}
+
+// header returns table t's row 0, as each cell's text in column order.
+func header(blocks []doc.Block, t int) []string {
+	var out []string
+	for _, b := range blocks {
+		if tableOf(b) == t && b.Cell.Row == 0 {
+			for len(out) <= b.Cell.Col {
+				out = append(out, "")
+			}
+			out[b.Cell.Col] = strings.TrimSpace(b.Text())
+		}
+	}
+	return out
+}
+
+// sameHeader reports whether two header rows are one. Two empty ones are not: a table
+// whose row 0 is on another page, as a declared table's later pages are, has no header
+// here to repeat.
+func sameHeader(a, b []string) bool {
+	if len(a) == 0 || len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// width is table t's column count, and rowCount its row count.
+func width(blocks []doc.Block, t int) int {
+	n := 0
+	for _, b := range blocks {
+		if tableOf(b) == t && b.Cell.Col+1 > n {
+			n = b.Cell.Col + 1
+		}
+	}
+	return n
+}
+
+func rowCount(blocks []doc.Block, t int) int {
+	n := 0
+	for _, b := range blocks {
+		if tableOf(b) == t && b.Cell.Row+1 > n {
+			n = b.Cell.Row + 1
+		}
+	}
+	return n
 }
 
 // TableStats reports what Tables did. The failure modes are quiet in both directions — a
@@ -95,6 +247,10 @@ type TableStats struct {
 	// Tables counts the grids found, Rows their rows and Cells their cells. Over the
 	// untagged documents on disk: 9 tables, 26 rows, 88 cells.
 	Tables, Rows, Cells int
+
+	// Joined counts the tables that continued from the page before, their header row
+	// repeated, and were made one with it.
+	Joined int
 }
 
 // minRows is the number of rows a run must have to be a table. Not an Options field: it
