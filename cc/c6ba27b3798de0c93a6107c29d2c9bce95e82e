@@ -1,0 +1,42 @@
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_8009963e97f589 62-66
+  s_5cd1b28ed520c1::t_a72ef08acea87a 46-48
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_cd3229e3666ff6 65-66
+testdata/reference/two-column-ragged.gold.md
+  s_5cd1b28ed520c1::t_aa345e7ff78014 1-5
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_4f455dd86d6ce6 8-20
+testdata/reference/README.md
+  s_5cd1b28ed520c1::t_4f455dd86d6ce6 3,150
+docs/adr/0030-carry-a-paragraph-over-a-column-break.md
+  s_5cd1b28ed520c1::t_ca69df30d3f5e1 1-83
+testdata/reference/two-column-ragged.tex
+  s_5cd1b28ed520c1::t_de4c77c774c39b 1-4,6-9,11-25
+  s_5cd1b28ed520c1::t_aa345e7ff78014 5,10
+extract/columns_test.go
+  s_5cd1b28ed520c1::t_6a5f9b9e8c1b87 86-97
+  s_5cd1b28ed520c1::t_0710958ecf8cca 142-148
+  s_5cd1b28ed520c1::t_2f818b3476422b 1-85,98-141,149-164
+extract/run.go
+  s_5cd1b28ed520c1::t_15d90bbfec6478 1004-1098,1101-1130
+  s_5cd1b28ed520c1::t_51e78c5f81fa14 824-830,833-838
+  s_5cd1b28ed520c1::t_7fb9ad89a337a5 778-789,803
+  s_5cd1b28ed520c1::t_80bbf50395f303 1099-1100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccc6ba27b3798de0c93a6107c29d2c9bce95e82e",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
