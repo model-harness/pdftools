@@ -47,13 +47,11 @@
 // headings, because it counts rungs that are not levels. Numbering is not a heuristic
 // about the document; it is the document's statement, so it wins.
 //
-// The cost is that unnumbered headings stay paragraphs. That is deliberate for now:
-// the fixtures show no signal that admits "Preface" without also admitting a bold
-// table row, and a rule that promotes one and not the other would be tuned to a
-// document rather than derived from one. Recording the limit is better than guessing
-// past it — DESIGN.md §10 carries it as measured debt.
+// For a long time the cost was that unnumbered headings stayed paragraphs: the fixtures
+// showed no signal in the candidate itself that admits "Preface" without also admitting a
+// bold table row. The section after next is what closed that.
 //
-// Two candidate signals for that limit have since been measured and rejected, which is
+// Two candidate signals for that limit were measured and rejected, which is
 // worth stating so neither is proposed again as though it were untried. *Recurrence* —
 // promote a style that heads a block on many pages, not on one — was ADR 0008's own
 // suggestion, and the corpus falsifies it in both directions: of the 151 unnumbered
@@ -65,9 +63,23 @@
 // unnumbered above-body candidates on the tagged corpus peak at 73.2% precision around
 // 1.17 and fall to 6% by 1.63, because a title page's 3.4x masthead is not a heading and
 // a 1.08x subclause is. There is no gap in that distribution to put a threshold in.
+//
+// # What follows an unnumbered heading
+//
+// Both rejected signals look at the candidate. What separates a heading from a bold table
+// row is what comes after it. A heading heads body text: a long paragraph in lighter type
+// that starts where the heading does. A table row is followed by a row, a masthead by an
+// author line, and a "Chapter 1" label by the chapter's title. headsBody is that test, and
+// it may pass over numbered subheadings on the way to the body.
+//
+// Measured against the producers' declarations on the tagged corpus, it promotes
+// unnumbered headings at 0.914 precision, where promoting every candidate scored 0.116
+// (ADR 0031). Its level comes from the numbered headings set in its style, or else from its
+// style's rank.
 package layout
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"unicode"
@@ -173,49 +185,267 @@ func Headings(d *doc.Document, opt Options) Stats {
 	}
 	st := Stats{BodySize: size, BodyBold: bold}
 
+	// The document's blocks in reading order, without its artifacts, so that what follows
+	// a candidate is the block a reader reaches next.
+	var flat []placed
 	for pi := range d.Pages {
-		blocks := d.Pages[pi].Blocks
-		for bi := range blocks {
-			b := &blocks[bi]
-			if b.Role != doc.RoleParagraph {
-				continue
+		for bi := range d.Pages[pi].Blocks {
+			if b := &d.Pages[pi].Blocks[bi]; b.Role != doc.RoleArtifact {
+				flat = append(flat, placed{b, pi})
 			}
-			style, uniform := uniformStyle(b)
-			if !uniform {
-				// A block mixing sizes or weights is a heading fused to the paragraph
-				// after it, or prose with emphasis in it. Neither is a heading, and
-				// splitting the fused case is block segmentation rather than
-				// classification. extract's continues() now breaks on a dominant-size
-				// ratio as well as on the vertical step, which is what recovered the
-				// headings of autotagPDFInput.pdf and v110-changes.pdf (ADR 0009); a
-				// same-size fused block is the case that remains, per DESIGN.md §10.
-				continue
-			}
-			if !distinct(style, size, bold) {
-				continue
-			}
-			text := strings.TrimSpace(b.Text())
-			if len([]rune(text)) > opt.maxHeading() {
-				continue
-			}
-			level, ok := numberedLevel(text)
-			if !ok {
-				level, ok = annexLevel(text)
-			}
-			if !ok {
-				st.Candidates++
-				continue
-			}
-			st.Candidates++
-			if level > opt.maxLevel() {
-				level = opt.maxLevel()
-			}
-			b.Role = doc.RoleHeading
-			b.Level = level
-			st.Headings++
 		}
 	}
+
+	cands := map[int]*candidate{}
+	for i, p := range flat {
+		b := p.b
+		if b.Role != doc.RoleParagraph {
+			continue
+		}
+		style, uniform := uniformStyle(b)
+		if !uniform {
+			// A block mixing sizes or weights is a heading fused to the paragraph
+			// after it, or prose with emphasis in it. Neither is a heading, and
+			// splitting the fused case is block segmentation rather than
+			// classification. extract's continues() now breaks on a dominant-size
+			// ratio as well as on the vertical step, which is what recovered the
+			// headings of autotagPDFInput.pdf and v110-changes.pdf (ADR 0009); a
+			// same-size fused block is the case that remains, per DESIGN.md §10.
+			continue
+		}
+		if !distinct(style, size, bold) {
+			continue
+		}
+		text := strings.TrimSpace(b.Text())
+		if len([]rune(text)) > opt.maxHeading() {
+			continue
+		}
+		level, numbered := numberedLevel(text)
+		if !numbered {
+			level, numbered = annexLevel(text)
+		}
+		st.Candidates++
+		cands[i] = &candidate{style: style, level: level, numbered: numbered, words: wordy(b, text)}
+	}
+
+	// A numbered candidate is a heading at the level its number states. An unnumbered one
+	// is a heading when the block it heads follows it, and its level comes from the
+	// numbered headings set in its style, or else from its style's rank (ADR 0031).
+	byStyle := map[styleKey]map[int]int{}
+	var unnumbered []int
+	for i, c := range cands {
+		if c.numbered {
+			k := keyOf(c.style)
+			if byStyle[k] == nil {
+				byStyle[k] = map[int]int{}
+			}
+			byStyle[k][c.level]++
+			continue
+		}
+		if c.words && headsBody(flat, cands, i) {
+			unnumbered = append(unnumbered, i)
+		}
+	}
+	ranked := rankStyles(flat, unnumbered, byStyle)
+	for i, c := range cands {
+		level := c.level
+		switch {
+		case c.numbered:
+		case ranked[i] > 0:
+			level = ranked[i]
+		default:
+			continue
+		}
+		if level > opt.maxLevel() {
+			level = opt.maxLevel()
+		}
+		flat[i].b.Role = doc.RoleHeading
+		flat[i].b.Level = level
+		st.Headings++
+	}
 	return st
+}
+
+// placed is a block and the index of the page it is on.
+type placed struct {
+	b    *doc.Block
+	page int
+}
+
+// candidate is a block that passed Headings' typographic gate.
+type candidate struct {
+	style    doc.Style
+	level    int
+	numbered bool
+	words    bool
+}
+
+// wordy reports whether an unnumbered candidate reads as a title: more letters than
+// digits, and no list marker or ordered label to open it. A row of figures in bold is a
+// table's, and "b) Apply the transform" is a list's, which OrderedLists claims after this
+// pass. Measured over the spike's population, neither condition costs a declared heading.
+func wordy(b *doc.Block, text string) bool {
+	if isListItem(b) {
+		return false
+	}
+	if lbl, _ := orderedItem(b); lbl != "" {
+		return false
+	}
+	letters, digits := 0, 0
+	for _, r := range text {
+		switch {
+		case unicode.IsLetter(r):
+			letters++
+		case unicode.IsDigit(r):
+			digits++
+		}
+	}
+	return letters > digits
+}
+
+// styleKey is a heading style as the gate sees it: a quantized size and a weight.
+type styleKey struct {
+	size float64
+	bold bool
+}
+
+func keyOf(s doc.Style) styleKey { return styleKey{quantize(s.Size), s.Bold} }
+
+// Measured with the spike that chose the rule, ADR 0031: the producer-declared headings
+// of the corpus's 14 tagged files, matched against what the untagged path would promote.
+const (
+	// headedRunes is the shortest block a heading heads. A body paragraph is longer than
+	// a table row or a caption's second line, which are what a bold table header and a
+	// figure title sit above.
+	headedRunes = 40
+	// headedAlign is how far, in points, the block a heading heads can start from it. A
+	// heading starts where its text does; a centred one does not, and admitting centred
+	// headings admitted every centred figure caption in ISO 32000-2 with them.
+	headedAlign = 3.0
+	// headedSize is the difference in size, in points, below which two sizes are one.
+	headedSize = 0.25
+	// headedSkip is how many numbered headings a heading can sit above before its text:
+	// "7.3.4 String objects" is followed at once by "7.3.4.1 General".
+	headedSkip = 4
+)
+
+// headsBody reports whether the unnumbered candidate at flat[i] is followed by the body
+// it would head: the next block, passing over at most headedSkip numbered headings, is a
+// paragraph of headedRunes or more, set lighter than the candidate, starting where it
+// starts on the same page.
+//
+// The rule asks what comes after a candidate rather than what the candidate looks like,
+// which is the question every rejected signal shared (the package comment). A bold table
+// header is followed by a table row, a masthead by an author line and a figure title by
+// the figure, and none of those is a long paragraph starting at its left edge.
+func headsBody(flat []placed, cands map[int]*candidate, i int) bool {
+	h := flat[i]
+	for j := i + 1; j < len(flat) && j <= i+headedSkip+1; j++ {
+		if c := cands[j]; c != nil {
+			if c.numbered {
+				continue
+			}
+			return false
+		}
+		n := flat[j]
+		if n.page != h.page || math.Abs(n.b.Box.X0-h.b.Box.X0) > headedAlign {
+			return false
+		}
+		// A list or a table is a heading's body as much as a paragraph is: "Changes" above
+		// its bullets, "Traffic" above its table. On the spike's population neither adds a
+		// promotion that no producer declares.
+		if n.b.Role == doc.RoleTableCell || (n.b.Role == doc.RoleParagraph && isListItem(n.b)) {
+			return true
+		}
+		if n.b.Role != doc.RoleParagraph {
+			return false
+		}
+		size, bold, runes := dominant(n.b)
+		if runes < headedRunes {
+			return false
+		}
+		hs := quantize(cands[i].style.Size)
+		return size < hs-headedSize || (math.Abs(size-hs) <= headedSize && cands[i].style.Bold && !bold)
+	}
+	return false
+}
+
+// dominant returns the size most of a block's characters are set in, whether most of them
+// are bold, and how many characters it has.
+func dominant(b *doc.Block) (size float64, bold bool, runes int) {
+	by := map[float64]int{}
+	boldN := 0
+	for _, sp := range b.Spans {
+		n := utf8.RuneCountInString(sp.Text)
+		by[quantize(sp.Style.Size)] += n
+		runes += n
+		if sp.Style.Bold {
+			boldN += n
+		}
+	}
+	// Ties break toward the smaller size, so the result does not depend on map order.
+	best := -1
+	for sz, n := range by {
+		if n > best || (n == best && sz < size) {
+			size, best = sz, n
+		}
+	}
+	return size, 2*boldN > runes, runes
+}
+
+// rankStyles assigns the unnumbered headings at the given indices their levels. A style
+// the document's numbered headings use takes the level they use most in it, since a
+// "Foreword" set like "1 Scope" is at its level. The others are ranked among themselves
+// by size, larger first, and bold before regular at one size, so a document with no
+// numbers gets its levels from its type alone.
+func rankStyles(flat []placed, idx []int, byStyle map[styleKey]map[int]int) map[int]int {
+	out := map[int]int{}
+	var free []styleKey
+	seen := map[styleKey]bool{}
+	for _, i := range idx {
+		k := keyOf(uniformOf(flat[i].b))
+		if levels := byStyle[k]; levels != nil {
+			out[i] = commonest(levels)
+			continue
+		}
+		if !seen[k] {
+			seen[k] = true
+			free = append(free, k)
+		}
+	}
+	sort.Slice(free, func(a, b int) bool {
+		if free[a].size != free[b].size {
+			return free[a].size > free[b].size
+		}
+		return free[a].bold && !free[b].bold
+	})
+	rank := map[styleKey]int{}
+	for r, k := range free {
+		rank[k] = r + 1
+	}
+	for _, i := range idx {
+		if _, ok := out[i]; !ok {
+			out[i] = rank[keyOf(uniformOf(flat[i].b))]
+		}
+	}
+	return out
+}
+
+// uniformOf is uniformStyle's style, for a block already known to be uniform.
+func uniformOf(b *doc.Block) doc.Style {
+	s, _ := uniformStyle(b)
+	return s
+}
+
+// commonest returns the level that occurs most, the lower on a tie.
+func commonest(levels map[int]int) int {
+	best, bestN := 0, -1
+	for l, n := range levels {
+		if n > bestN || (n == bestN && l < best) {
+			best, bestN = l, n
+		}
+	}
+	return best
 }
 
 // Lists promotes untagged blocks to RoleListItem in place, and reports what it did.

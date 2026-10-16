@@ -868,10 +868,9 @@ block segmentation in `extract` followed, so a heading no longer fuses into the 
 below it at ordinary leading (ADR 0009); and `sectionize.Untagged` now runs the same level
 stack over `layout`'s levelled blocks that the tagged path runs over `H1`..`H6`, so an
 untagged file yields a tree and not a flat sequence. `pdfspec okf` accepts untagged input
-as a result — 4 of the untagged documents on disk produce a bundle, `mupdf_explored.pdf` at
-296 clauses three levels deep. What bounds it now is `layout`'s own limit and not the
-absence of a tree: a heading is promoted where the document *numbers* it, so a file whose
-headings are all unnumbered still yields no clauses and the verb says to run `md` instead.
+as a result. `mupdf_explored.pdf` gives 352 concept documents. A numbered heading is promoted
+at the level its number states. Since ADR 0031, an unnumbered one is promoted when the body it
+heads follows it, so a file whose headings are all unnumbered yields clauses too.
 
 **Phase 6 — native replacement.** Rasterizer first, then JBIG2. Driven by the interfaces
 already in place. **Started, and the starting point was chosen by census rather than by
@@ -1547,7 +1546,12 @@ OKF-ified spec.
     is also a word and the one bare-letter candidate on disk is a cover line no producer
     declares a heading; ADR 0013 also records that ADR 0008's proposed fix for the unnumbered
     case — a document-level pass over the sequence — is measurably the wrong instrument, since
-    rank and repetition are independent and no size ratio has a gap. The second
+    rank and repetition are independent and no size ratio has a gap. **The unnumbered case is
+    closed by ADR 0031.** It asks what follows a candidate rather than what the candidate looks
+    like: a heading heads a long, lighter paragraph that starts where it does. Measured against
+    the producers' declarations in the tagged corpus, that promotes unnumbered headings at 0.914
+    precision, where promoting every candidate scored 0.116. The bare letter is a heading by the
+    same test, so "A Vocabulary Pruning" is promoted and the cover line stays a paragraph. The second
     limit ADR 0008 recorded — that an OKF bundle needs a tree rather than a levelled sequence —
     is **closed**: `sectionize.Untagged` drives the same `builder.open`/`builder.place` the
     tagged path drives, reading `(level, title, content)` out of `doc.RoleHeading` blocks

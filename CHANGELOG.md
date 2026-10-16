@@ -7,6 +7,13 @@ All notable changes to this project are documented here, following
 
 ### Changed — 2026-10-16
 
+- **Unnumbered headings in untagged files.** ADR 0031, issue #4. A candidate with no section
+  number is a heading when the block after it is the body it heads: a long paragraph in lighter
+  type, a list or a table, starting at its own left edge. Its level comes from the numbered
+  headings set in its style, or from its style's rank. Measured against the producers'
+  declarations in the tagged corpus, that is 0.914 precision, where promoting every candidate
+  is 0.116. Headings F1 rose to 1.000 on `unnumbered-headings` and `two-column`. 71 headings
+  appear in five real untagged files, and five of them are table-of-contents entries.
 - **A paragraph runs on across a column break.** ADR 0030, issue #3. A column's first line carries
   on the previous column's paragraph when all of these hold:
   - it is flush and at the same size;

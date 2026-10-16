@@ -129,13 +129,10 @@ func TestHeadingsPlainHeadingAdmitted(t *testing.T) {
 	}
 }
 
-// TestHeadingsRejectsUnnumbered records the limit rather than working around it.
-//
-// dotted-gridlines.pdf has a 41-character table row at body size in bold, which no
-// typographic signal separates from a real heading — the space above it, 1.68 times
-// the body size, sits inside the 1.60–1.96 range the reference headings occupy. So an
-// unnumbered candidate stays a paragraph, and "Preface" is the cost of not promoting
-// that row.
+// TestHeadingsRejectsUnnumbered is the two unnumbered candidates ADR 0031's rule must still
+// decline. dotted-gridlines.pdf's 41-character bold table row, which no typography separates
+// from a heading, is figures more than words. "Preface" here heads nothing, since no block
+// follows it. Both pass the gate, as before.
 func TestHeadingsRejectsUnnumbered(t *testing.T) {
 	d := pageDoc(
 		block("ABRUZZO 98 1 3 95 2 2 424.264 537 405.785", 7.2, true),
@@ -326,10 +323,11 @@ func TestHeadingsRanksAnnexNumbering(t *testing.T) {
 // TestHeadingsRejectsBareAnnexLetter keeps the half of numberedLevel's deferral that is
 // still open, and it is the pin that makes the dot load-bearing.
 //
-// "A Vocabulary Pruning" is a real appendix title in the arXiv paper and stays a
-// paragraph, because nothing in the block separates it from "A use of ISO 32000" — the one
-// bare-letter candidate the tagged corpus has, which the producer does not declare a
-// heading. Promoting the first means promoting the second.
+// A bare letter is not a number. "A use of ISO 32000", the one bare-letter candidate the
+// tagged corpus has, is not one its producer declares a heading, so the letter gives
+// neither block a level. "A Vocabulary Pruning", a real appendix title in the arXiv paper,
+// is a heading anyway, by what follows it (ADR 0031), and at level 1, its style's rank. The
+// other heads nothing, and stays a paragraph.
 func TestHeadingsRejectsBareAnnexLetter(t *testing.T) {
 	d := pageDoc(
 		block("A Vocabulary Pruning", 11.96, false),
@@ -337,11 +335,14 @@ func TestHeadingsRejectsBareAnnexLetter(t *testing.T) {
 		block("A use of ISO 32000", 11.96, false),
 	)
 	st := Headings(d, DefaultOptions)
-	if st.Headings != 0 {
-		t.Errorf("headings = %d, want 0: the bare letter is not evidence", st.Headings)
-	}
 	if st.Candidates != 2 {
 		t.Errorf("candidates = %d, want 2: both passed the typographic gate and neither the numbering", st.Candidates)
+	}
+	if b := d.Pages[0].Blocks[0]; b.Role != doc.RoleHeading || b.Level != 1 {
+		t.Errorf("A Vocabulary Pruning = %v level %d, want a heading at level 1, by the body after it", b.Role, b.Level)
+	}
+	if b := d.Pages[0].Blocks[2]; b.Role != doc.RoleParagraph {
+		t.Errorf("A use of ISO 32000 = %v, want a paragraph: the bare letter is not evidence", b.Role)
 	}
 }
 

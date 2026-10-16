@@ -45,10 +45,10 @@ var benchFloors = map[string]benchFigures{
 	"text-styles":              {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"three-column":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"two-column-ragged":        {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"two-column":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 0.000, tables: 1.000, style: 0.000},
+	"two-column":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"type3-unmapped":           {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"unnumbered-headings":      {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 0.000, tables: 1.000, style: 0.000},
-	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.000, tables: 1.000, style: 0.571},
+	"unnumbered-headings":      {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.500, tables: 1.000, style: 0.667},
 }
 
 // benchTargets is what v1 needs, as means over the reference fixtures (ADR 0029). A
