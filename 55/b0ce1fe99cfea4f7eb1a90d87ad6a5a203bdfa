@@ -1,0 +1,40 @@
+docs/adr/0031-an-unnumbered-heading-heads-the-body-after-it.md
+  s_5cd1b28ed520c1::t_c6633dd6060d36 1-104
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_d4c5250e8cb7d3 1549-1554
+  s_5cd1b28ed520c1::t_fe7b45d9c8a068 871-873
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_3487e232a63ce2 10-16
+layout/layout_test.go
+  s_5cd1b28ed520c1::t_969b222e1039c4 132-135
+  s_5cd1b28ed520c1::t_f5e42851d7b217 326-330,341-346
+layout/layout.go
+  s_5cd1b28ed520c1::t_745457affc941b 82,188-190,192-194,196-240,242-345,348-350,361-365,367-368,370-448
+  s_5cd1b28ed520c1::t_cc157517ae0140 50-52,54
+  s_5cd1b28ed520c1::t_9eecd8c3381524 66-78
+  s_5cd1b28ed520c1::t_c983d1fc711f82 351-360
+layout/headed_test.go
+  s_5cd1b28ed520c1::t_52418f6235b2a8 51
+  s_5cd1b28ed520c1::t_d7888c0a4290b0 47-50,52
+  s_5cd1b28ed520c1::t_1f0ef4da87a8ed 65-67,74-77
+  s_5cd1b28ed520c1::t_ba72ee6f0d30f6 106,115,124,169-249
+  s_5cd1b28ed520c1::t_017e982f8f99e1 1-46,53-64,68-73,78-105,107-114,116-123,125-168,250-252
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_0e88484cf27454 48,50-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55b0ce1fe99cfea4f7eb1a90d87ad6a5a203bdfa",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
