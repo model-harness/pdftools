@@ -5,6 +5,36 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-10-16
+
+- **A benchmark: the converter scored against a gold set, on each dimension apart.** ADR
+  0029, issue #2.
+  - **`bench.Score` and `pdfspec bench <dir>`** compare a fixture's Markdown with its gold
+    file:
+    - character error rate, once blocks are back in order;
+    - word recall and precision;
+    - reading order and block F1;
+    - F1s for headings, table cells and inline style;
+    - counts of `[err]` and `[image]`.
+
+    Markdown is parsed with goldmark (MIT).
+  - **Seventeen fixtures in `testdata/reference`, twenty-nine in all:**
+    - columns;
+    - unnumbered headings;
+    - unruled, merged and page-crossing tables;
+    - footnotes, running headers and hyphenation;
+    - strikethrough;
+    - a Type 3 font with no Unicode mapping;
+    - an article from XeTeX and the same one printed by Chrome;
+    - four degraded scans.
+  - **Floors and targets.**
+    - `TestBenchmarkFloors` fails when any fixture scores below what it scored when it
+      went in.
+    - `TestBenchmarkTargets` reports the distance to v1's targets, and enforces each one
+      once its goal closes. The baseline means are CER 0.184, recall 0.822, blocks 0.615,
+      headings 0.375, tables 0.579 and style 0.629.
+  - **`pdfspec md` and `bench` convert through one function**, `writeMarkdown`.
+
 ### Changed — 2026-10-15
 
 - **`render/native` strokes with AGG's outline and sums overlapping coverage, as pdfium does.**

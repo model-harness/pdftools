@@ -1,0 +1,15 @@
+% type3-unmapped — text in a font whose glyphs have no Unicode value at all.
+%
+% Under [T1] and without lmodern, pdfTeX draws the EC fonts from METAFONT bitmaps
+% and embeds them as Type 3, with glyph names like a16 that are encoding slots and
+% not characters (README.md, "Why untagged, and why lmodern"). There is no
+% /ToUnicode, no /ActualText and no /Alt, so nothing in the file says what the text
+% is. The gold file holds what the source says, so the score measures how much of
+% it the converter recovers. Every glyph it cannot recover should come out as [err]
+% and never as a guess.
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\pagestyle{empty}
+\begin{document}
+Every glyph on this page is drawn from a bitmap font with no Unicode mapping.
+\end{document}

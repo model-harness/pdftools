@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -69,17 +70,12 @@ func runMD(args []string) error {
 		// a clause running from page 412 to 414 cannot be a heading in three files.
 		return writeSplit(d, *out, mopt)
 	}
-	if !*flat {
-		o, err := readOutline(s, d)
-		if err != nil {
-			return err
-		}
-		if o != nil {
-			return writeOutline(o, *out, mopt)
-		}
-		inferRoles(d)
+	if *out == "" {
+		return writeMarkdown(os.Stdout, s, d, *flat, mopt)
 	}
-	return writeWhole(d, *out, mopt)
+	return writeFile(*out, func(w io.Writer) error {
+		return writeMarkdown(w, s, d, *flat, mopt)
+	})
 }
 
 // warnIfEmpty reports on stderr that a document yielded no text, and why it might not
@@ -220,13 +216,46 @@ func inferRoles(d *doc.Document) {
 	layout.OrderedLists(d, layout.DefaultOptions)
 }
 
-func writeOutline(o *doc.Outline, out string, opt markdown.Options) error {
-	if out == "" {
-		return markdown.WriteOutline(os.Stdout, o, opt)
+// writeMarkdown writes the whole document as Markdown: the structure tree's outline when
+// the file has one and flat is off, and otherwise the page-ordered text with the roles
+// layout infers. It is the md verb's choice of output, and bench scores what it writes,
+// so the two cannot drift apart.
+func writeMarkdown(w io.Writer, s objects.Store, d *doc.Document, flat bool, opt markdown.Options) error {
+	if !flat {
+		o, err := readOutline(s, d)
+		if err != nil {
+			return err
+		}
+		if o != nil {
+			return markdown.WriteOutline(w, o, opt)
+		}
+		inferRoles(d)
 	}
-	return writeFile(out, func(w io.Writer) error {
-		return markdown.WriteOutline(w, o, opt)
-	})
+	return markdown.Write(w, d, opt)
+}
+
+// convertDefault converts path as md does with no flags, for bench.
+func convertDefault(path string) ([]byte, error) {
+	s, err := pcstore.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = s.Close() }()
+
+	ex := extract.New(s, extract.DefaultOptions)
+	d, err := ex.Document()
+	if err != nil {
+		return nil, err
+	}
+	d.Meta.Path = path
+	warnIfEmpty(d)
+	warnIfPagesFailed(ex.Failed(), len(d.Pages))
+
+	var buf bytes.Buffer
+	if err := writeMarkdown(&buf, s, d, false, markdown.Options{}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func writeWhole(d *doc.Document, out string, opt markdown.Options) error {

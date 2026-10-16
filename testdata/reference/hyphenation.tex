@@ -1,0 +1,17 @@
+% hyphenation — words that TeX breaks at line ends, beside words whose hyphen is theirs.
+%
+% A narrow measure makes TeX hyphenate long words: this build breaks "extensive",
+% "configuration" and "implementation" at line ends. The gold file holds each one
+% whole, because the hyphen at a line end is the typesetter's and not the author's.
+% The compounds "well-known" and "long-standing" keep their hyphens. Neither falls at
+% a line end here, which is the ambiguous case, so this fixture does not cover it.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage[paperwidth=3.2in,paperheight=4in,margin=0.4in]{geometry}
+\pagestyle{empty}
+\begin{document}
+The well-known problem with extensive documentation is that its configuration
+sections drift from the implementation, and a long-standing remedy is to generate
+those sections automatically from the implementation itself, so that documentation
+and configuration cannot disagree.
+\end{document}

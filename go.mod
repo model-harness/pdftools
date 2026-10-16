@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/klippa-app/go-pdfium v1.19.6
 	github.com/pdfcpu/pdfcpu v0.13.0
+	github.com/yuin/goldmark v1.8.6
 	golang.org/x/image v0.43.0
 	golang.org/x/text v0.40.0
 	gopkg.in/yaml.v2 v2.4.0

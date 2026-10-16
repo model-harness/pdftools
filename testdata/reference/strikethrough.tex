@@ -1,0 +1,13 @@
+% strikethrough — text struck through with a drawn line, which GFM writes as ~~text~~.
+%
+% A PDF has no strikethrough attribute: ulem's \sout draws a rule across the words.
+% So the style is recoverable only by finding a line drawn through the middle of a
+% run of glyphs, and not under them. One struck phrase sits mid-sentence, between
+% plain words, so the extent of the strike is part of what is checked.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage[normalem]{ulem}
+\pagestyle{empty}
+\begin{document}
+The meeting moves from \sout{Tuesday afternoon} to Thursday morning.
+\end{document}

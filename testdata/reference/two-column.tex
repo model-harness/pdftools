@@ -1,0 +1,34 @@
+% two-column — reading order across two columns, under a title that spans both.
+%
+% One concern: does the text come out a column at a time, left then right, with the
+% paragraph the column break cuts through kept as one paragraph? A reader that takes
+% lines across the page interleaves the two columns, and one that breaks at the column
+% boundary turns one paragraph into two. The title spans both columns, so it comes
+% first and belongs to neither.
+%
+% The page is small so the text can be short and still put the break inside a
+% paragraph: the second paragraph starts in the left column and ends in the right.
+% Each paragraph opens by naming its place, so an order defect reads in the diff and
+% not only in the score.
+\documentclass[twocolumn]{article}
+\usepackage{lmodern}
+\usepackage[paperwidth=6in,paperheight=3.6in,margin=0.5in]{geometry}
+\pagestyle{empty}
+% No hyphenation: a word broken at a line end is the hyphenation fixture's concern, not this one's.
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \sloppy
+\begin{document}
+\twocolumn[\section*{Two Columns and a Spanning Title}]
+
+The first paragraph opens the left column. It describes a river that rises in the
+mountains, runs north through a wide valley, and reaches the sea after crossing three
+lakes and a long stretch of marsh.
+
+The second paragraph begins near the foot of the left column and is long enough to
+continue at the top of the right one. It tells how the valley was settled, first by
+farmers who drained the lower fields, then by a mill town that grew where the river
+narrows, and finally by a railway that followed the old towpath. A reader that splits
+this paragraph at the column break has turned one paragraph into two.
+
+The third paragraph closes the right column. It notes that the marsh is now a reserve,
+and that the lakes freeze in most winters.
+\end{document}

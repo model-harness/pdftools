@@ -1,0 +1,31 @@
+% running-headers — body text across two pages under a running header and a folio.
+%
+% Every page repeats the same header line and a page number in the footer. Neither is
+% part of the document's text, so the gold file holds the body alone. The paragraph
+% the page break cuts through must come out whole: removing the furniture is only
+% half the job if the text either side of it stays split. Club and widow penalties
+% are off so TeX puts the break inside the third paragraph, not before it.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage{fancyhdr}
+\usepackage[paperwidth=5in,paperheight=2.1in,margin=0.5in,headsep=0.15in,footskip=0.3in]{geometry}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{Field Notes on the Northern Lakes}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+% No hyphenation: that is the hyphenation fixture's concern.
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \sloppy
+\clubpenalty=0 \widowpenalty=0
+\begin{document}
+The first lake is the largest, and the only one with a road along its shore. Its
+water is clear to a depth of several metres in late summer.
+
+The second lake is shallow and warm, and reeds cover its northern end.
+
+The third lake lies in a hollow between two ridges, and the path to it climbs for an
+hour through pine forest before it drops to the water. Few visitors make the walk, so
+the shore is quiet even in August, and the only sound is the wind in the pines.
+
+The fourth lake is the smallest, and it freezes first each winter.
+\end{document}

@@ -1,8 +1,9 @@
 # Reference fixtures — the yardstick
 
-Twelve small PDFs, each exercising one thing, each beside the Markdown it *should*
+Twenty-nine small PDFs, each exercising one thing, each beside the Markdown it *should*
 produce. Everything here is ours: generated from the `.tex` sources in this
-directory, licensed MIT with the rest of the repo, and therefore committable —
+directory, one `.html` that Chrome prints, and `degrade.go`, which makes the scans.
+All of it is licensed MIT with the rest of the repo, and therefore committable —
 unlike the sponsored ISO documents in `docs/`, which are the corpus we measure
 against but cannot redistribute.
 
@@ -106,6 +107,28 @@ values — which is precisely what a presence check, a key count, and a loader-v
 check all pass. Only an independently authored statement of which value belongs in
 which field separates them.
 
+## Scoring
+
+Three tiers read these fixtures. `TestReferenceFidelity` asks whether the words of the
+original twelve survive in order, and `TestReferenceExactMatch` asks which of those
+fixtures match their gold file byte for byte. The third, the benchmark (ADR 0029),
+scores every fixture on each dimension separately:
+
+```sh
+pdfspec bench testdata/reference
+```
+
+Its columns are CER, word recall and precision, reading order, block F1, and F1s for
+headings, table cells and inline style. It also counts `[err]` and `[image]` marks.
+`TestBenchmarkFloors` holds each fixture to the scores it had when it went in, so no
+change can make a fixture worse without saying so. `TestBenchmarkTargets` reports how
+far the means are from v1's targets, and fails on each dimension once the goal it
+belongs to is closed.
+
+The gold files written since the benchmark describe what the converter should do, not
+what it does. Most of those fixtures score below 1 on something, and that gap is the
+work.
+
 ## Layout
 
 | File | Concern | Tagged |
@@ -122,6 +145,20 @@ which field separates them.
 | `metadata.tex` | The information dictionary, as YAML frontmatter | no |
 | `fractions.tex` | Stacked fractions, from a producer that strokes its bars | no |
 | `superscripts.tex` | Raised and lowered runs of more than one glyph | no |
+| `two-column.tex` | Two columns under a spanning title, a paragraph cut by the column break | no |
+| `three-column.tex` | Three balanced columns, read a column at a time | no |
+| `unnumbered-headings.tex` | Three heading levels with no numbers, only size and weight | no |
+| `table-unruled.tex` | A table held apart by alignment alone | no |
+| `table-merged.tex` | A cell spanning two columns and one spanning two rows | no |
+| `table-across-pages.tex` | One table split by a page break, its header repeated | no |
+| `footnotes.tex` | Footnote marks and their notes, as GFM footnotes | no |
+| `running-headers.tex` | A running header and folio, with a paragraph cut by the page break | no |
+| `hyphenation.tex` | Words hyphenated at line ends, beside hyphenated compounds | no |
+| `strikethrough.tex` | A phrase struck through by a drawn rule | no |
+| `type3-unmapped.tex` | Bitmap Type 3 fonts with no Unicode mapping at all | no |
+| `xelatex-article.tex` | A short article from XeTeX, with Identity-H CID fonts | no |
+| `chrome-article.html` | The same article printed by Chrome | yes |
+| `scan-*.tex` | Four of the above as degraded 200 dpi scans, with no text | no |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
 The `.tex` is committed beside the `.pdf` so the fixture can be rebuilt and so the
@@ -131,11 +168,26 @@ assertion nobody can check.
 ## Rebuilding
 
 ```sh
-pdflatex -interaction=nonstopmode <name>.tex        # the nine untagged fixtures
+pdflatex -interaction=nonstopmode <name>.tex        # the untagged fixtures
 lualatex -interaction=nonstopmode clauses.tex       # the tagged ones — see below
 lualatex -interaction=nonstopmode tagged-lists.tex
 lualatex -interaction=nonstopmode tagged-table.tex
+xelatex  -interaction=nonstopmode xelatex-article.tex
+chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-article.pdf chrome-article.html
 ```
+
+`table-across-pages.tex` needs two `pdflatex` runs, as every `longtable` does.
+
+A scan is its source fixture rendered at 200 dpi, degraded, and placed on a page:
+
+```sh
+pdfspec render -o png -dpi 200 two-column.pdf
+go run degrade.go png/page-1.png scan-two-column.jpg
+pdflatex -interaction=nonstopmode scan-two-column.tex
+```
+
+`degrade.go` seeds its noise, so the same render gives the same JPEG bytes. Each scan's
+gold file is a copy of its source's, because the document is the same one.
 
 The tagged fixtures need both a new enough kernel and the right engine.
 

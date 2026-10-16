@@ -1,0 +1,25 @@
+% table-merged — a ruled table with a cell spanning two columns and one spanning two rows.
+%
+% GFM has no spans, so the gold file states the rule this project follows: a merged
+% cell's text goes in the first cell it covers, and the cells it also covers are
+% empty. The spanning header is above two columns, and the spanning row label is
+% beside two rows, so both directions of merging are covered.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage{multirow}
+\pagestyle{empty}
+\begin{document}
+\begin{tabular}{|l|r|r|}
+\hline
+ & \multicolumn{2}{c|}{Sales} \\
+\cline{2-3}
+Product & 2024 & 2025 \\
+\hline
+\multirow{2}{*}{Kettles} & 120 & 135 \\
+\cline{2-3}
+ & 80 & 95 \\
+\hline
+Toasters & 60 & 72 \\
+\hline
+\end{tabular}
+\end{document}

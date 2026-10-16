@@ -1,0 +1,1 @@
+The well-known problem with extensive documentation is that its configuration sections drift from the implementation, and a long-standing remedy is to generate those sections automatically from the implementation itself, so that documentation and configuration cannot disagree.

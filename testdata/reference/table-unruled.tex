@@ -1,0 +1,17 @@
+% table-unruled — a table with no rules, recognizable only by its alignment.
+%
+% table.tex is ruled on every edge, so its grid can be read from the strokes. Here
+% there are none: three columns of text and right-aligned numbers held apart by
+% white space alone, which is how most reports set a small table. The numbers are
+% right-aligned so the column edges differ between the text and the figures.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+\begin{tabular}{llr}
+Station & Region & Rainfall \\
+Ashford & South & 712 \\
+Brampton & North & 1048 \\
+Carlisle & North & 893 \\
+\end{tabular}
+\end{document}

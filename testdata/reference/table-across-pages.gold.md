@@ -1,0 +1,10 @@
+| Month | Visitors |
+| --- | --- |
+| January | 1200 |
+| February | 1350 |
+| March | 2100 |
+| April | 2875 |
+| May | 3920 |
+| June | 5410 |
+| July | 6830 |
+| August | 6515 |

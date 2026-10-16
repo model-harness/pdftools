@@ -1,0 +1,26 @@
+% three-column — reading order across three columns.
+%
+% One concern, two-column's at a width where line-by-line reading fails worse: each
+% column holds about four words a line, so a reader that takes lines across the page
+% makes sentences out of three unrelated ones. multicol balances the columns, which
+% puts the first column break inside the second paragraph.
+\documentclass{article}
+\usepackage{lmodern}
+\usepackage{multicol}
+\usepackage[paperwidth=6in,paperheight=3.4in,margin=0.5in]{geometry}
+\pagestyle{empty}
+% No hyphenation: that is the hyphenation fixture's concern.
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \sloppy
+\begin{document}
+\begin{multicols}{3}
+The first paragraph starts the left column with a short account of a harbour town,
+its fishing fleet, and the market held on the quay every morning.
+
+The second paragraph follows the coast road east, past a lighthouse and two
+coves, to a headland where the cliffs are tall enough to hide the sea from the road
+and the wind is strong enough to bend every tree.
+
+The third paragraph turns inland, along a lane between stone walls, to a village
+with one church, one inn, and a green where the fair is held each summer.
+\end{multicols}
+\end{document}

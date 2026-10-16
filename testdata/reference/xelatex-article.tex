@@ -1,0 +1,38 @@
+% xelatex-article — a short article from XeTeX, the second of three producers here.
+%
+% Every other fixture but the tagged ones is pdfTeX's, so it embeds Type 1 fonts with
+% glyph names. XeTeX embeds OpenType fonts as CID fonts under Identity-H, where a
+% glyph is a number and its text comes only from /ToUnicode. That is how most
+% producers outside TeX write fonts, so the same features, headings, styled words,
+% lists and a table, are read here through that other path.
+%
+% chrome-article.html is the same document printed by Chrome, the third producer.
+\documentclass{article}
+\usepackage{fontspec}
+\pagestyle{empty}
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \sloppy
+\begin{document}
+\section*{Harbour Report}
+
+The harbour handled more ships this year than last, and \textbf{cargo tonnage rose
+by a tenth}. The \textit{north quay} was closed for repairs in March.
+
+\subsection*{Changes}
+
+\begin{itemize}
+\item A second crane was installed.
+\item The ferry timetable moved to half-hourly sailings.
+\end{itemize}
+
+\subsection*{Traffic}
+
+\begin{tabular}{|l|r|}
+\hline
+Vessel & Calls \\
+\hline
+Ferries & 4120 \\
+\hline
+Freighters & 610 \\
+\hline
+\end{tabular}
+\end{document}

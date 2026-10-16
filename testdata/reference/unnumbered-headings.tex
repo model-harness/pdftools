@@ -1,0 +1,27 @@
+% unnumbered-headings — a heading hierarchy with no section numbers.
+%
+% headings.tex covers the numbered case. An untagged file's headings are promoted
+% where the document numbers them (DESIGN.md, Phase 5), so this one asks what is
+% left without numbers: size and weight, which \section*, \subsection* and
+% \subsubsection* set at three different steps, and the space around each.
+\documentclass{article}
+\usepackage{lmodern}
+\pagestyle{empty}
+\begin{document}
+\section*{Getting Started}
+
+Install the tool and run it once with no arguments to see the list of commands.
+
+\subsection*{Configuration}
+
+Settings are read from a file in the home directory, and each can be overridden on
+the command line.
+
+\subsubsection*{Environment Variables}
+
+A variable overrides the file but not the command line.
+
+\section*{Troubleshooting}
+
+Run the doctor command first, because it checks the common causes in order.
+\end{document}

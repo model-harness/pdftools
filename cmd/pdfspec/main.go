@@ -23,6 +23,7 @@ commands:
   render   rasterize pages to PNG or JPEG
   ocr      convert a PDF to Markdown, recognizing pages that carry no text
   probe    report what a PDF contains and which extraction path it will take
+  bench    score md's output against gold Markdown fixtures in a directory
   version  print version
   licenses print the licences of fonts embedded in this binary
 
@@ -82,6 +83,8 @@ func main() {
 		err = runOCR(args)
 	case "probe":
 		err = runProbe(args)
+	case "bench":
+		err = runBench(args)
 	case "version", "-v", "--version":
 		fmt.Printf("pdfspec %s\n", buildVersion())
 		// Named here and printed by "licenses", because the notice is four kilobytes and this is

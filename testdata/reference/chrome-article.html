@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!--
+  chrome-article: xelatex-article.tex's document, printed by Chrome, the third producer.
+
+  Chrome writes PDFs through Skia: subset TrueType fonts, its own content-stream order,
+  and a structure tree built from the HTML. Rebuild with:
+
+    chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-article.pdf chrome-article.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Harbour Report</title>
+<style>
+  @page { size: 6in 5in; margin: 0.5in; }
+  body { font-family: Georgia, serif; font-size: 11pt; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid black; padding: 2px 6px; }
+  td.n { text-align: right; }
+</style>
+</head>
+<body>
+<h1>Harbour Report</h1>
+<p>The harbour handled more ships this year than last, and <strong>cargo tonnage rose by a tenth</strong>. The <em>north quay</em> was closed for repairs in March.</p>
+<h2>Changes</h2>
+<ul>
+<li>A second crane was installed.</li>
+<li>The ferry timetable moved to half-hourly sailings.</li>
+</ul>
+<h2>Traffic</h2>
+<table>
+<tr><th>Vessel</th><th>Calls</th></tr>
+<tr><td>Ferries</td><td class="n">4120</td></tr>
+<tr><td>Freighters</td><td class="n">610</td></tr>
+</table>
+</body>
+</html>

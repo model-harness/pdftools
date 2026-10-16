@@ -509,6 +509,7 @@ copyleft; nothing borrowed is EULA-encumbered.
 | JBIG2 decode | none initially | — | **High.** Port from Apache PDFBox's decoder (Apache-2.0, ITU T.88 / ISO 14492) |
 | JPX (JPEG 2000) | none initially | — | Lowest priority, highest cost. Rare in practice |
 | VLM inference | `llama.cpp` multimodal, as a **subprocess** | MIT | Never native. Not linked either — see §9: the rule is about linkage, and a model host belongs in its own process |
+| Markdown parsing, for the benchmark | `yuin/goldmark` | MIT | Never. One library function, parsing, and the benchmark is its only caller (ADR 0029) |
 | Structure tree, extraction, sectionize, sinks | **native from day one** | MIT | n/a — this is the repo's own contribution |
 
 The last row is the point. The borrowed layers are the commodity ones. The layers that
