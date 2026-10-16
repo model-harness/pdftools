@@ -1,0 +1,176 @@
+testdata/reference/table-merged.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-6
+testdata/reference/unnumbered-headings.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-15
+go.mod
+  s_5cd1b28ed520c1::t_4d3eb0ace42524 8
+testdata/reference/table-unruled.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-5
+testdata/reference/scan-unnumbered-headings.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-16
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_21104c430abc42 22,44-65
+testdata/reference/scan-table.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-16
+testdata/reference/type3-unmapped.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-15
+testdata/reference/xelatex-article.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-38
+testdata/reference/chrome-article.html
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-37
+testdata/reference/xelatex-article.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-15
+testdata/reference/scan-two-column.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-16
+testdata/reference/hyphenation.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-17
+testdata/reference/three-column.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-5
+testdata/reference/type3-unmapped.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1
+testdata/reference/chrome-article.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-15
+testdata/reference/footnotes.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-18
+testdata/reference/scan-unnumbered-headings.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-15
+cmd/pdfspec/bench_test.go
+  s_5cd1b28ed520c1::t_b8f3daea79662f 62-77
+  s_5cd1b28ed520c1::t_49b859eacfa5fe 7-8
+  s_5cd1b28ed520c1::t_36fa9628c06ae5 1-6,9-61
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_1c59a1890411f0 219-232,234-237,255
+  s_5cd1b28ed520c1::t_5535f9a7b400d1 238-254,256-258
+  s_5cd1b28ed520c1::t_b41a85bfbb40ea 73-74,76-78
+  s_3f706e3f4b4643::t_50f66ca34ba7e8 4
+testdata/reference/table-unruled.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-17
+testdata/reference/scan-table.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-4
+testdata/reference/degrade.go
+  s_5cd1b28ed520c1::t_20183c7f54f0f0 1-12,14-65
+  s_5cd1b28ed520c1::t_03c2cfeb2e8bf4 13
+testdata/reference/scan-paragraphs.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-16
+testdata/reference/unnumbered-headings.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-27
+testdata/reference/scan-two-column.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-7
+testdata/reference/hyphenation.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1
+testdata/reference/three-column.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-26
+cmd/pdfspec/testdata_test.go
+  s_5cd1b28ed520c1::t_9b40e1cd559b4e 145-146
+  s_5cd1b28ed520c1::t_3cc36bdf9d3a08 160,165-167
+testdata/reference/two-column.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-7
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_65ce582c31139e 8-37
+testdata/reference/table-merged.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-25
+testdata/reference/two-column.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-34
+testdata/reference/strikethrough.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-13
+bench/bench.go
+  s_5cd1b28ed520c1::t_356780256f21a6 36-37
+  s_5cd1b28ed520c1::t_d8433cfaccfa35 71-72
+  s_5cd1b28ed520c1::t_c8fd05269224e0 486
+  s_5cd1b28ed520c1::t_15c25b3b3d9fbd 364-381,384-389,391-403,405
+  s_5cd1b28ed520c1::t_89ca3b98126f7e 273-276
+  s_5cd1b28ed520c1::t_df6f8c2782d5e4 120-121
+  s_5cd1b28ed520c1::t_6fec44d09ecc23 294-295,297
+  s_5cd1b28ed520c1::t_31a1b6497d5317 8-10
+  s_5cd1b28ed520c1::t_6b66bea9e04c3e 440-441
+  s_5cd1b28ed520c1::t_252bbf0f50cf10 1-7,11-35,38-60,63-70,73-110,112,117-119,122-132,134-272,277-293,296,298-309,312-317,319-321,324-347,349-352,354-363,382-383,390,404,406-439,442-485,487-573
+  s_5cd1b28ed520c1::t_300eef12e05e12 133
+  s_5cd1b28ed520c1::t_0ad0100bf94729 348,353
+  s_5cd1b28ed520c1::t_7cb1ceeab74e4b 111,113-116
+  s_5cd1b28ed520c1::t_9534b41b5b46cd 310-311,318
+  s_5cd1b28ed520c1::t_912a31cc192536 322-323
+  s_5cd1b28ed520c1::t_c99f7d5d272487 61-62
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_b53c539f76d0eb 23-40,42-51
+  s_5cd1b28ed520c1::t_2dc13c5b7b15b1 41
+  s_5cd1b28ed520c1::t_7e5d11720ae9fb 21
+  s_5cd1b28ed520c1::t_b0fcd9ff9bd920 1-20,52-144
+  s_5cd1b28ed520c1::t_cc19c6f3842d08 22
+bench/bench_test.go
+  s_5cd1b28ed520c1::t_80bec4ea4ef1ce 43-44
+  s_5cd1b28ed520c1::t_847fb77785d24d 228-295
+  s_5cd1b28ed520c1::t_69d06b7d52ded4 308-315
+  s_5cd1b28ed520c1::t_da25d4318e03cd 1-18,20-42,45-53,55-79,81-107,109-115,117-132,134-147,149-158,162-174,190-191,193-206,208-227
+  s_5cd1b28ed520c1::t_07f1b5d6084eae 116
+  s_5cd1b28ed520c1::t_ba07853fce8c15 159-160
+  s_5cd1b28ed520c1::t_5ad56ab6fd75ab 175-189
+  s_5cd1b28ed520c1::t_82dc8a0d3c8306 296-307
+  s_5cd1b28ed520c1::t_2a85a1452ab89c 19,54,80,108,133,148,161,192,207
+testdata/reference/running-headers.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-7
+testdata/reference/README.md
+  s_5cd1b28ed520c1::t_ebda78c25bc636 148-161
+  s_5cd1b28ed520c1::t_d7b8079c0035d2 110-131
+  s_5cd1b28ed520c1::t_c01af26a3ae031 3,5-6
+  s_5cd1b28ed520c1::t_893192556acac9 171,175-176,179-190
+  s_853e0d3a28019c::t_13c7c67d106fa8 191
+testdata/reference/table-across-pages.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-10
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_60eb8bfffb70c5 512
+cmd/pdfspec/main.go
+  s_5cd1b28ed520c1::t_2b034e744fd102 26
+  s_5cd1b28ed520c1::t_ad4d97b8bcbf9b 86-87
+testdata/reference/table-across-pages.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-30
+testdata/reference/strikethrough.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1
+docs/adr/0029-measure-the-converter-against-a-gold-set.md
+  s_5cd1b28ed520c1::t_741399c25b7e0b 176-178
+  s_5cd1b28ed520c1::t_3563c09512fc7f 1-160,164-175,179-203
+  s_5cd1b28ed520c1::t_950f0ac94bfa1c 161-163
+testdata/reference/running-headers.tex
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-31
+testdata/reference/scan-paragraphs.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-5
+cmd/pdfspec/bench.go
+  s_5cd1b28ed520c1::t_dc4b6052a9e991 1-55,59-75,77-87,92,104-106,114,116-118,120-122,124-126,133-142
+  s_5cd1b28ed520c1::t_cbc1f9ffaea0b8 76,88-91,93-103,107-113,115,119,123,127-132
+  s_5cd1b28ed520c1::t_b7dd451a72d147 56-58
+testdata/reference/footnotes.gold.md
+  s_5cd1b28ed520c1::t_ceeab755ae23b3 1-7
+go.sum
+  s_5cd1b28ed520c1::t_eb9f7088bf829a 48-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85f918b4360e165e486cc90deb190b2db129b495",
+  "prompts": {},
+  "sessions": {
+    "s_3f706e3f4b4643": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d91ced6-3b3b-46d0-b2cb-8b38a3429c2a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_853e0d3a28019c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19f7fc13-e3f6-4d8a-a11d-64f3b1d9341e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
