@@ -7,6 +7,11 @@ All notable changes to this project are documented here, following
 
 ### Changed — 2026-10-16
 
+- **Running headers, footers and folios are found on untagged pages.** ADR 0033, issue #6. A
+  block wholly in the top or bottom 12% of its page is furniture when its text, with each
+  number made one symbol, is in the same band on another page. Measured against the tagged
+  corpus's own artifacts, that is precision 0.997 and recall 0.990. `running-headers` went from
+  CER 0.136 to 0.000.
 - **A table a page break split is one table again.** ADR 0032, issue #5. A page's opening
   table joins the previous page's closing one when its header row repeats, cell for cell,
   at the same width, with nothing but artifacts between them. The repeated header is

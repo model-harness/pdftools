@@ -210,6 +210,7 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 // unaffected either way: doctags assigns RoleHeading and RoleListItem itself, and all
 // passes consider only paragraphs.
 func inferRoles(d *doc.Document) {
+	layout.Furniture(d)
 	layout.Tables(d, layout.DefaultOptions)
 	layout.Headings(d, layout.DefaultOptions)
 	layout.Lists(d, layout.DefaultOptions)

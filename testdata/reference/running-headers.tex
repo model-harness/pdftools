@@ -4,11 +4,13 @@
 % part of the document's text, so the gold file holds the body alone. The paragraph
 % the page break cuts through must come out whole: removing the furniture is only
 % half the job if the text either side of it stays split. Club and widow penalties
-% are off so TeX puts the break inside the third paragraph, not before it.
+% are off so TeX puts the break inside the third paragraph, not before it. The page has
+% ordinary margins, its header and folio in its top and bottom eighth as a page's are, and
+% the body is set large so a short text still runs over the break.
 \documentclass{article}
 \usepackage{lmodern}
 \usepackage{fancyhdr}
-\usepackage[paperwidth=5in,paperheight=2.1in,margin=0.5in,headsep=0.15in,footskip=0.3in]{geometry}
+\usepackage[paperwidth=5in,paperheight=6in,top=0.9in,bottom=0.9in,hmargin=0.6in,headsep=0.3in,footskip=0.45in]{geometry}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[C]{Field Notes on the Northern Lakes}
@@ -18,6 +20,7 @@
 \hyphenpenalty=10000 \exhyphenpenalty=10000 \sloppy
 \clubpenalty=0 \widowpenalty=0
 \begin{document}
+\fontsize{20}{24}\selectfont
 The first lake is the largest, and the only one with a road along its shore. Its
 water is clear to a depth of several metres in late summer.
 
