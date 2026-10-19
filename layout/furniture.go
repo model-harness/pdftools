@@ -35,32 +35,40 @@ func Furniture(d *doc.Document) int {
 		sig  string
 	}
 	pages := map[key]map[int]bool{}
-	at := func(pi, bi int) (key, bool) {
+	folios := map[key]map[string]bool{} // each text a key was found as, numbers and all
+	extents := make([]geom.Rect, len(d.Pages))
+	for pi := range d.Pages {
+		extents[pi] = extent(d.Pages[pi].Blocks)
+	}
+	at := func(pi, bi int) (k key, reached, ok bool) {
 		p := &d.Pages[pi]
 		b := &p.Blocks[bi]
 		if b.Role == doc.RoleArtifact || b.IsEmpty() {
-			return key{}, false
+			return key{}, false, false
 		}
-		band := marginBand(p.Box, b.Box)
+		band, reached := marginBand(p.Box, b.Box, extents[pi])
 		if band == 0 {
-			return key{}, false
+			return key{}, false, false
 		}
-		return key{band, signature(b.Text())}, true
+		return key{band, signature(b.Text())}, reached, true
 	}
 	for pi := range d.Pages {
 		for bi := range d.Pages[pi].Blocks {
-			if k, ok := at(pi, bi); ok {
+			if k, _, ok := at(pi, bi); ok {
 				if pages[k] == nil {
-					pages[k] = map[int]bool{}
+					pages[k], folios[k] = map[int]bool{}, map[string]bool{}
 				}
 				pages[k][pi] = true
+				folios[k][strings.Join(strings.Fields(strings.ToLower(d.Pages[pi].Blocks[bi].Text())), " ")] = true
 			}
 		}
 	}
 	marked := 0
 	for pi := range d.Pages {
 		for bi := range d.Pages[pi].Blocks {
-			if k, ok := at(pi, bi); ok && len(pages[k]) >= furniturePages {
+			k, reached, ok := at(pi, bi)
+			// Past the band, only a text whose numbers change from page to page: a folio.
+			if ok && len(pages[k]) >= furniturePages && (!reached || len(folios[k]) >= 2) {
 				d.Pages[pi].Blocks[bi].Role = doc.RoleArtifact
 				marked++
 			}
@@ -74,23 +82,55 @@ const (
 	// bottom one. Measured with the rule: 10% missed 32 more artifacts, 15% marked 399 more
 	// blocks that are not.
 	furnitureBand = 0.12
+	// furnitureReach is how far into the page a band reaches for the page's outermost block.
+	furnitureReach = 0.15
 	// furniturePages is how many pages a margin text has to be on.
 	furniturePages = 2
 )
 
-// marginBand returns 1 for a block wholly in the page's top margin band, -1 for one wholly in
-// its bottom band, and 0 otherwise.
-func marginBand(page, b geom.Rect) int {
+// marginBand returns 1 for a block in the page's top margin band, -1 for one in its bottom
+// band, and 0 otherwise, and whether it is there only by the band's reach. A block is in a band
+// when it lies wholly inside it, or when it is the page's outermost block on that side, no
+// text beyond it, and lies wholly inside the band's reach. text is the extent of the page's
+// text.
+//
+// The reach is for a page whose margins are wider than the band. mupdf_explored.pdf, set on
+// Letter paper, puts its running headers 98 to 108pt below the top, 12.4% to 13.6% of the
+// page, and the folios of its chapters' opening pages as far above the bottom, so the band
+// alone missed all 278 (ADR 0034). Widening the band instead marks text that recurs near the
+// page's edge without being furniture, 399 more blocks in the tagged corpus at 15%.
+//
+// The reach marks none of those 399, because each has its page's furniture beyond it, but a
+// page with no furniture has nothing beyond its first line. Extract drops a tagged producer's,
+// and the reach then found the header row that ISO 32000-2 and ISO/TS 32005 repeat at the top
+// of each page a table continues on, 294 times. So Furniture asks more of a reached block: its
+// numbers change from page to page, as a folio's do and a table header's do not.
+func marginBand(page, b, text geom.Rect) (band int, reached bool) {
 	h := page.Y1 - page.Y0
 	switch {
 	case h <= 0:
-		return 0
+		return 0, false
 	case b.Y0 >= page.Y1-furnitureBand*h:
-		return 1
+		return 1, false
 	case b.Y1 <= page.Y0+furnitureBand*h:
-		return -1
+		return -1, false
+	case b.Y1 >= text.Y1 && b.Y0 >= page.Y1-furnitureReach*h:
+		return 1, true
+	case b.Y0 <= text.Y0 && b.Y1 <= page.Y0+furnitureReach*h:
+		return -1, true
 	}
-	return 0
+	return 0, false
+}
+
+// extent is the box of a page's text: every block that has any, furniture included.
+func extent(blocks []doc.Block) geom.Rect {
+	var r geom.Rect
+	for i := range blocks {
+		if !blocks[i].IsEmpty() {
+			r = r.Union(blocks[i].Box)
+		}
+	}
+	return r
 }
 
 // roman is a roman numeral, which front matter is numbered in.

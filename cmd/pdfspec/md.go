@@ -215,6 +215,7 @@ func inferRoles(d *doc.Document) {
 	layout.Headings(d, layout.DefaultOptions)
 	layout.Lists(d, layout.DefaultOptions)
 	layout.OrderedLists(d, layout.DefaultOptions)
+	layout.PageBreaks(d)
 }
 
 // writeMarkdown writes the whole document as Markdown: the structure tree's outline when

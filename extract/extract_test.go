@@ -3,6 +3,7 @@ package extract
 import (
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -1929,3 +1930,50 @@ func TestDocumentRecordsAFailedPage(t *testing.T) {
 // fresh error, so the test can assert PageError unwraps to the cause and not merely that
 // something went wrong.
 var errRefused = errors.New("synthetic refusal")
+
+// TestLinesRecordWhereEachLineStarts pins doc.Block.Lines, which layout.PageBreaks reads to
+// ask whether a paragraph's last line is full and to cut a continuation at an indent. A span
+// runs on across lines while its style does, so the start is a span and a byte offset into it,
+// not a span index alone: here the first two lines share a span and the third opens its own.
+func TestLinesRecordWhereEachLineStarts(t *testing.T) {
+	// The second line is two fragments in one style, which only an artifact beside body text
+	// makes: a fragment ends at the artifact's edge and a span does not.
+	stream := `BT /F1 12 Tf 10 700 Td (one) Tj 0 -14 Td /Artifact BMC (two) Tj EMC ( more) Tj ` +
+		`/F2 12 Tf 0 -14 Td (three) Tj ET`
+	opt := DefaultOptions
+	opt.KeepArtifacts = true
+	p, err := New(onePage(stream), opt).Page(1)
+	if err != nil {
+		t.Fatalf("Page: %v", err)
+	}
+	if len(p.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(p.Blocks))
+	}
+	b := p.Blocks[0]
+	if len(b.Lines) != 3 {
+		t.Fatalf("lines = %d, want 3", len(b.Lines))
+	}
+	want := []struct{ span, offset int }{{0, 0}, {0, len("one ")}, {1, 0}}
+	for i, ln := range b.Lines {
+		if ln.Span != want[i].span || ln.Offset != want[i].offset {
+			t.Errorf("line %d starts at span %d offset %d, want span %d offset %d",
+				i, ln.Span, ln.Offset, want[i].span, want[i].offset)
+		}
+		if ln.Page != 1 || ln.Size != 12 || ln.Box.IsZero() {
+			t.Errorf("line %d = %+v, want page 1, size 12 and a box", i, ln)
+		}
+		// The space each line's font advances, at 12pt: Helvetica's 278 and Courier's 600.
+		if want := []float64{3.336, 3.336, 7.2}[i]; math.Abs(ln.Space-want) > 1e-9 {
+			t.Errorf("line %d's space = %v, want %v", i, ln.Space, want)
+		}
+		if i > 0 && ln.Box.Y0 >= b.Lines[i-1].Box.Y0 {
+			t.Errorf("line %d is not below line %d", i, i-1)
+		}
+	}
+	if got := b.Spans[0].Text[b.Lines[1].Offset:]; got != "two more " {
+		t.Errorf("line 1's text runs %q, want %q: it starts at its first fragment, not its last", got, "two more ")
+	}
+	if b.Lines[0].Box.X1 >= b.Lines[2].Box.X1 {
+		t.Errorf("each line's box is its own: %v against %v", b.Lines[0].Box, b.Lines[2].Box)
+	}
+}

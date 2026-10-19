@@ -1275,6 +1275,8 @@ func domSize(ln *line) float64 {
 // appendLine adds a line's fragments to a block as spans, joining to the previous
 // line with a space.
 func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
+	var lineBox geom.Rect
+	start := doc.Line{Span: -1}
 	for i := range ln.frags {
 		fr := &ln.frags[i]
 		txt := string(fr.text)
@@ -1297,11 +1299,8 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 			// Trailing placement fixed all 29 and broke none. TestWrapSpaceTrailsThe-
 			// PreviousSpan pins it, since text joined from the spans reads identically
 			// either way and no assertion on the joined string can tell them apart.
-			n := len(b.Spans) - 1
-			prev := b.Spans[n].Text
-			if !endsWithSpace(prev) && !startsWithSpace(txt) && wrapNeedsSpace(prev, txt) &&
-				!dashHoldsTheWord(b.Spans, n) {
-				b.Spans[n].Text += " "
+			if WrapSpace(b.Spans, txt) {
+				b.Spans[len(b.Spans)-1].Text += " "
 			}
 		}
 
@@ -1313,9 +1312,15 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 		// resolves the heading's title to the heading plus the paragraph.
 		if n := len(b.Spans); n > 0 && !fr.apart && b.Spans[n-1].MCID == fr.mcid &&
 			b.Spans[n-1].Style.SameRun(fr.style, t) {
+			if start.Span < 0 {
+				start.Span, start.Offset = n-1, len(b.Spans[n-1].Text)
+			}
 			b.Spans[n-1].Text += txt
 			b.Spans[n-1].Box = b.Spans[n-1].Box.Union(box)
 		} else {
+			if start.Span < 0 {
+				start.Span, start.Offset = len(b.Spans), 0
+			}
 			b.Spans = append(b.Spans, doc.Span{
 				Text:  txt,
 				Style: fr.style,
@@ -1325,6 +1330,11 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 			})
 		}
 		b.Box = b.Box.Union(box)
+		lineBox = lineBox.Union(box)
+	}
+	if start.Span >= 0 {
+		start.Box, start.Page, start.Size, start.Space = lineBox, page, domSize(ln), lineSpace(ln)
+		b.Lines = append(b.Lines, start)
 	}
 	// The union of the spans' identifiers, read from the spans rather than accumulated here
 	// from the fragments.
@@ -1372,6 +1382,23 @@ func endsWithSpace(s string) bool {
 func startsWithSpace(s string) bool {
 	r, _ := utf8.DecodeRuneInString(s)
 	return unicode.IsSpace(r)
+}
+
+// WrapSpace reports whether a line starting with next, wrapped on from one that ends spans, is
+// joined to it by a space: unless a space is already there, both sides are a script written
+// without them, or a dash holds the word together across the break. The space goes on the
+// trailing end of spans' last span; appendLine says why.
+//
+// Exported because a wrap is also what a page break cuts a paragraph at, and layout.PageBreaks,
+// which joins the halves, has to make the same call at it.
+func WrapSpace(spans []doc.Span, next string) bool {
+	n := len(spans) - 1
+	if n < 0 {
+		return false
+	}
+	prev := spans[n].Text
+	return !endsWithSpace(prev) && !startsWithSpace(next) && wrapNeedsSpace(prev, next) &&
+		!dashHoldsTheWord(spans, n)
 }
 
 // wrapNeedsSpace reports whether joining two wrapped lines needs a space between them.

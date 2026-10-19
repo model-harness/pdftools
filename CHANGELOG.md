@@ -5,6 +5,23 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-19
+
+- **A paragraph runs on across a page break.** ADR 0034, issue #6. On an untagged page, the
+  first paragraph after a break joins the last one before it when all of these hold:
+  - it starts flush and at the same size;
+  - the earlier paragraph ends at its page's foot;
+  - the paragraph starts lower case, or the earlier one ends on a full line, in the face the new one opens in.
+
+  The join is a wrap, so extract's rule decides the space, and a hyphen keeps its word whole.
+  A continuation is cut where a line repeats its paragraph's opening indent. Blocks now carry
+  `Lines`, each line's box, page, size, space width and start. `running-headers` blocks went
+  from 0.500 to 1.000.
+- **Furniture past the margin band.** A page's outermost text within 15% of its edge is
+  furniture when it recurs with a folio, a number that changes from page to page. That finds the
+  278 running headers and folios that `mupdf_explored.pdf` sets on Letter paper just below the
+  12% band, and adds no false ones in the tagged corpus.
+
 ### Changed — 2026-10-16
 
 - **Running headers, footers and folios are found on untagged pages.** ADR 0033, issue #6. A

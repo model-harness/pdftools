@@ -969,8 +969,9 @@ func TestBlockMCIDsAreTheUnionOfTheirSpans(t *testing.T) {
 	// rebuilt section copies, which is deliberate: all three are separate slices written by
 	// separate code, and each of the four write sites touches only one of them. ADR 0032's join
 	// accounts for 88 fewer: it drops the header cells a table repeats across a page break from
-	// the layout copy, and it was 72059 without them.
-	if blocks < 71900 || withSet < 71000 {
+	// the layout copy, and it was 72059 without them. ADR 0034's page-break join accounts for 142
+	// more, net of the paragraphs it cuts back out at an indent: 71829, of which 70910 carry a set.
+	if blocks < 71750 || withSet < 70850 {
 		t.Errorf("walked %d blocks, %d with a set; want a corpus-sized population", blocks, withSet)
 	}
 	t.Logf("%d blocks, %d with a set, %d disagreeing", blocks, withSet, bad)

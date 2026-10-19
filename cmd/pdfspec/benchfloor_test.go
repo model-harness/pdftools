@@ -29,7 +29,7 @@ var benchFloors = map[string]benchFigures{
 	"lists":                    {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"metadata":                 {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"paragraphs":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"running-headers":          {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 0.500, headings: 1.000, tables: 1.000, style: 1.000},
+	"running-headers":          {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"scan-paragraphs":          {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"scan-table":               {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 0.000, style: 1.000},
 	"scan-two-column":          {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 0.000, tables: 1.000, style: 1.000},

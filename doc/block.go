@@ -107,6 +107,12 @@ type Block struct {
 	// pages' text is still reachable through the spans.
 	Box geom.Rect
 
+	// Lines are the block's lines in reading order, as the extractor drew them. A span runs
+	// on across lines whenever its style does, so the spans cannot say where a line ended,
+	// and a pass that asks whether a paragraph's last line is full, or its first flush, needs
+	// that. Empty for a block no extractor drew.
+	Lines []Line
+
 	// Lang is a language override from the structure tree, when the block declares
 	// one different from the document's.
 	Lang string
@@ -269,6 +275,20 @@ func (b Block) IsEmpty() bool {
 		}
 	}
 	return true
+}
+
+// Line is one line of a block: the box of its glyphs in its page's coordinates, the
+// 1-based page, the size most of its characters are set in, the widest space advance among
+// its fonts, which is the unit extract measures indents and line ends in, and where its text
+// starts: byte Offset of Spans[Span].Text, since a span runs on across lines whenever its
+// style does.
+type Line struct {
+	Box    geom.Rect
+	Page   int
+	Size   float64
+	Space  float64
+	Span   int
+	Offset int
 }
 
 // Span is a run of text sharing one style.
