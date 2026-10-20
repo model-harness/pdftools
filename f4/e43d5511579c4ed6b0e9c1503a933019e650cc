@@ -1,0 +1,88 @@
+ocr/ocr_test.go
+  s_5cd1b28ed520c1::t_c726f591c5a1bb 24-35
+  s_5cd1b28ed520c1::t_c21da80620e961 65-76
+ocr/ocr.go
+  s_5cd1b28ed520c1::t_2f34ae64df905f 39
+  s_5cd1b28ed520c1::t_8dec64a1f4ff5e 132-141,143-152
+  s_5cd1b28ed520c1::t_c19df510fb2058 142
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_da792fb96e57ec 8-20
+bench/bench_test.go
+  s_5cd1b28ed520c1::t_0e6df56ca50ff4 325
+  s_5cd1b28ed520c1::t_e53c3948c09cc1 316-323,326-330
+  s_5cd1b28ed520c1::t_d40b5ae66816e7 324
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_8dec64a1f4ff5e 198
+cmd/pdfspec/unmapped_test.go
+  s_5cd1b28ed520c1::t_2df0e014d41f85 5
+  s_5cd1b28ed520c1::t_556037e1d42d92 29-39
+  s_5cd1b28ed520c1::t_ad06b4fe908170 1-4,6-27,45-68
+  s_5cd1b28ed520c1::t_e010e75159bdee 28,40-44
+cmd/pdfspec/testdata_test.go
+  s_5cd1b28ed520c1::t_b94832cd45b6f0 449-452
+bench/bench.go
+  s_5cd1b28ed520c1::t_9086fb88c91f90 102-105
+extract/unmapped_test.go
+  s_5cd1b28ed520c1::t_31b5e9cde78d99 1-16,21,28-74
+  s_5cd1b28ed520c1::t_dbaeb21a929d57 17-20,22-27
+docs/adr/0042-a-glyph-with-no-value-is-err.md
+  s_5cd1b28ed520c1::t_e989367dfac6da 1-73,79-84
+  s_5cd1b28ed520c1::t_7e9d5dfec396b6 74-78
+extract/run.go
+  s_5cd1b28ed520c1::t_e9fab609a632b1 466-470
+  s_5cd1b28ed520c1::t_7877cef7d16184 445-449,451,473
+  s_5cd1b28ed520c1::t_0d02c31dd4533e 450
+  s_5cd1b28ed520c1::t_43b73feb581abe 444,472
+  s_88da00414f0ee6::t_6d89fd08a92b14 471
+cmd/pdfspec/unmapped.go
+  s_5cd1b28ed520c1::t_403665f951d926 1-58
+sink/markdown/err_test.go
+  s_5cd1b28ed520c1::t_13cddc4973eacd 1-40
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_aa576173f26bee 65
+  s_5cd1b28ed520c1::t_3e5b5b0b52a791 94-97,103-104
+font/decode.go
+  s_5cd1b28ed520c1::t_3e5b5b0b52a791 27-29
+cmd/pdfspec/probe.go
+  s_5cd1b28ed520c1::t_aa576173f26bee 12,60-65,179-182,438-439
+  s_3f706e3f4b4643::t_fe498894d96397 440
+sink/markdown/inline.go
+  s_5cd1b28ed520c1::t_43842b9c28533a 297
+  s_88da00414f0ee6::t_d8d26767f1545f 294-296,298-302,427,442-446,452-466
+cmd/pdfspec/ocr_test.go
+  s_5cd1b28ed520c1::t_20bce79ec2c9d6 329-342
+doc/block.go
+  s_5cd1b28ed520c1::t_816a49dbbe62cd 313-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4e43d5511579c4ed6b0e9c1503a933019e650cc",
+  "prompts": {},
+  "sessions": {
+    "s_3f706e3f4b4643": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d91ced6-3b3b-46d0-b2cb-8b38a3429c2a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_88da00414f0ee6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831c4f8c-72d2-43dd-a2f0-64ea2913e0bb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
