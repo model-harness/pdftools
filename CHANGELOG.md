@@ -7,6 +7,11 @@ All notable changes to this project are documented here, following
 
 ### Changed — 2026-10-20
 
+- **A framed table is read from its rules.** ADR 0037, issue #5. A grid whose outer rules
+  run its full width and height is read as its rules draw it: merged cells go to their first
+  cell, a cell that wraps stays one cell, and body rows with no rules between them split at
+  the baselines they share. `table-merged` went from cell F1 0.000 to 1.000. The tables in
+  chinese-tables.pdf and v110-changes.pdf are whole for the first time.
 - **Footnotes are GFM footnotes.** ADR 0036, closes issue #6. On an untagged page, a raised
   small mark in the text is paired with a note at the foot that opens with the same mark. The
   mark becomes `[^label]`, and the note becomes a definition written after the text. Several

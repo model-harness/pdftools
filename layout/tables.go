@@ -66,6 +66,9 @@ func Tables(d *doc.Document, opt Options) TableStats {
 	n := 0
 	for pi := range d.Pages {
 		p := &d.Pages[pi]
+		// Framed grids first, read from their rules, and then the band reader over what they
+		// left: see lattice.
+		latticeTables(p, &n, &st)
 		verts := verticals(p.Rules)
 		if len(verts) == 0 {
 			continue
@@ -244,8 +247,9 @@ func rowCount(blocks []doc.Block, t int) int {
 // run that finds nothing has not errored, and neither has one that reads a page of prose
 // as a grid — so the counts are the only way to see it.
 type TableStats struct {
-	// Tables counts the grids found, Rows their rows and Cells their cells. Over the
-	// untagged documents on disk: 9 tables, 26 rows, 88 cells.
+	// Tables counts the grids found, Rows their rows and Cells their cells. Over the 51
+	// untagged PDFs on disk: 14 tables, 86 rows, 399 cells, where the band reader alone finds
+	// 13, 76 and 352 (ADR 0037).
 	Tables, Rows, Cells int
 
 	// Joined counts the tables that continued from the page before, their header row
