@@ -5,6 +5,13 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-20
+
+- **A table cell keeps its first characters.** A cell is inline content, so a `-`, `>`, `#`,
+  `=` or ordered label opening it is no longer escaped as if it began a block. pandoc reads
+  `| -62 |` as -62, and the escaped `\-62` had stood beside an unescaped `-269` in the same
+  row.
+
 ### Changed — 2026-10-20
 
 - **Unruled tables are found by their gutters.** ADR 0038, closes issue #5. Three or more

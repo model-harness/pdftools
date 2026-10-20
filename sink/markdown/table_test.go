@@ -430,3 +430,18 @@ func TestWriteBlocksMixedContent(t *testing.T) {
 		t.Errorf("got\n%q\nwant\n%q", sb.String(), want)
 	}
 }
+
+// TestACellOpensWithItsOwnCharacters: a cell is inline content, where no block can begin, so a
+// minus, a quote mark or an ordered label opening it is written as it is; pandoc -f gfm reads
+// each as its text. A paragraph opening the same way still escapes.
+func TestACellOpensWithItsOwnCharacters(t *testing.T) {
+	got := renderBlocks(t,
+		cell(1, 0, 0, true, "a"), cell(1, 0, 1, true, "b"), cell(1, 0, 2, true, "c"),
+		cell(1, 1, 0, false, "-62"), cell(1, 1, 1, false, ">5000"), cell(1, 1, 2, false, "1. x"))
+	if want := "| -62 | >5000 | 1. x |"; !strings.Contains(got, want) {
+		t.Errorf("got\n%s\nwant a row %q", got, want)
+	}
+	if got := renderBlocks(t, para(span("-62 below"))); !strings.HasPrefix(got, `\-62`) {
+		t.Errorf("paragraph = %q, want its minus escaped", got)
+	}
+}

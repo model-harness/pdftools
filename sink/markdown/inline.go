@@ -120,6 +120,11 @@ func (m mark) delim() string {
 // line-start-sensitive characters need escaping. It is threaded through rather than
 // recomputed because only the caller knows whether anything preceded it.
 func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart, cell bool) {
+	// A table cell is inline content, where no block can begin, so its first characters are
+	// literal: pandoc -f gfm reads "| -62 |", "| >5000 |" and "| 1. x |" as the text they say.
+	// Escaping them anyway wrote "\-62" beside "-269", which only escaped no differently
+	// because its span happened to open with a space.
+	atStart = atStart && !cell
 	var text strings.Builder
 	for i := range spans {
 		text.WriteString(spans[i].Text)
