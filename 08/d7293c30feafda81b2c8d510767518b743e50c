@@ -1,0 +1,60 @@
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_dd4f573af39795 8-18
+layout/tables.go
+  s_5cd1b28ed520c1::t_c2dad9fa73f7b8 692
+doc/marker.go
+  s_5cd1b28ed520c1::t_c2dad9fa73f7b8 340,401,453,466-483
+  s_5cd1b28ed520c1::t_c9dab9f038333f 484
+layout/hyphens.go
+  s_5cd1b28ed520c1::t_61e58105c57be6 1-25,33-49,51-72,76-84,86-88,90-146
+  s_5cd1b28ed520c1::t_0f9a0a53c45b5e 26-32
+  s_5cd1b28ed520c1::t_275f947a8071ad 50,73-75
+  s_5cd1b28ed520c1::t_f14b3906ac1a12 85,89
+extract/run.go
+  s_5cd1b28ed520c1::t_b99403b26203e7 1478-1479,1481-1482
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_88ebb50ce0b3ea 219-220,228-230
+layout/tables_test.go
+  s_5cd1b28ed520c1::t_f607ccd3482bb1 110-128
+doc/marker_test.go
+  s_5cd1b28ed520c1::t_b16f4ac8b0f257 3-6
+  s_5cd1b28ed520c1::t_2c08493ff43e4e 507-540
+sectionize/untagged.go
+  s_5cd1b28ed520c1::t_c2dad9fa73f7b8 108
+sectionize/untagged_test.go
+  s_5cd1b28ed520c1::t_2c08493ff43e4e 366,382-385
+  s_5cd1b28ed520c1::t_4ec7eb2c7966a0 386
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_545e8354cece88 10,56
+layout/hyphens_test.go
+  s_5cd1b28ed520c1::t_1d7ae2144398b9 61,160-161,165
+  s_5cd1b28ed520c1::t_d36900fc1ba929 7,18,64,131
+  s_5cd1b28ed520c1::t_b5c9a2d5755a89 1-3,5-6,8-17,19-60,62-63,65-74,78-130,132-152,167-168
+  s_5cd1b28ed520c1::t_da7b9bf73308ad 4,75-77,153-159,162-164,166
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_bdc36b40c21931 27
+cmd/pdfspec/lines_test.go
+  s_5cd1b28ed520c1::t_3800580ed8a83d 39,41-44
+  s_5cd1b28ed520c1::t_b6b1ef6e52aa5f 45
+  s_5cd1b28ed520c1::t_e8faca2f6b16ff 1-38,40,46-80
+docs/adr/0035-take-a-typesetters-hyphen-by-the-documents-own-words.md
+  s_5cd1b28ed520c1::t_c04f615b46c3a0 1-91
+doc/block.go
+  s_5cd1b28ed520c1::t_c2dad9fa73f7b8 114-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08d7293c30feafda81b2c8d510767518b743e50c",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
