@@ -313,3 +313,18 @@ func TestScoreUnmatchedTableEarnsNoCells(t *testing.T) {
 	got := []byte("| A | B |\n| --- | --- |\n| x | y |\n")
 	close(t, "Tables", Score(ref, got).Tables, 0, 0)
 }
+
+// An [err] is one character the converter could not read and is scored as one: one edit in
+// CER, and no word in the bag (ADR 0042).
+func TestScoreErrIsOneUnreadCharacter(t *testing.T) {
+	s := Score([]byte("abcde fgh\n"), []byte("ab[err]de fgh\n"))
+	if want := 1.0 / 8; math.Abs(s.CER-want) > 1e-9 {
+		t.Errorf("CER = %.4f, want %.4f", s.CER, want)
+	}
+	if p := Score([]byte("abc fgh\n"), []byte("abc [err] fgh\n")).Precision; p != 1 {
+		t.Errorf("Precision = %.4f, want 1: err is not a word the page has", p)
+	}
+	if s.Errs != 1 {
+		t.Errorf("Errs = %d, want 1", s.Errs)
+	}
+}

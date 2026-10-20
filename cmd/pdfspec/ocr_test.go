@@ -326,6 +326,20 @@ func TestOCRDryRunLoadsNoModel(t *testing.T) {
 	}
 }
 
+// TestOCRDryRunMeasuresWhatWasRead: the plan's coverage is the one Route decides by, so a page
+// drawn wholly in a font with no mapping reads 0% beside its one block of [err] (ADR 0042).
+func TestOCRDryRunMeasuresWhatWasRead(t *testing.T) {
+	var sb strings.Builder
+	d := extractOnly(t, fixture(t, "reference/type3-unmapped.pdf"))
+	want := allPages(len(d.Pages))
+	if err := plan(&sb, d, want, route(d, want, ocr.DefaultThreshold, false), ocr.DefaultThreshold); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sb.String(), "ocr  page 1\tcoverage   0.0%\t1 block(s)") {
+		t.Errorf("plan = %q, want page 1 at 0.0%% over its one block", sb.String())
+	}
+}
+
 // TestOCRBoxUsesRasterExtent pins the coordinate space the parser resolves against.
 //
 // The two boxes differ on purpose — doc.Page.Box is the unrotated crop box, while

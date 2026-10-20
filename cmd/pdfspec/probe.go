@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/objects"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/tag"
@@ -56,6 +57,12 @@ type report struct {
 	// to say what a file holds and how it will be read: a page it cannot open is the most
 	// useful thing it can say about that page, and omitting it is how one went missing.
 	Unreadable []string `json:"unreadable,omitempty"`
+
+	// Unmapped counts the glyphs the file gives no Unicode value to, which md writes as [err]
+	// (ADR 0042), and UnmappedPages says where they are. Found by extracting the text, since a
+	// font's mapping is decided glyph by glyph: a /ToUnicode can cover all but one code.
+	Unmapped      int        `json:"unmapped"`
+	UnmappedPages []pageErrs `json:"unmapped_pages,omitempty"`
 }
 
 type tagSummary struct {
@@ -169,6 +176,10 @@ func probeOne(path string, wantPages bool) report {
 	}
 
 	r.Filters, r.Fonts, r.Images, r.PageDetail, r.Unreadable = scanPages(s, wantPages)
+	if d, err := extract.New(s, extract.DefaultOptions).Document(); err == nil {
+		r.UnmappedPages = unmapped(d)
+		r.Unmapped = errTotal(r.UnmappedPages)
+	}
 
 	switch {
 	case r.Encrypted:
@@ -423,6 +434,9 @@ func printReports(rs []report) {
 			for _, u := range r.Unreadable {
 				fmt.Printf("    %s\n", u)
 			}
+		}
+		if r.Unmapped > 0 {
+			fmt.Printf("  unmapped    %d glyph(s) with no Unicode value, written [err]: %s\n", r.Unmapped, errPages(r.UnmappedPages))
 		}
 		fmt.Printf("  probed in   %d ms\n", r.ProbeMS)
 

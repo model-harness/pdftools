@@ -62,6 +62,7 @@ func runMD(args []string) error {
 	// The extractor reads the file, so it cannot know what the user called it.
 	d.Meta.Path = in
 	warnIfEmpty(d)
+	warnIfUnmapped(os.Stderr, unmapped(d))
 	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 
 	mopt := markdown.Options{Frontmatter: *frontmatter, Artifacts: *artifacts}
@@ -90,19 +91,17 @@ func runMD(args []string) error {
 //
 // A warning rather than an error, because empty is sometimes the honest answer: a page
 // holding one image has no text, and TestFixtureNoTextIsNotAnError pins that down.
-// Distinguishing "correctly empty" from "lost the text" needs the file's fonts, which
-// is what the hint names — a font with no /ToUnicode and glyph names outside the Adobe
-// glyph list has genuinely undecodable codes, so the text is not in the file to be
-// found and OCR is the only route. Written to stderr so redirecting stdout to a .md
-// still shows it.
+// A font that gives its glyphs no value no longer empties a page, since each glyph is
+// written [err] and warnIfUnmapped counts them (ADR 0042). What is left is a page that
+// draws no text at all, which is most often a scan, so the hint names OCR. Written to
+// stderr so redirecting stdout to a .md still shows it.
 func warnIfEmpty(d *doc.Document) {
 	if len(d.Pages) == 0 || strings.TrimSpace(d.Text()) != "" {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "warning: %d page(s) yielded no text\n", len(d.Pages))
-	fmt.Fprint(os.Stderr, "  the fonts may carry no /ToUnicode and no recognizable glyph names,\n"+
-		"  in which case the characters are not recoverable from the file itself.\n"+
-		"  run \"pdfspec probe\" to see the fonts, or \"pdfspec ocr\" to read the pages as images.\n")
+	fmt.Fprint(os.Stderr, "  the pages draw no text, and may be images of it.\n"+
+		"  run \"pdfspec probe\" to see what they hold, or \"pdfspec ocr\" to read them as images.\n")
 }
 
 // warnIfPagesFailed reports on stderr that some pages could not be read.

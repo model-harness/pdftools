@@ -36,6 +36,7 @@ package ocr
 import (
 	"context"
 	"image"
+	"strings"
 
 	"github.com/model-harness/pdftools/doc"
 )
@@ -128,7 +129,27 @@ func Route(p doc.Page, threshold float64) bool {
 	if p.Rasterized {
 		return false
 	}
-	return p.Coverage() < threshold
+	return Coverage(p) < threshold
+}
+
+// Coverage is the page's coverage by the blocks that hold a character the extractor read. A
+// block of glyphs the file gives no value to, each written [err] (ADR 0042), covers the page as
+// a scan's image does: with text nobody has read. Counted, it would keep the page from the one
+// engine that could read it.
+func Coverage(p doc.Page) float64 {
+	read := make([]doc.Block, 0, len(p.Blocks))
+	for _, b := range p.Blocks {
+		if readable(b.Text()) {
+			read = append(read, b)
+		}
+	}
+	p.Blocks = read
+	return p.Coverage()
+}
+
+// readable reports whether s holds a character other than whitespace and doc.Unmapped.
+func readable(s string) bool {
+	return strings.TrimSpace(strings.ReplaceAll(s, doc.Unmapped, "")) != ""
 }
 
 // DefaultThreshold is the coverage below which a page is sent to the model.

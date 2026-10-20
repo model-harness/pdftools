@@ -310,6 +310,10 @@ type Line struct {
 	Offset int
 }
 
+// Unmapped stands for a glyph the file gives no Unicode value to, one character per glyph: the
+// replacement character, which the Markdown sink writes as [err] (ADR 0042).
+const Unmapped = "�"
+
 // Span is a run of text sharing one style.
 type Span struct {
 	// Text is the run's characters. Several characters may come from one glyph — a

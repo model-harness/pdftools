@@ -21,6 +21,18 @@ func block(fracTop, fracBottom float64) doc.Block {
 	}
 }
 
+// unread makes b's text two glyphs the file gives no value to, with a space between.
+func unread(b doc.Block) doc.Block {
+	b.Spans = []doc.Span{{Text: doc.Unmapped + " " + doc.Unmapped, MCID: -1}}
+	return b
+}
+
+// read adds one character the extractor read to b's text.
+func read(b doc.Block) doc.Block {
+	b.Spans = append(b.Spans, doc.Span{Text: "x", MCID: -1})
+	return b
+}
+
 // TestRoute is the decision the whole package hangs on: which pages cost a
 // GPU-second and which are already done.
 func TestRoute(t *testing.T) {
@@ -49,6 +61,18 @@ func TestRoute(t *testing.T) {
 			page: doc.Page{Number: 1, Box: letter, Blocks: []doc.Block{block(0.02, 0.04)}},
 			want: true,
 			why:  "2% coverage is a page number, not a page",
+		},
+		{
+			name: "a page of glyphs with no value",
+			page: doc.Page{Number: 1, Box: letter, Blocks: []doc.Block{unread(block(0.1, 0.9))}},
+			want: true,
+			why:  "every block is [err], text the extractor could not read (ADR 0042)",
+		},
+		{
+			name: "a page with one character read",
+			page: doc.Page{Number: 1, Box: letter, Blocks: []doc.Block{read(unread(block(0.1, 0.9)))}},
+			want: false,
+			why:  "a block holding any character read covers the page as any text does",
 		},
 		{
 			name: "already rasterized",

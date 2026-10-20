@@ -96,10 +96,13 @@ func Score(ref, got []byte) Scores {
 // rather than reading the tree node types directly is what lets a table's cells and a
 // paragraph's text use the same text-collecting pass, textOf.
 func parse(src []byte) document {
-	root := parser.Parser().Parse(text.NewReader(src))
 	var d document
 	s := string(src)
 	d.errs, d.images = strings.Count(s, "[err]"), strings.Count(s, "[image]")
+	// An [err] is one character the converter could not read, and is scored as one: as text it
+	// is five characters of CER and a word "err" in the bag, none of them on the page (ADR 0042).
+	src = []byte(strings.ReplaceAll(s, "[err]", "�"))
+	root := parser.Parser().Parse(text.NewReader(src))
 	_ = ast.Walk(root, func(n ast.Node, enter bool) (ast.WalkStatus, error) {
 		if !enter {
 			return ast.WalkContinue, nil

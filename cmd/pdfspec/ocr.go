@@ -195,7 +195,7 @@ func plan(w io.Writer, d *doc.Document, want, routed []int, threshold float64) e
 			mark = "ocr "
 		}
 		if _, err := fmt.Fprintf(w, "%s page %d\tcoverage %5.1f%%\t%d block(s)\n",
-			mark, n, p.Coverage()*100, len(p.Blocks)); err != nil {
+			mark, n, ocr.Coverage(p)*100, len(p.Blocks)); err != nil {
 			return err
 		}
 	}

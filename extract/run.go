@@ -441,6 +441,14 @@ func (r *run) show(m *content.Machine, res objects.Dict, fonts map[content.Name]
 		// pen arithmetic below is in page units and tx is in unscaled text space.
 		as := alongScale(m)
 
+		if g.Text == "" && (g.Bytes != 1 || g.Code != 32) {
+			// A glyph the file gives no value to is drawn text all the same, and is written as
+			// the replacement character the sink tags [err] (ADR 0042). Writing nothing closed
+			// the text over it, and sampleInvoice.pdf's whole body vanished with no trace. A
+			// single-byte space is the exception: its code says what it is, and the gap it
+			// leaves is read as one.
+			g.Text = doc.Unmapped
+		}
 		if g.Text != "" {
 			r.place(m, g, trm, ox, oy, sx, sy, w0, f, artifact, mcid)
 		}
@@ -455,10 +463,14 @@ func (r *run) show(m *content.Machine, res objects.Dict, fonts map[content.Name]
 		m.Advance(tx)
 		// place left the pen at this glyph's start, so adding the full displacement —
 		// width plus Tc and Tw — leaves it where the next glyph is expected, and a gap
-		// there is displacement the text state did not explain. A glyph whose text
-		// could not be decoded still advances it, so a dropped glyph reads as a gap in
-		// the middle of a word rather than as a space.
-		r.pen += tx * as
+		// there is displacement the text state did not explain.
+		//
+		// The one glyph not placed, a single-byte space with no value, leaves the pen
+		// behind, as advanceOnly does, so its width is the gap that infers the space its
+		// code says it is.
+		if g.Text != "" {
+			r.pen += tx * as
+		}
 	}
 }
 

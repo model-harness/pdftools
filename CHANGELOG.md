@@ -5,6 +5,19 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 (unmapped glyphs)
+
+- **A glyph with no Unicode value is `[err]`.** ADR 0042, issue #8. A glyph the file gives no
+  value to was dropped, and the text closed over it: sampleInvoice.pdf converted to its
+  running header. The extractor now writes it as U+FFFD (`doc.Unmapped`), and the sink
+  writes each run as one `[err]`. 3,288 glyphs across 8 documents are 543 tags. A
+  single-byte space is still read from its gap.
+- **The counts are reported.** `md` warns on stderr with the count on each page, and
+  `probe` reports `unmapped` and `unmapped_pages`.
+- **OCR routing ignores `[err]`.** A page drawn wholly in an unmapped font still routes to
+  OCR.
+- **The bench scores an `[err]` as one unread character.** Means are unchanged.
+
 ### Changed — 2026-10-20 (links)
 
 - **Links are `[text](url)`.** ADR 0041, closes issue #7. A page's URI link annotations give

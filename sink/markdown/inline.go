@@ -291,6 +291,15 @@ func escapeInto(sb *strings.Builder, s string, atStart bool) {
 			sb.WriteString(replacement)
 			continue
 		}
+		if n := unmappedRun(s, i); n > 0 {
+			// Escaped where what follows would make it a link's text or a reference's label.
+			if i+n < len(s) && (s[i+n] == '(' || s[i+n] == '[' || s[i+n] == ':') {
+				sb.WriteByte('\\')
+			}
+			sb.WriteString(errTag)
+			i += n - 1
+			continue
+		}
 		switch c {
 		case '\\', '`', '*', '|':
 			sb.WriteByte('\\')
@@ -415,7 +424,7 @@ func isControl(c byte) bool {
 func sanitize(s string) string {
 	i := 0
 	for ; i < len(s); i++ {
-		if isControl(s[i]) {
+		if isControl(s[i]) || unmappedRun(s, i) > 0 {
 			break
 		}
 	}
@@ -430,9 +439,29 @@ func sanitize(s string) string {
 			sb.WriteString(replacement)
 			continue
 		}
+		if n := unmappedRun(s, i); n > 0 {
+			sb.WriteString(errTag)
+			i += n - 1
+			continue
+		}
 		sb.WriteByte(s[i])
 	}
 	return sb.String()
+}
+
+// errTag is what a run of glyphs the file gives no value to is written as (ADR 0042). One tag
+// for the run and not one per glyph: a word of 12 unmapped glyphs is one thing a reader cannot
+// read, and twelve tags would say it in 60 bytes.
+const errTag = "[err]"
+
+// unmappedRun is the length in bytes of the run of doc.Unmapped at s[i], or 0 if none starts
+// there.
+func unmappedRun(s string, i int) int {
+	n := 0
+	for strings.HasPrefix(s[i+n:], doc.Unmapped) {
+		n += len(doc.Unmapped)
+	}
+	return n
 }
 
 // linkOpen reports whether the "[" at s[i] could open a link, image, or reference

@@ -24,8 +24,9 @@ type Glyph struct {
 
 	// Text is what the glyph means, which may be several characters for a ligature
 	// or empty when the font gives no way to tell. Empty is a real answer and not
-	// an error: a symbolic font with no /ToUnicode has genuinely undecodable codes,
-	// and substituting U+FFFD would put noise in the output.
+	// an error: a symbolic font with no /ToUnicode has genuinely undecodable codes.
+	// What a consumer writes for one is its own policy, and the extractor writes
+	// doc.Unmapped, which the Markdown sink tags [err] (ADR 0042).
 	Text string
 
 	// Source says how Text was arrived at, which Text itself cannot.

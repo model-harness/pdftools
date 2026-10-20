@@ -446,17 +446,15 @@ func TestFixtureBoldSurvivesToMarkdown(t *testing.T) {
 
 // TestFixtureNoTextIsNotAnError covers the files that correctly produce nothing.
 //
-// Three of the pymupdf fixtures are a page with one image on it, and type3font.pdf draws
-// two glyphs from a Type3 font whose /CharProcs are bitmaps with no /ToUnicode and no
-// meaningful /Differences — "/0" and "/1" as glyph names carry no text. Empty output is
-// the honest answer for all four. The assertion is that it arrives as empty output and
-// not as an error, and that nothing invents characters out of the drawing operators.
+// Each is a page with one image on it, and empty output is the honest answer. The
+// assertion is that it arrives as empty output and not as an error, and that nothing
+// invents characters out of the drawing operators. type3font.pdf was the fourth, until its
+// glyphs with no value were written [err] (ADR 0042): TestAnUnmappedFontIsWrittenErr.
 func TestFixtureNoTextIsNotAnError(t *testing.T) {
 	for _, f := range []string{
 		"pymupdf/img-regular.pdf",
 		"pymupdf/img-transparent.pdf",
 		"pymupdf/test-rewrite-images.pdf",
-		"pymupdf/type3font.pdf",
 	} {
 		t.Run(f, func(t *testing.T) {
 			if md := strings.TrimSpace(mdOut(t, fixture(t, f))); md != "" {
