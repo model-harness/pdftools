@@ -538,3 +538,15 @@ func TestStripsKeepLinesInStep(t *testing.T) {
 		})
 	}
 }
+
+// TestIsMarker: a list marker standing alone, a bullet or an ordered label with nothing after it.
+func TestIsMarker(t *testing.T) {
+	for s, want := range map[string]bool{
+		"•": true, " • ": true, "1.": true, "a)": true, "[3]": true,
+		"": false, "1": false, "1.5": false, "Foo": false, "• a": false, "1. Item": false,
+	} {
+		if got := IsMarker(s); got != want {
+			t.Errorf("IsMarker(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

@@ -155,6 +155,13 @@ type Page struct {
 	// changed the segments it records, only the width it records beside them. 658
 	// and 284,866 are what a walk of every page reports.
 	Rules []Rule
+
+	// Gutters are verticals the extractor inferred where a table with no rules holds its
+	// columns apart by white space alone, running down the rows they divide. The row text is
+	// already split into cells at each. Kept apart from Rules because a rule is the
+	// producer's own statement and a gutter is a reading of the page; layout's band reader
+	// takes both, and its lattice, which needs a drawn frame, takes only Rules.
+	Gutters []Rule
 }
 
 // Rule is one axis-aligned straight stroke or fill edge, in page coordinates.

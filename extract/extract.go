@@ -192,6 +192,7 @@ func (e *Extractor) Page(n int) (doc.Page, error) {
 
 	p.Blocks = run.blocks(e.opt)
 	p.Rules = run.rules
+	p.Gutters = run.gutters
 	return p, nil
 }
 

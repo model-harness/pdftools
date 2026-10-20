@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -424,20 +425,21 @@ func TestFixtureLigatureSplitsIntoCharacters(t *testing.T) {
 // small-table.pdf sets its row labels in Helvetica-Bold and its numbers in Helvetica, and
 // the extractor splits a span at exactly that boundary. What this pins is the pair: the
 // label is emphasized, the numbers beside it are not, and the delimiter sits outside the
-// space between them — "**Metals** 357" rather than "**Metals ** 357", which CommonMark
-// renders as literal asterisks.
+// space between them — "**Metals**" rather than "**Metals **", which CommonMark renders as
+// literal asterisks. The table has no rules, and is a table since its gutters are read
+// (ADR 0038), so each label is its own cell.
 func TestFixtureBoldSurvivesToMarkdown(t *testing.T) {
 	md := mdOut(t, fixture(t, "pymupdf/small-table.pdf"))
 	for _, want := range []string{
-		"**Noble gases** -269 -62 -170.5",
-		"**Metals** 357 >5000 2755.9",
+		"| **Noble gases** | -269 |",
+		"| **Metals** | 357 |",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("missing %q in:\n%s", want, md)
 		}
 	}
-	// A bold run that swallowed the following space emits its delimiters as text.
-	if strings.Contains(md, "** ") && !strings.Contains(md, "** -") && !strings.Contains(md, "** 3") {
+	// A bold run that swallowed the space after it closes on whitespace.
+	if regexp.MustCompile(`\*\*[^*|\n]*\s\*\*`).MatchString(md) {
 		t.Errorf("a delimiter run is adjacent to whitespace: %q", md)
 	}
 }

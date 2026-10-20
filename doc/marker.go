@@ -206,6 +206,18 @@ func listMarkerIn(txt string, vocab map[rune]bool) rune {
 // dotted number has no single sequence value to increment, which is why "N.N" cannot form a
 // run at all and needs no exclusion. Measured over every document on disk, no dotted clause
 // number chains under layout.OrderedLists' rule.
+// IsMarker reports whether s, spaces aside, is a list marker standing alone: a bullet
+// ListMarker admits, or a label OrderedLabel reads, with nothing after it. A column of these is
+// a list set with its markers in a column of their own, as extract's gutters ask.
+func IsMarker(s string) bool {
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) == 1 && ListMarker(s+" x") != 0 {
+		return true
+	}
+	lbl, _ := OrderedLabel(s + " x")
+	return s != "" && lbl == s
+}
+
 var orderedForms = []struct {
 	// prefix and suffix bracket the label: ("", ".") reads "1." and ("[", "]") reads "[1]".
 	prefix, suffix string

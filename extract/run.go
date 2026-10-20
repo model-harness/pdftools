@@ -61,6 +61,9 @@ type run struct {
 	// tracked here rather than in content.Machine.
 	path  path
 	rules []doc.Rule
+
+	// gutters are the verticals splitAtGutters inferred from white space, for doc.Page.Gutters.
+	gutters []doc.Rule
 }
 
 // frag is a run of glyphs sharing a style and a baseline.
@@ -794,6 +797,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	}
 	r.splitAtRules()
 	r.sortLines()
+	r.splitAtGutters()
 	r.joinFractions()
 
 	var out []doc.Block

@@ -7,6 +7,11 @@ All notable changes to this project are documented here, following
 
 ### Changed — 2026-10-20
 
+- **Unruled tables are found by their gutters.** ADR 0038, closes issue #5. Three or more
+  lines whose gaps line up into two or more columns of white space become a table. Lists,
+  code, tables of contents and columns of prose are left alone. `table-unruled` went from cell
+  F1 0.000 to 1.000, and the gold set's mean cell F1 rose to 0.875, which is v1's target and
+  is now enforced. New model: `Page.Gutters`.
 - **A framed table is read from its rules.** ADR 0037, issue #5. A grid whose outer rules
   run its full width and height is read as its rules draw it: merged cells go to their first
   cell, a cell that wraps stays one cell, and body rows with no rules between them split at

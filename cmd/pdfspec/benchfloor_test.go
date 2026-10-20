@@ -38,7 +38,7 @@ var benchFloors = map[string]benchFigures{
 	"superscripts":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"table-across-pages":       {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"table-merged":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"table-unruled":            {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 0.000, style: 1.000},
+	"table-unruled":            {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"table":                    {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"tagged-lists":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"tagged-table":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
@@ -62,7 +62,8 @@ var benchTargets = benchFigures{
 // benchEnforced names the dimensions whose v1 target now fails the build, each from the
 // goal that closed it.
 var benchEnforced = map[string]bool{
-	"order": true, // #3, ADR 0030
+	"order":  true, // #3, ADR 0030
+	"tables": true, // #5, ADR 0038
 }
 
 func TestBenchmarkFloors(t *testing.T) {

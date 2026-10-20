@@ -662,3 +662,21 @@ func TestCellMCIDsAreTheCellsOwn(t *testing.T) {
 		t.Errorf("cell MCIDs = %q, want %q", strings.Join(got, " "), want)
 	}
 }
+
+// TestTablesReadsGutters: a page's inferred gutters divide its rows as its drawn rules do, and
+// the lattice, which needs a drawn frame, takes no part.
+func TestTablesReadsGutters(t *testing.T) {
+	d := tableDoc(
+		[]string{"Header A", "Header B", "Header C"},
+		[]string{"Cell A1", "Cell B1", "Cell C1"},
+	)
+	rules := make([]doc.Rule, 1, 64) // room to spare, so an append to it would write here
+	rules[0] = hrule(10, 0, 1)
+	d.Pages[0].Gutters, d.Pages[0].Rules = d.Pages[0].Rules, rules
+	if st := Tables(d, DefaultOptions); st.Tables != 1 || st.Cells != 6 {
+		t.Errorf("stats = %+v, want one table of 6 cells", st)
+	}
+	if spare := rules[:2][1]; spare != (doc.Rule{}) {
+		t.Errorf("the page's rules were written past their length: %+v", spare)
+	}
+}
