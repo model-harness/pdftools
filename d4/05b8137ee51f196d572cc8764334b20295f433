@@ -1,0 +1,42 @@
+docs/adr/0037-read-a-framed-table-from-its-rules.md
+  s_5cd1b28ed520c1::t_900418f10607e4 1-81
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_90afefb58be30f 10-14
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_a2e426e7d1f23e 40
+layout/lattice.go
+  s_5cd1b28ed520c1::t_0cf8ae60160404 50,58,389
+  s_5cd1b28ed520c1::t_4f1a591a075823 57,66-67,71-77
+  s_5cd1b28ed520c1::t_e7662e2e4a8f60 350-352,355,357,359
+  s_5cd1b28ed520c1::t_743407a4e05848 1-49,51-52,56,59-65,78-349,353-354,356,358,360-388,390-447
+  s_5cd1b28ed520c1::t_f253d57076d8be 53-55,68-70
+layout/tables.go
+  s_5cd1b28ed520c1::t_2d536e89c3a156 250-252
+  s_5cd1b28ed520c1::t_33e99049656302 69-71
+layout/lattice_test.go
+  s_5cd1b28ed520c1::t_8b02a4eb28a7c0 97,99,159,187-189,210,263-270,272-354
+  s_5cd1b28ed520c1::t_28fd31661ee4e9 1-39,44-76,80-96,101-111,115-118,143-149,153-157,161-171,174-183,186,190-209,211,215-223,225-239,242-262,355-356
+  s_5cd1b28ed520c1::t_3b4d63e2f09d0e 119-142
+  s_5cd1b28ed520c1::t_604bfb82c9f070 40-43,77-79,98,100,112-114,150-152,158,160,172-173,212,214,224,240-241
+  s_5cd1b28ed520c1::t_4f1a591a075823 357,376-377
+  s_5cd1b28ed520c1::t_79bb5dbb7fd865 184-185,213
+  s_5cd1b28ed520c1::t_2388b436eab359 271
+  s_5cd1b28ed520c1::t_84848847f91abc 360-364
+  s_5cd1b28ed520c1::t_f253d57076d8be 358-359,365-375
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d405b8137ee51f196d572cc8764334b20295f433",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
