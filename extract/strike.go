@@ -70,37 +70,47 @@ func struck(f *frag, rules []doc.Rule, lo, hi float64) []frag {
 		return []frag{*f}
 	}
 	cover = merged(cover)
-	// The words, each its text's byte range and its extent.
+	strike := func(x0, x1 float64) string {
+		got := 0.0
+		for _, c := range cover {
+			got += math.Max(0, math.Min(c[1], x1)-math.Max(c[0], x0))
+		}
+		if x1 > x0 && got >= 0.5*(x1-x0) {
+			return "struck"
+		}
+		return ""
+	}
+	return splitWords(f, strike, func(p *frag, key string) { p.style.Strike = key != "" })
+}
+
+// splitWords splits f into runs of words that key gives the same value, and hands each run
+// with its value to apply. A word is a stretch between two of f's recorded gaps; key is asked
+// of each word's extent. Each run keeps the gaps inside it, at offsets into its own text, since
+// later passes read them.
+func splitWords(f *frag, key func(x0, x1 float64) string, apply func(p *frag, key string)) []frag {
 	type word struct {
 		lo, hi int
 		x0, x1 float64
 		cut    int // the cut that ends it, or -1 for the last
+		key    string
 	}
 	var words []word
 	at, x0 := 0, f.along0
 	for ci, c := range f.cuts {
-		words = append(words, word{at, c.off, x0, c.x0, ci})
+		words = append(words, word{at, c.off, x0, c.x0, ci, key(x0, c.x0)})
 		at, x0 = c.off, c.x1
 	}
-	words = append(words, word{at, len(f.text), x0, f.along1, -1})
-	struckWord := func(w word) bool {
-		got := 0.0
-		for _, c := range cover {
-			got += math.Max(0, math.Min(c[1], w.x1)-math.Max(c[0], w.x0))
-		}
-		return w.x1 > w.x0 && got >= 0.5*(w.x1-w.x0)
-	}
+	words = append(words, word{at, len(f.text), x0, f.along1, -1, key(x0, f.along1)})
 	var out []frag
 	for i := 0; i < len(words); {
-		s := struckWord(words[i])
 		j := i
-		for j+1 < len(words) && struckWord(words[j+1]) == s {
+		for j+1 < len(words) && words[j+1].key == words[i].key {
 			j++
 		}
 		p := *f
 		p.text = append([]byte(nil), f.text[words[i].lo:words[j].hi]...)
 		p.along0, p.along1 = words[i].x0, words[j].x1
-		p.style.Strike = s
+		apply(&p, words[i].key)
 		p.cuts = nil
 		for k := i; k < j; k++ {
 			c := f.cuts[words[k].cut]

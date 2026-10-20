@@ -64,6 +64,9 @@ type run struct {
 
 	// gutters are the verticals splitAtGutters inferred from white space, for doc.Page.Gutters.
 	gutters []doc.Rule
+
+	// links are the page's links to a URI, which linkWords gives the words they cover.
+	links []link
 }
 
 // frag is a run of glyphs sharing a style and a baseline.
@@ -111,6 +114,9 @@ type frag struct {
 	// it likes — reference/table.pdf interleaves the two, so a decision made at the
 	// gap would be reading a partially built grid.
 	cuts []cut
+
+	// link is the URI the fragment's words link to, or empty; see linkWords.
+	link string
 
 	// apart marks a fragment that split off from the one before it at a rule, and
 	// must not be merged back into it by appendLine. Without it the split would be
@@ -797,6 +803,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	}
 	r.splitAtRules()
 	r.strikeThrough()
+	r.linkWords()
 	r.sortLines()
 	r.splitAtGutters()
 	r.joinFractions()
@@ -1316,7 +1323,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 		// style says one run, the structure tree says two elements — and merging them
 		// resolves the heading's title to the heading plus the paragraph.
 		if n := len(b.Spans); n > 0 && !fr.apart && b.Spans[n-1].MCID == fr.mcid &&
-			b.Spans[n-1].Style.SameRun(fr.style, t) {
+			b.Spans[n-1].Link == fr.link && b.Spans[n-1].Style.SameRun(fr.style, t) {
 			if start.Span < 0 {
 				start.Span, start.Offset = n-1, len(b.Spans[n-1].Text)
 			}
@@ -1332,6 +1339,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 				Box:   box,
 				Page:  page,
 				MCID:  fr.mcid,
+				Link:  fr.link,
 			})
 		}
 		b.Box = b.Box.Union(box)

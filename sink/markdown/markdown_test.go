@@ -980,3 +980,71 @@ func TestAStruckRunIsTildes(t *testing.T) {
 		})
 	}
 }
+
+func linked(uri string) func(*doc.Span) { return func(s *doc.Span) { s.Link = uri } }
+
+// TestALinkIsWrittenAsGFMHasIt: a link's text in brackets and its URI after, the whitespace
+// outside, its emphasis inside; a URI that is its own text written once, bare where GFM links it
+// so and in angle brackets where it does not; and the characters a destination cannot hold
+// encoded (ADR 0041).
+func TestALinkIsWrittenAsGFMHasIt(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		spans []doc.Span
+		want  string
+	}{
+		{"a text link", []doc.Span{span("see "), span("the blog ", linked("https://example.org/b")), span("now")},
+			"see [the blog](https://example.org/b) now"},
+		{"emphasis inside", []doc.Span{span("Blog", bold, linked("https://example.org/b"))}, "[**Blog**](https://example.org/b)"},
+		{"a URI that is its text", []doc.Span{span("https://example.org/x", linked("https://example.org/x"))}, "https://example.org/x"},
+		{"a mail address that is its text", []doc.Span{span("mailto:a@example.org", linked("mailto:a@example.org"))}, "<mailto:a@example.org>"},
+		{"a scheme in capitals that is its text", []doc.Span{span("HTTPS://example.org", linked("HTTPS://example.org"))}, "<HTTPS://example.org>"},
+		{"a URI that needs encoding", []doc.Span{span("odd", linked("https://example.org/a b(c)|d"))}, "[odd](https://example.org/a%20b%28c%29%7Cd)"},
+		{"two links beside each other", []doc.Span{span("one", linked("https://a.example")), span(" two", linked("https://b.example"))},
+			"[one](https://a.example) [two](https://b.example)"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := strings.TrimSpace(render(t, para(c.spans...))); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+	if got := inline([]doc.Span{span("plain", linked("https://example.org"))}, true, false); got != "plain" {
+		t.Errorf("plain = %q, want the text alone inside markers", got)
+	}
+}
+
+// TestALeaderIsOneSpace: a table of contents' dot leader carries the eye to a page number along
+// a line Markdown does not have, so it is written as one space; an ellipsis in prose and dots in
+// code are text.
+func TestALeaderIsOneSpace(t *testing.T) {
+	for _, c := range []struct {
+		spans []doc.Span
+		want  string
+	}{
+		{[]doc.Span{span("Scope ........................ 1")}, "Scope 1"},
+		{[]doc.Span{span("Scope . . . . . . . 1")}, "Scope 1"},
+		{[]doc.Span{span("Scope……… 1")}, "Scope 1"},
+		{[]doc.Span{span("Scope ....")}, "Scope"},
+		{[]doc.Span{span("And so... it ends.")}, "And so... it ends."},
+		{[]doc.Span{span("x"), span("a......b", mono)}, "x`a......b`"},
+	} {
+		if got := strings.TrimSpace(render(t, para(c.spans...))); got != c.want {
+			t.Errorf("%q = %q, want %q", c.spans[0].Text, got, c.want)
+		}
+	}
+}
+
+// TestOutputIsShapedForAModel pins #7's output rules: a paragraph is one line however many it
+// was drawn on, and blocks are one blank line apart.
+func TestOutputIsShapedForAModel(t *testing.T) {
+	d := &doc.Document{Pages: []doc.Page{{Number: 1, Blocks: []doc.Block{
+		para(span("A paragraph drawn "), span("over two lines.")),
+		para(span("Another.")),
+		{Role: doc.RoleHeading, Level: 2, Spans: []doc.Span{span("Heading")}},
+		para(span("After it.")),
+	}}}}
+	if got, want := String(d, DefaultOptions), "A paragraph drawn over two lines.\n\nAnother.\n\n## Heading\n\nAfter it.\n"; got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}

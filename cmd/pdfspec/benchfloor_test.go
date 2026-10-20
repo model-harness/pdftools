@@ -64,6 +64,7 @@ var benchTargets = benchFigures{
 var benchEnforced = map[string]bool{
 	"order":  true, // #3, ADR 0030
 	"tables": true, // #5, ADR 0038
+	"style":  true, // #7, ADR 0041
 }
 
 func TestBenchmarkFloors(t *testing.T) {

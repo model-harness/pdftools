@@ -312,7 +312,11 @@ func TestMDOutlineConservesText(t *testing.T) {
 	} {
 		t.Run(file, func(t *testing.T) {
 			path := corpusFile(t, file)
-			flat := alnumCounts(mdOut(t, "-flat", path))
+			// A link's destination is markup, the URI its annotation holds, and the two
+			// renderings write different numbers of them where they cut a link's run in
+			// different places. So it comes off both sides; the link's text, which the
+			// page draws, stays (ADR 0041).
+			flat := alnumCounts(linkTarget.ReplaceAllString(mdOut(t, "-flat", path), "]"))
 
 			md := mdOut(t, path)
 			// The sink's own notes are the one thing in the output that is neither the
@@ -320,7 +324,7 @@ func TestMDOutlineConservesText(t *testing.T) {
 			// by their prefix rather than as any HTML comment: WTPDF prints XMP examples
 			// that contain real comments, and stripping those would take 322 letters of
 			// document content off one side of the comparison only.
-			out := alnumCounts(sinkNote.ReplaceAllString(md, ""))
+			out := alnumCounts(linkTarget.ReplaceAllString(sinkNote.ReplaceAllString(md, ""), "]"))
 
 			missing := 0
 			for r, n := range flat {
@@ -367,6 +371,10 @@ func TestMDOutlineConservesText(t *testing.T) {
 // sinkNote matches the comment WriteOutline emits above unplaced text. Anchored on the
 // "pdfspec:" prefix on purpose — see TestMDOutlineConservesText.
 var sinkNote = regexp.MustCompile(`<!-- pdfspec:[^>]*-->`)
+
+// linkTarget matches a GFM link's destination after its text, which the sink percent-encodes so
+// that it holds no space or parenthesis.
+var linkTarget = regexp.MustCompile(`\]\([^ ()]*\)`)
 
 // forEachBlock visits every block an outline holds, wherever it sits.
 func forEachBlock(o *doc.Outline, fn func(doc.Block)) {

@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/model-harness/pdftools/doc"
@@ -21,6 +22,15 @@ import (
 func inline(spans []doc.Span, plain, cell bool) string {
 	var sb strings.Builder
 	for i := 0; i < len(spans); {
+		if spans[i].Link != "" && !plain {
+			j := i + 1
+			for j < len(spans) && spans[j].Link == spans[i].Link {
+				j++
+			}
+			writeLink(&sb, spans[i:j], cell)
+			i = j
+			continue
+		}
 		if spans[i].Note != "" && !plain {
 			// A footnote's mark, written as the GFM reference to its definition, which
 			// writer.footnotes emits. Inside markers it stays the page's own text, since a
@@ -49,7 +59,7 @@ func inline(spans []doc.Span, plain, cell bool) string {
 		}
 
 		j, st := i+1, style(spans[i], plain)
-		for j < len(spans) && style(spans[j], plain) == st && spans[j].Note == "" {
+		for j < len(spans) && style(spans[j], plain) == st && spans[j].Note == "" && (plain || spans[j].Link == "") {
 			j++
 		}
 		writeRun(&sb, spans[i:j], st, sb.Len() == 0, cell)
@@ -144,6 +154,9 @@ func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart, cell bool)
 	s := text.String()
 
 	strike := m&markStrike != 0
+	if m&^markStrike != markCode {
+		s = noLeaders(s)
+	}
 	m &^= markStrike
 	if m == markCode {
 		if !strike {
@@ -544,4 +557,56 @@ func orderedMarker(s string, i int) bool {
 		return true
 	}
 	return false
+}
+
+// writeLink writes a run of spans that link to one URI as a GFM link, its whitespace outside the
+// brackets as emphasis's is outside its delimiters (ADR 0041). A link whose text is its own URI
+// says it once: as the text, for a scheme GFM links where it stands (http, https, ftp), or as
+// <uri> for one it does not, mailto.
+func writeLink(sb *strings.Builder, spans []doc.Span, cell bool) {
+	uri := spans[0].Link
+	plain := make([]doc.Span, len(spans))
+	var raw strings.Builder
+	for i, sp := range spans {
+		sp.Link = ""
+		plain[i] = sp
+		raw.WriteString(sp.Text)
+	}
+	text := raw.String()
+	lead := text[:len(text)-len(strings.TrimLeft(text, " \t"))]
+	trail := text[len(strings.TrimRight(text, " \t")):]
+	inner := strings.TrimSpace(inline(plain, false, cell))
+	sb.WriteString(lead)
+	switch {
+	case strings.TrimSpace(text) == uri && autolinked(uri):
+		sb.WriteString(inner)
+	case strings.TrimSpace(text) == uri:
+		sb.WriteString("<" + destination(uri) + ">")
+	default:
+		sb.WriteString("[" + inner + "](" + destination(uri) + ")")
+	}
+	sb.WriteString(trail)
+}
+
+// destination escapes the characters a link destination cannot hold as they are: whitespace ends
+// it, brackets and parentheses close it, and a pipe ends a table cell before the link is read.
+var destination = strings.NewReplacer(" ", "%20", "(", "%28", ")", "%29", "<", "%3C", ">", "%3E", "|", "%7C").Replace
+
+// autolinked reports whether GFM links a URI written bare in text: its extended autolinks take
+// http, https and ftp, in lower case, and not mailto. pandoc -f gfm links "https://example.org"
+// and leaves "HTTPS://example.org" as text.
+func autolinked(uri string) bool {
+	return strings.HasPrefix(uri, "http://") || strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "ftp://")
+}
+
+// leaders matches a table of contents' dot leaders with the space around them: four dots or
+// more, spaced or not, or two ellipses or more. Three dots are an ellipsis in prose.
+var leaders = regexp.MustCompile(`[ \t\x{a0}]*(?:(?:\.[ \x{a0}]?){4,}|\x{2026}{2,})[ \t\x{a0}]*`)
+
+// noLeaders writes a dot leader as one space. A leader is drawn to carry the eye along a line
+// to its page number, which Markdown has no line to carry it along; written out it is 150 dots
+// in an ISO 32000-2 contents entry, the decorative characters a model reads as tokens and
+// nothing else (ADR 0041).
+func noLeaders(s string) string {
+	return leaders.ReplaceAllString(s, " ")
 }

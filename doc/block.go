@@ -348,6 +348,10 @@ type Span struct {
 	// says which page a non-empty one belongs to.
 	Page int
 
+	// Link is the URI the run links to, read from the page's link annotations, or empty.
+	// Only a URI a reader follows, http, https, mailto or ftp, is carried (ADR 0041).
+	Link string
+
 	// Note is the label of the footnote this run marks, or empty for a run that marks
 	// none. The run keeps the mark's own text, a raised "1" or "*", so a sink that
 	// cannot link a note still says what the page says; one that can writes a

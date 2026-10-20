@@ -5,6 +5,17 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 (links)
+
+- **Links are `[text](url)`.** ADR 0041, closes issue #7. A page's URI link annotations give
+  the words they cover their address, which the sink writes as a GFM link. Only http, https,
+  mailto and ftp are kept; a `javascript:` or `file:` URI never reaches the output. 77 more
+  links across 14 documents, several fixing URLs the text breaks. New model field: `Span.Link`.
+- **Dot leaders are one space.** A table of contents' leaders carry the eye along a line
+  Markdown does not have.
+- **The output rules are pinned:** one line per paragraph, one blank line between blocks.
+  The style target is now enforced.
+
 ### Changed — 2026-10-20 (style)
 
 - **Struck text is `~~struck~~`.** ADR 0040, issue #7. A thin rule drawn through the letters'
