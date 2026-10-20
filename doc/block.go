@@ -58,9 +58,9 @@ const (
 	RoleArtifact Role = "artifact"
 
 	// RoleFootnote is a note's text, set apart from the body and pointed at by a mark
-	// in it. Block.Marker is its label, and the span that marks it carries the same
-	// label in Span.Note, so a sink can link the two: Markdown writes them as a GFM
-	// footnote reference and its definition.
+	// in it. Block.Note is its label, and the span that marks it carries the same label
+	// in Span.Note, so a sink can link the two: Markdown writes them as a GFM footnote
+	// reference and its definition. Block.Marker is the label as the page writes it.
 	RoleFootnote Role = "footnote"
 )
 
@@ -82,8 +82,9 @@ type Block struct {
 	// Marker is a list item's label with the item's own text — the bullet glyph a
 	// page draws, or the number or letter an ordered list counts. Empty for
 	// everything that is not a list item, and for an item whose label is neither
-	// declared nor drawn. A RoleFootnote's label is here too, the one its mark's
-	// Span.Note names.
+	// declared nor drawn. A RoleFootnote's label as the page writes it is here too,
+	// "1)" or "*", which is the text the page draws and so the text a conservation count
+	// asks for.
 	//
 	// It is a field rather than a prefix on the text for the reason Docling's
 	// ListItem separates the two: a marker kept inside the text has to be re-found
@@ -94,6 +95,12 @@ type Block struct {
 	// a sink that wants them needs to know they existed. Enumerated is that
 	// distinction, derived from this.
 	Marker string
+
+	// Note is a RoleFootnote's label, the one its mark's Span.Note names, and empty for
+	// every other role. It is an identifier, not page text: "1" for a mark set "1)", "fn1"
+	// for one set "*", which GFM would read as emphasis, and "1-2" for the second note a
+	// document numbers 1. Marker holds what the page says.
+	Note string
 
 	// Cell places a RoleTableCell in its table, and is nil for every other role.
 	// See Cell for why the position is on the block rather than the blocks being

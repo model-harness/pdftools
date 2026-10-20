@@ -294,6 +294,11 @@ func TestMDFlatEmitsNoHeadings(t *testing.T) {
 // merged model used to write over three real captions. Asserting against the /Alt total
 // instead would demand that loss back.
 //
+// A footnote's id is the other thing the outline writes that the page does not draw (ADR
+// 0039). It replaces the note's mark at the reference and stands before its definition, so
+// it gains what it has over the mark at each: nothing for "1)" written as "1", two digits for
+// ISO 32000-2's second note numbered 1, written "1-2".
+//
 // The /ActualText arm of that rule contributes 0 here and cannot contribute more: every
 // one of the 4803 /ActualText values on disk is on an inline Span, which never becomes a
 // block, so no corpus file can exercise it. It is written into the sum so that the day a
@@ -334,9 +339,15 @@ func TestMDOutlineConservesText(t *testing.T) {
 				}
 			}
 			_, o, _ := outlineOf(t, file)
-			subst, altTotal := 0, 0
+			subst, altTotal, ids := 0, 0, 0
 			forEachBlock(o, func(b doc.Block) {
 				altTotal += alnumLen(b.Alt)
+				if b.Role == doc.RoleFootnote {
+					// A footnote's id is markup written twice, at its reference and its
+					// definition, where the page drew its mark: "1-2" for a second note set
+					// "1" adds a digit at each.
+					ids += 2 * (alnumLen(b.Note) - alnumLen(b.Marker))
+				}
 				switch {
 				case b.Replacement != "":
 					subst += alnumLen(b.Replacement)
@@ -344,11 +355,11 @@ func TestMDOutlineConservesText(t *testing.T) {
 					subst += alnumLen(b.Alt)
 				}
 			})
-			if gained != subst {
-				t.Errorf("outline gained %d letters and digits but substitutes %d: the difference is invented",
-					gained, subst)
+			if gained != subst+ids {
+				t.Errorf("outline gained %d letters and digits but substitutes %d and writes %d in footnote ids: the difference is invented",
+					gained, subst, ids)
 			}
-			t.Logf("no letter lost, %d gained, all of it substituted; /Alt totals %d", gained, altTotal)
+			t.Logf("no letter lost, %d gained, %d substituted and %d in footnote ids; /Alt totals %d", gained, subst, ids, altTotal)
 		})
 	}
 }

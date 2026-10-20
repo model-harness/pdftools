@@ -905,7 +905,7 @@ func note(label string) func(*doc.Span) { return func(s *doc.Span) { s.Note = la
 
 // footnote is a RoleFootnote block labelled label.
 func footnote(label, text string) doc.Block {
-	return doc.Block{Role: doc.RoleFootnote, Marker: label, Spans: []doc.Span{span(text)}}
+	return doc.Block{Role: doc.RoleFootnote, Note: label, Spans: []doc.Span{span(text)}}
 }
 
 // TestFootnotesAreReferencesAndDefinitions: a note's mark is a GFM reference in place of the

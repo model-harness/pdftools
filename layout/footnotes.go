@@ -24,7 +24,8 @@ import (
 // at no more than 0.8 of the line's size. In reference/footnotes.pdf that is 4.2pt up in a
 // 9.96pt line, at 6.97pt, and the same shape one size down in the notes (ADR 0036).
 //
-// A note becomes a RoleFootnote whose Marker is its label, without the mark; the mark in the
+// A note becomes a RoleFootnote whose Note is its label and Marker its mark, the mark taken
+// from its text; the mark in the
 // text keeps its own characters and gains the label in Span.Note. A label is the mark's
 // number, with its page added where an earlier page used the number already. A mark that
 // is not a number becomes "fn" and a count, since a GFM label of "*" would be read as
@@ -88,7 +89,8 @@ func Footnotes(d *doc.Document) int {
 			used[label] = true
 			p.Blocks[r.block].Spans[r.span].Note = label
 			b.Spans[si].Text = ""
-			b.SetMarker(label)
+			b.SetMarker(mark)
+			b.Note = label
 			b.Role = doc.RoleFootnote
 			found++
 		}

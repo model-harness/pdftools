@@ -78,8 +78,8 @@ func TestFootnotesPairAMarkWithItsNote(t *testing.T) {
 	}
 	for i, want := range []struct{ marker, text string }{{"1", "Counted over three summers."}, {"2", "The eastern shore is open to grazing."}} {
 		b := bs[2+i]
-		if b.Role != doc.RoleFootnote || b.Marker != want.marker || b.Text() != want.text {
-			t.Errorf("note %d = %s %q %q, want a footnote %q %q", i, b.Role, b.Marker, b.Text(), want.marker, want.text)
+		if b.Role != doc.RoleFootnote || b.Note != want.marker || b.Marker != want.marker || b.Text() != want.text {
+			t.Errorf("note %d = %s %q %q %q, want a footnote %q %q", i, b.Role, b.Note, b.Marker, b.Text(), want.marker, want.text)
 		}
 	}
 	if !slices.Equal(bs[2].MCIDs, []int{10}) || !slices.Equal(bs[3].MCIDs, []int{11}) {
@@ -170,6 +170,13 @@ func TestFootnoteLabels(t *testing.T) {
 	}
 	if want := []string{"1", "1-2", "fn1", "fn2"}; !slices.Equal(got, want) {
 		t.Errorf("labels = %q, want %q", got, want)
+	}
+	// The label is an identifier; the mark the page drew stays the note's Marker.
+	if n := d.Pages[2].Blocks[1]; n.Note != "fn1" || n.Marker != "*" {
+		t.Errorf("symbol note = Note %q Marker %q, want fn1 and *", n.Note, n.Marker)
+	}
+	if n := d.Pages[1].Blocks[1]; n.Note != "1-2" || n.Marker != "1" {
+		t.Errorf("repeated note = Note %q Marker %q, want 1-2 and 1", n.Note, n.Marker)
 	}
 	for _, mark := range []string{"1234", "12a", "x", "**††"} {
 		if label.MatchString(mark) {

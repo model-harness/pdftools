@@ -346,7 +346,7 @@ func (w *writer) gap(kind listKind, depth int) {
 func (w *writer) footnotes() {
 	for _, b := range w.notes {
 		w.gap(notList, 0)
-		w.str("[^" + b.Marker + "]: ")
+		w.str("[^" + b.Note + "]: ")
 		w.content(b, false)
 		w.nl()
 		w.blank = false

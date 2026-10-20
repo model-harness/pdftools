@@ -109,6 +109,7 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 	}
 
 	b := &builder{opt: opt, index: newIndex(d)}
+	b.notes = readNotes(tr, b.index)
 	b.visit(tr.Root)
 
 	out.Sections = b.roots
@@ -136,6 +137,9 @@ type builder struct {
 	// tables numbers each Table element the first time one of its cells is emitted.
 	// See tableNum.
 	tables map[*tag.Elem]int
+
+	// notes are the document's footnotes and their marks, read before the tree is built.
+	notes notes
 }
 
 // visit descends one element.
@@ -151,6 +155,10 @@ func (b *builder) visit(e *tag.Elem) {
 	}
 	if e.Role.IsHeading() {
 		b.heading(e)
+		return
+	}
+	if _, ok := b.notes.label[e]; ok {
+		b.note(e)
 		return
 	}
 	if role, ok := blockRole(e.Role); ok {
@@ -978,7 +986,9 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 			}
 		},
 		func(k *tag.Elem) {
-			if k.Role.IsHeading() {
+			// A note is not part of the text that cites it; it is emitted after it, a
+			// footnote of its own.
+			if _, ok := b.notes.label[k]; k.Role.IsHeading() || ok {
 				*nested = append(*nested, k)
 				return
 			}
@@ -1073,6 +1083,9 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	box := 0
 	for _, s := range spans {
 		blk.Spans = append(blk.Spans, *s)
+		if label, ok := b.notes.marks[s]; ok {
+			blk.Spans[len(blk.Spans)-1].Note = label
+		}
 		if s.Page > 0 && box == 0 {
 			box = s.Page
 		}
@@ -1096,6 +1109,10 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	// marker would then be emitted as a bullet with nothing after it.
 	if role == doc.RoleListItem {
 		markItem(&blk, marker)
+	}
+	if role == doc.RoleFootnote {
+		blk.Marker, blk.Note = b.notes.raw[e], marker
+		stripNote(&blk, blk.Marker)
 	}
 	b.place(blk, pg)
 }
@@ -1647,4 +1664,32 @@ func clauseNumber(title string) string {
 		return ""
 	}
 	return tok
+}
+
+// text returns the text of e and its descendants, in order, without claiming it.
+func (ix *index) text(e *tag.Elem) string {
+	var sb strings.Builder
+	inOrder(e,
+		func(refs []tag.MCRef) {
+			for _, r := range refs {
+				for _, sp := range ix.spans[key{r.Page, r.MCID}] {
+					sb.WriteString(sp.Text)
+				}
+			}
+		},
+		func(k *tag.Elem) { sb.WriteString(ix.text(k)) })
+	return sb.String()
+}
+
+// spansOf returns the spans of e and its descendants, in order, without claiming them.
+func (ix *index) spansOf(e *tag.Elem) []*doc.Span {
+	var out []*doc.Span
+	inOrder(e,
+		func(refs []tag.MCRef) {
+			for _, r := range refs {
+				out = append(out, ix.spans[key{r.Page, r.MCID}]...)
+			}
+		},
+		func(k *tag.Elem) { out = append(out, ix.spansOf(k)...) })
+	return out
 }

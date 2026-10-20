@@ -5,6 +5,15 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 (tagged notes)
+
+- **Tagged notes are GFM footnotes.** ADR 0039, closes issue #20. A `Note` whose text opens
+  with a label is paired with its mark, either an element beside it saying the label or a
+  raised digit in an earlier paragraph. It becomes a definition written after the text, and
+  its mark becomes a reference. All 25 notes in the five tagged standards that declare them
+  are linked. New model field: `Block.Note`, a footnote's id. `Marker` keeps the label as the
+  page draws it.
+
 ### Fixed — 2026-10-20
 
 - **A table cell keeps its first characters.** A cell is inline content, so a `-`, `>`, `#`,
