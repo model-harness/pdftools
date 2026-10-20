@@ -56,6 +56,12 @@ const (
 	// rather than dropped at extraction, because "is this a header" is a judgement
 	// and the evidence for it is here; a sink omits them, and probe can count them.
 	RoleArtifact Role = "artifact"
+
+	// RoleFootnote is a note's text, set apart from the body and pointed at by a mark
+	// in it. Block.Marker is its label, and the span that marks it carries the same
+	// label in Span.Note, so a sink can link the two: Markdown writes them as a GFM
+	// footnote reference and its definition.
+	RoleFootnote Role = "footnote"
 )
 
 // Block is a run of content that a sink emits as one unit.
@@ -76,7 +82,8 @@ type Block struct {
 	// Marker is a list item's label with the item's own text — the bullet glyph a
 	// page draws, or the number or letter an ordered list counts. Empty for
 	// everything that is not a list item, and for an item whose label is neither
-	// declared nor drawn.
+	// declared nor drawn. A RoleFootnote's label is here too, the one its mark's
+	// Span.Note names.
 	//
 	// It is a field rather than a prefix on the text for the reason Docling's
 	// ListItem separates the two: a marker kept inside the text has to be re-found
@@ -333,6 +340,12 @@ type Span struct {
 	// about five real positions. An empty Box is what says there is no position; this field
 	// says which page a non-empty one belongs to.
 	Page int
+
+	// Note is the label of the footnote this run marks, or empty for a run that marks
+	// none. The run keeps the mark's own text, a raised "1" or "*", so a sink that
+	// cannot link a note still says what the page says; one that can writes a
+	// reference in its place.
+	Note string
 
 	// MCID is the marked-content identifier this run was drawn inside, or -1 when it
 	// was drawn outside any marked-content sequence. Combined with the page number it

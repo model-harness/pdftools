@@ -35,6 +35,12 @@ func (w *writer) blocks(list []doc.Block, opt Options) {
 		if b.IsEmpty() {
 			continue
 		}
+		if b.Role == doc.RoleFootnote {
+			// Held for the end of what is being written: a note's definition is not part of
+			// the text it interrupts on the page. See footnotes.
+			w.notes = append(w.notes, b)
+			continue
+		}
 		n := tableOf(b)
 		if n == 0 {
 			w.block(b)

@@ -60,6 +60,7 @@ func Write(w io.Writer, d *doc.Document, opt Options) error {
 	for i := range d.Pages {
 		mw.page(d.Pages[i], opt)
 	}
+	mw.footnotes()
 	if err := mw.err; err != nil {
 		return err
 	}
@@ -89,6 +90,7 @@ func WritePage(w io.Writer, meta doc.Metadata, p doc.Page, total int, opt Option
 		mw.nl()
 	}
 	mw.page(p, opt)
+	mw.footnotes()
 	if err := mw.err; err != nil {
 		return err
 	}
@@ -107,6 +109,7 @@ func WriteBlocks(w io.Writer, blocks []doc.Block, opt Options) error {
 	bw := bufio.NewWriter(w)
 	mw := &writer{w: bw}
 	mw.blocks(blocks, opt)
+	mw.footnotes()
 	if err := mw.err; err != nil {
 		return err
 	}
@@ -171,6 +174,10 @@ func String(d *doc.Document, opt Options) string {
 type writer struct {
 	w   *bufio.Writer
 	err error
+
+	// notes are the footnotes blocks has held back, written by footnotes once the text they
+	// annotate has been.
+	notes []doc.Block
 
 	// blank reports that the last thing written already ended with a blank line, so
 	// the next block does not add a second one. Markdown treats one blank line as a
@@ -329,6 +336,21 @@ func (w *writer) gap(kind listKind, depth int) {
 	}
 	if !w.blank {
 		w.nl()
+	}
+}
+
+// footnotes writes the notes blocks held back, as GFM footnote definitions, at the end of
+// what is being written: a document, a page with -split, or a clause in a bundle. GFM
+// renders a definition at the end wherever it stands, and a model reading the source gets the
+// text unbroken and the notes after it, which is where the gold files put them.
+func (w *writer) footnotes() {
+	for _, b := range w.notes {
+		w.gap(notList, 0)
+		w.str("[^" + b.Marker + "]: ")
+		w.content(b, false)
+		w.nl()
+		w.blank = false
+		w.lastList = notList
 	}
 }
 

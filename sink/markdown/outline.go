@@ -35,6 +35,7 @@ func WriteOutline(w io.Writer, o *doc.Outline, opt Options) error {
 		return true
 	})
 	mw.unplaced(o.Unplaced, opt)
+	mw.footnotes()
 
 	if err := mw.err; err != nil {
 		return err

@@ -21,6 +21,14 @@ import (
 func inline(spans []doc.Span, plain, cell bool) string {
 	var sb strings.Builder
 	for i := 0; i < len(spans); {
+		if spans[i].Note != "" && !plain {
+			// A footnote's mark, written as the GFM reference to its definition, which
+			// writer.footnotes emits. Inside markers it stays the page's own text, since a
+			// reference inside link text or a heading's emphasis is not one.
+			sb.WriteString("[^" + spans[i].Note + "]")
+			i++
+			continue
+		}
 		if strings.TrimSpace(spans[i].Text) == "" {
 			// Whitespace-only: emitted so word boundaries survive, but never wrapped.
 			// Emphasis delimiters cannot be adjacent to the whitespace they contain, so
@@ -41,7 +49,7 @@ func inline(spans []doc.Span, plain, cell bool) string {
 		}
 
 		j, st := i+1, style(spans[i], plain)
-		for j < len(spans) && style(spans[j], plain) == st {
+		for j < len(spans) && style(spans[j], plain) == st && spans[j].Note == "" {
 			j++
 		}
 		writeRun(&sb, spans[i:j], st, sb.Len() == 0, cell)

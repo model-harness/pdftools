@@ -124,6 +124,13 @@ func splitAtIndent(b *doc.Block, own float64) (doc.Block, bool) {
 	if k == len(b.Lines) {
 		return doc.Block{}, false
 	}
+	return cutAtLine(b, k)
+}
+
+// cutAtLine cuts b before its line k, leaving b the lines before it, and returns the rest as a
+// block of its own: its spans from the cut on, its lines rebased onto them, and each half's box
+// its own lines'. False, with b untouched, when the lines before the cut drew only spaces.
+func cutAtLine(b *doc.Block, k int) (doc.Block, bool) {
 	cut := b.Lines[k]
 	rest := *b
 	rest.Spans = slices.Clone(b.Spans[cut.Span:])
@@ -150,12 +157,19 @@ func splitAtIndent(b *doc.Block, own float64) (doc.Block, bool) {
 	// The wrap space at the cut trails whichever span ends the first half.
 	spans[len(spans)-1].Text = strings.TrimRight(spans[len(spans)-1].Text, " ")
 	b.Spans, b.Lines = spans, b.Lines[:k]
+	b.Box = geom.Rect{}
+	for i := range b.Lines {
+		b.Box = b.Box.Union(b.Lines[i].Box)
+	}
+	b.SetMCIDs()
 	return rest, true
 }
 
+// firstBody and lastBody pass over furniture and footnotes, which stand between a paragraph and
+// its continuation on the page without being part of the text that runs on.
 func firstBody(blocks []doc.Block) int {
 	for i, b := range blocks {
-		if b.Role != doc.RoleArtifact && !b.IsEmpty() {
+		if !aside(b) {
 			return i
 		}
 	}
@@ -164,7 +178,7 @@ func firstBody(blocks []doc.Block) int {
 
 func lastBody(blocks []doc.Block) int {
 	for i := len(blocks) - 1; i >= 0; i-- {
-		if b := blocks[i]; b.Role != doc.RoleArtifact && !b.IsEmpty() {
+		if b := blocks[i]; !aside(b) {
 			return i
 		}
 	}
@@ -243,11 +257,11 @@ func bodyEdge(blocks []doc.Block, n int, right bool) float64 {
 	return e
 }
 
-// bodyFoot is the lowest bottom edge of page n's text, artifacts aside.
+// bodyFoot is the lowest bottom edge of page n's text, furniture and footnotes aside.
 func bodyFoot(blocks []doc.Block, n int) float64 {
 	f := math.Inf(1)
 	for i := range blocks {
-		if blocks[i].Role == doc.RoleArtifact || blocks[i].IsEmpty() {
+		if aside(blocks[i]) {
 			continue
 		}
 		for _, ln := range linesOn(&blocks[i], n) {
@@ -262,4 +276,10 @@ func startsLowerText(s string) bool {
 		return unicode.IsLower(r)
 	}
 	return false
+}
+
+// aside reports a block that is not the page's running text: furniture, a footnote, or one that
+// drew only spaces.
+func aside(b doc.Block) bool {
+	return b.Role == doc.RoleArtifact || b.Role == doc.RoleFootnote || b.IsEmpty()
 }

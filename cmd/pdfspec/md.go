@@ -215,6 +215,7 @@ func inferRoles(d *doc.Document) {
 	layout.Headings(d, layout.DefaultOptions)
 	layout.Lists(d, layout.DefaultOptions)
 	layout.OrderedLists(d, layout.DefaultOptions)
+	layout.Footnotes(d)
 	layout.PageBreaks(d)
 	// Again after PageBreaks, which makes line starts of its own; see writeMarkdown.
 	layout.Hyphens(d)

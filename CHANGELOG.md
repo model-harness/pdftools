@@ -7,6 +7,12 @@ All notable changes to this project are documented here, following
 
 ### Changed — 2026-10-20
 
+- **Footnotes are GFM footnotes.** ADR 0036, closes issue #6. On an untagged page, a raised
+  small mark in the text is paired with a note at the foot that opens with the same mark. The
+  mark becomes `[^label]`, and the note becomes a definition written after the text. Several
+  notes in one block are cut apart, and a paragraph that a page of notes split is joined.
+  `footnotes` went from CER 0.019 and blocks 0.571 to 0.000 and 1.000. New model: `RoleFootnote`
+  and `Span.Note`.
 - **A typesetter's hyphen at a line end is taken out.** ADR 0035, issue #6. The document is
   its own dictionary. A hyphen goes when the document spells the joined word elsewhere and never
   the hyphenated one, or when neither half is a word anywhere in it. Otherwise it stays, as the

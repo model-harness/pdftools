@@ -899,3 +899,61 @@ func TestWritePageMarksAnUnreadablePage(t *testing.T) {
 		t.Errorf("a page that read fine carries the note: %q", clean.String())
 	}
 }
+
+// note marks a span as the mark of footnote label.
+func note(label string) func(*doc.Span) { return func(s *doc.Span) { s.Note = label } }
+
+// footnote is a RoleFootnote block labelled label.
+func footnote(label, text string) doc.Block {
+	return doc.Block{Role: doc.RoleFootnote, Marker: label, Spans: []doc.Span{span(text)}}
+}
+
+// TestFootnotesAreReferencesAndDefinitions: a note's mark is a GFM reference in place of the
+// page's digit, unbroken from the words around it, and the notes come after everything else,
+// each a definition, in the order they were met.
+func TestFootnotesAreReferencesAndDefinitions(t *testing.T) {
+	d := &doc.Document{Pages: []doc.Page{
+		{Number: 1, Blocks: []doc.Block{
+			para(span("on the island"), span("1", note("1")), span(" and beyond.")),
+			footnote("1", "Counted over three summers."),
+		}},
+		{Number: 2, Blocks: []doc.Block{
+			para(span("A second "), span("bold", bold), span("2", note("2-2")), span(" mark.")),
+			footnote("2-2", "Another note."),
+		}},
+	}}
+	want := "on the island[^1] and beyond.\n\nA second **bold**[^2-2] mark.\n\n" +
+		"[^1]: Counted over three summers.\n\n[^2-2]: Another note.\n"
+	if got := String(d, DefaultOptions); got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// TestFootnotesCloseEveryWriter: a page written alone, a run of blocks and an outline each end
+// with the notes they held, so -split and a bundle's clauses carry their own.
+func TestFootnotesCloseEveryWriter(t *testing.T) {
+	blocks := []doc.Block{footnote("1", "The note."), para(span("Text"), span("1", note("1")), span("."))}
+	want := "Text[^1].\n\n[^1]: The note.\n"
+	var sb strings.Builder
+	if err := WritePage(&sb, doc.Metadata{}, doc.Page{Number: 1, Blocks: blocks}, 1, DefaultOptions); err != nil || sb.String() != want {
+		t.Errorf("WritePage = %q, %v; want %q", sb.String(), err, want)
+	}
+	sb.Reset()
+	if err := WriteBlocks(&sb, blocks, DefaultOptions); err != nil || sb.String() != want {
+		t.Errorf("WriteBlocks = %q, %v; want %q", sb.String(), err, want)
+	}
+	if got := OutlineString(&doc.Outline{Preamble: blocks}, DefaultOptions); got != want {
+		t.Errorf("WriteOutline = %q, want %q", got, want)
+	}
+}
+
+// TestAFootnoteMarkInPlainTextIsItsText: inside markers already open, a heading set uniformly in
+// one emphasis, a reference is not one, so the mark stays the page's digit.
+func TestAFootnoteMarkInPlainTextIsItsText(t *testing.T) {
+	if got := inline([]doc.Span{span("Scope"), span("1", note("1"))}, true, false); got != "Scope1" {
+		t.Errorf("plain = %q, want %q", got, "Scope1")
+	}
+	if got := inline([]doc.Span{span("1", note("1")), span(" Scope")}, true, false); got != "1 Scope" {
+		t.Errorf("plain = %q, want %q", got, "1 Scope")
+	}
+}
