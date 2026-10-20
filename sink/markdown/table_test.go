@@ -175,14 +175,38 @@ func TestUnpositionedCellEmitsAsParagraph(t *testing.T) {
 	}
 }
 
-// Inline markup is legal inside a cell and a bold column heading is what these documents
-// draw, so emphasis survives.
+// Inline markup is legal inside a cell, so a body cell keeps its emphasis. A header row set
+// in a header's style, every cell wholly in the same emphasis, is written plain, as a heading
+// is: the header row is a header to GFM already (ADR 0040). A header row whose cells differ,
+// as an operator table's first row of data does, keeps its emphasis.
 func TestCellKeepsEmphasis(t *testing.T) {
-	c := cell(1, 0, 0, true, "")
-	c.Spans = []doc.Span{span("Bold", bold)}
-	got := renderBlocks(t, c)
-	if got != "| **Bold** |\n| --- |\n" {
-		t.Errorf("got %q", got)
+	styled := func(spans ...doc.Span) func(c doc.Block) doc.Block {
+		return func(c doc.Block) doc.Block { c.Spans = spans; return c }
+	}
+	for _, c := range []struct {
+		name string
+		head []doc.Block
+		want string
+	}{
+		{"a bold header row", []doc.Block{styled(span("Vessel", bold))(cell(1, 0, 0, true, "")),
+			styled(span("Calls", bold))(cell(1, 0, 1, true, ""))}, "| Vessel | Calls |"},
+		{"a header row in two styles", []doc.Block{styled(span("add", bold))(cell(1, 0, 0, true, "")),
+			styled(span("sum", italic))(cell(1, 0, 1, true, ""))}, "| **add** | *sum* |"},
+		{"a header cell with plain text in it", []doc.Block{styled(span("Key "), span("name", italic))(cell(1, 0, 0, true, "")),
+			styled(span("Calls", italic))(cell(1, 0, 1, true, ""))}, "| Key *name* | *Calls* |"},
+		{"one header cell", []doc.Block{styled(span("Bold", bold))(cell(1, 0, 0, true, ""))}, "| **Bold** |"},
+		{"a bold header row with an empty cell", []doc.Block{styled(span("Vessel", bold))(cell(1, 0, 0, true, "")),
+			cell(1, 0, 1, true, ""), styled(span("Calls", bold))(cell(1, 0, 2, true, ""))}, "| Vessel |  | Calls |"},
+		{"a bold header row with code in a cell", []doc.Block{styled(span("x", mono), span("Name", bold))(cell(1, 0, 0, true, "")),
+			styled(span("Value", bold))(cell(1, 0, 1, true, ""))}, "| xName | Value |"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			body := styled(span("Data", bold))(cell(1, 1, 0, false, ""))
+			got := renderBlocks(t, append(c.head, body)...)
+			if !strings.HasPrefix(got, c.want+"\n") || !strings.Contains(got, "| **Data** |") {
+				t.Errorf("got %q, want the header %q and the body bold", got, c.want)
+			}
+		})
 	}
 }
 

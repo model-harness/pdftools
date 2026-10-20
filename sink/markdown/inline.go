@@ -67,6 +67,10 @@ const (
 	markBold
 	markBoldItalic
 	markCode
+
+	// markStrike is a bit on any of the above, since a struck run can be bold or code too.
+	// GFM's ~~ goes outside the run's other delimiters.
+	markStrike mark = 1 << 4
 )
 
 // style maps a span's typography to a Markdown marker.
@@ -88,6 +92,14 @@ func style(s doc.Span, plain bool) mark {
 	if plain {
 		return markNone
 	}
+	if s.Style.Strike {
+		return emphasis(s) | markStrike
+	}
+	return emphasis(s)
+}
+
+// emphasis is a span's mark less its strike.
+func emphasis(s doc.Span) mark {
 	if s.Style.Mono && !s.Style.Hidden {
 		return markCode
 	}
@@ -131,13 +143,27 @@ func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart, cell bool)
 	}
 	s := text.String()
 
+	strike := m&markStrike != 0
+	m &^= markStrike
 	if m == markCode {
-		writeCode(sb, s, cell)
+		if !strike {
+			writeCode(sb, s, cell)
+			return
+		}
+		lead := s[:len(s)-len(strings.TrimLeft(s, " \t"))]
+		trail := s[len(strings.TrimRight(s, " \t")):]
+		sb.WriteString(lead + "~~")
+		writeCode(sb, s[len(lead):len(s)-len(trail)], cell)
+		sb.WriteString("~~" + trail)
 		return
 	}
 
 	d := m.delim()
-	if d == "" {
+	open, close := d, d
+	if strike {
+		open, close = "~~"+d, d+"~~"
+	}
+	if open == "" {
 		escapeInto(sb, s, atStart)
 		return
 	}
@@ -155,9 +181,9 @@ func writeRun(sb *strings.Builder, spans []doc.Span, m mark, atStart, cell bool)
 	}
 
 	sb.WriteString(lead)
-	sb.WriteString(d)
+	sb.WriteString(open)
 	escapeInto(sb, body, false)
-	sb.WriteString(d)
+	sb.WriteString(close)
 	sb.WriteString(trail)
 }
 

@@ -397,6 +397,10 @@ type Style struct {
 	// where nothing else does.
 	Mono bool
 
+	// Strike reports a line drawn through the run, which extract reads from a rule set at the
+	// height of the letters' lower body (ADR 0040). GFM writes it as ~~.
+	Strike bool
+
 	// Hidden reports rendering mode 3 or 7 — invisible, or clip-only. This is the
 	// text layer under a scanned page, which is exactly the text an extractor
 	// wants, so it is reported rather than filtered. A sink emits it; a coverage
@@ -412,7 +416,7 @@ type Style struct {
 // a paragraph becomes one span per glyph, which is correct and useless.
 func (s Style) SameRun(o Style, t geom.Tolerance) bool {
 	if s.Font != o.Font || s.Bold != o.Bold || s.Italic != o.Italic ||
-		s.Mono != o.Mono || s.Hidden != o.Hidden {
+		s.Mono != o.Mono || s.Hidden != o.Hidden || s.Strike != o.Strike {
 		return false
 	}
 	return t.NearlyEqual(s.Size, o.Size)

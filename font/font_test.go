@@ -1353,3 +1353,37 @@ func TestIrregularFlags(t *testing.T) {
 		}
 	})
 }
+
+// TestAStyleInTheNameOutranksTheStem: /StemV estimates a weight and a style suffix states one, so
+// the stem decides only for a name that states nothing. Chrome writes Georgia-Italic's /StemV as
+// 129.9, which the estimate read as bold (ADR 0040). /FontWeight is a statement too, and stands.
+func TestAStyleInTheNameOutranksTheStem(t *testing.T) {
+	s := newStore()
+	for _, c := range []struct {
+		name string
+		desc objects.Dict
+		bold bool
+	}{
+		{"Georgia-Italic", objects.Dict{"StemV": objects.Real(129.9)}, false},
+		{"Georgia,Italic", objects.Dict{"StemV": objects.Real(129.9)}, false},
+		{"LMRoman10-Regular", objects.Dict{"StemV": objects.Real(130)}, false},
+		{"Georgia", objects.Dict{"StemV": objects.Real(129.9)}, true},
+		{"Some-Family", objects.Dict{"StemV": objects.Real(129.9)}, true},
+		{"Georgia-Italic", objects.Dict{"FontWeight": objects.Int(700)}, true},
+		{"Georgia-Bold", objects.Dict{"StemV": objects.Real(99.1)}, true},
+		{"RomanFont-PS", objects.Dict{"StemV": objects.Real(130)}, true},
+	} {
+		f := Load(s, objects.Dict{"Subtype": objects.Name("Type1"), "BaseFont": objects.Name(c.name), "FontDescriptor": c.desc})
+		if f.Bold() != c.bold {
+			t.Errorf("%s %v: bold = %v, want %v", c.name, c.desc, f.Bold(), c.bold)
+		}
+	}
+	for name, want := range map[string]bool{
+		"georgia-italic": true, "timesnewromanps-boldmt": true, "georgia": false, "some-family": false,
+		"lmroman10-regular": true, "x,oblique": true,
+	} {
+		if namesStyle(name) != want {
+			t.Errorf("namesStyle(%q) = %v, want %v", name, !want, want)
+		}
+	}
+}

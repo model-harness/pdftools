@@ -103,14 +103,14 @@ func (w *writer) table(cells []doc.Block, opt Options) {
 	// for row 0.
 	body := g.rows
 	if g.headerRow() {
-		w.row(g.rows[0], g.width, opt)
+		w.row(g.rows[0], g.width, opt, styledHeader(g.rows[0]))
 		body = g.rows[1:]
 	} else {
-		w.row(nil, g.width, opt)
+		w.row(nil, g.width, opt, false)
 	}
 	w.delimiter(g.width)
 	for _, r := range body {
-		w.row(r, g.width, opt)
+		w.row(r, g.width, opt, false)
 	}
 
 	w.blank = false
@@ -125,12 +125,14 @@ func (w *writer) table(cells []doc.Block, opt Options) {
 // ColSpan and 43 RowSpan cells on disk are the usual reason a row is short, and neither
 // is expressible — a spanning cell's text lands in its first column and the columns it
 // covered are blank, which is what GFM renders for a merged cell anyway.
-func (w *writer) row(cells []doc.Block, width int, opt Options) {
+//
+// plain writes the row's cells without their emphasis: see styledHeader.
+func (w *writer) row(cells []doc.Block, width int, opt Options, plain bool) {
 	w.str("|")
 	for i := 0; i < width; i++ {
 		w.str(" ")
 		if i < len(cells) {
-			w.str(cellText(cells[i], opt))
+			w.str(cellText(cells[i], opt, plain))
 		}
 		w.str(" |")
 	}
@@ -177,14 +179,14 @@ func (w *writer) delimiter(width int) {
 // atStart is false, unlike in content, because a cell is inline context — a leading "-" or "#"
 // inside one is not a list marker or a heading, and escaping it would put a backslash in
 // front of every cell that opens with a dash.
-func cellText(b doc.Block, opt Options) string {
+func cellText(b doc.Block, opt Options, plain bool) string {
 	_ = opt
 	if text := substitute(b); text != "" {
 		var sb strings.Builder
 		escapeInto(&sb, oneLine(text), false)
 		return strings.TrimSpace(sb.String())
 	}
-	return strings.TrimSpace(oneLine(inline(b.Spans, false, true)))
+	return strings.TrimSpace(oneLine(inline(b.Spans, plain, true)))
 }
 
 // table is a grid assembled from a table's cells.
@@ -255,4 +257,43 @@ func grid(cells []doc.Block) table {
 		}
 	}
 	return g
+}
+
+// styledHeader reports whether a header row is set in a header's style: two or more cells
+// with text, each wholly in one emphasis and all in the same one. GFM's header row is a header
+// already, so that style restates its place, and the row is written plain, as a heading is:
+// chrome-article.pdf's "| **Vessel** | **Calls** |" (ADR 0040).
+//
+// The whole row, not a cell at a time, because row 0 of a table read from its layout is a header
+// by convention only, and its emphasis can be the data's: ISO 32000-2's operator tables set an
+// operator bold and its operands italic in their first row, and mupdf_explored.pdf's matrices
+// set their variables italic. Those rows differ cell to cell and keep their emphasis.
+func styledHeader(cells []doc.Block) bool {
+	n := 0
+	var bold, italic bool
+	for _, c := range cells {
+		if c.IsEmpty() {
+			continue
+		}
+		if !uniformEmphasis(c) {
+			return false
+		}
+		b, i := emphasisOf(c)
+		if n > 0 && (b != bold || i != italic) {
+			return false
+		}
+		bold, italic = b, i
+		n++
+	}
+	return n >= 2
+}
+
+// emphasisOf returns the bold and italic of a block's first visible span that is not code.
+func emphasisOf(b doc.Block) (bool, bool) {
+	for _, sp := range b.Spans {
+		if strings.TrimSpace(sp.Text) != "" && !sp.Style.Mono {
+			return sp.Style.Bold, sp.Style.Italic
+		}
+	}
+	return false, false
 }

@@ -324,6 +324,8 @@ const (
 	headedAlign = 3.0
 	// headedSize is the difference in size, in points, below which two sizes are one.
 	headedSize = 0.25
+	// headedIndent is how far right of its heading a list may start, in the heading's size.
+	headedIndent = 4.0
 	// headedSkip is how many numbered headings a heading can sit above before its text:
 	// "7.3.4 String objects" is followed at once by "7.3.4.1 General".
 	headedSkip = 4
@@ -348,13 +350,26 @@ func headsBody(flat []placed, cands map[int]*candidate, i int) bool {
 			return false
 		}
 		n := flat[j]
-		if n.page != h.page || math.Abs(n.b.Box.X0-h.b.Box.X0) > headedAlign {
+		if n.page != h.page {
 			return false
 		}
 		// A list or a table is a heading's body as much as a paragraph is: "Changes" above
 		// its bullets, "Traffic" above its table. On the spike's population neither adds a
 		// promotion that no producer declares.
-		if n.b.Role == doc.RoleTableCell || (n.b.Role == doc.RoleParagraph && isListItem(n.b)) {
+		//
+		// A list is indented under its heading as often as not, so it may start up to
+		// headedIndent of the heading's size right of it: xelatex-article.pdf's bullets sit
+		// 15pt in from "Changes". Over the tagged corpus that admits no heading its producer
+		// does not declare. A table may not: the same allowance promoted three of ISO
+		// 32000-2's captions, "Table 136 — …" set flush above a table set in (ADR 0040).
+		in := n.b.Box.X0 - h.b.Box.X0
+		if n.b.Role == doc.RoleParagraph && isListItem(n.b) && in >= -headedAlign && in <= headedIndent*cands[i].style.Size {
+			return true
+		}
+		if math.Abs(in) > headedAlign {
+			return false
+		}
+		if n.b.Role == doc.RoleTableCell {
 			return true
 		}
 		if n.b.Role != doc.RoleParagraph {

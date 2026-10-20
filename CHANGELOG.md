@@ -5,6 +5,20 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 (style)
+
+- **Struck text is `~~struck~~`.** ADR 0040, issue #7. A thin rule drawn through the letters'
+  lower body, and within the line's text, strikes the words it covers. `strikethrough` style
+  went from 0.000 to 1.000, and the gold set's mean style F1 from 0.648 to 0.960. New model
+  field: `Style.Strike`.
+- **A font's name decides its weight over its stem.** `/StemV` reads as bold only for a
+  name that states no style, so Chrome's Georgia-Italic is italic rather than bold italic.
+- **A heading above an indented list is a heading.** A list may start up to four of the
+  heading's sizes right of it. A table may not, since table captions sit flush above
+  indented tables.
+- **A table's header row in a header's style is written plain.** GFM's header row says
+  "header" already. A first row whose cells differ in style keeps its emphasis.
+
 ### Changed — 2026-10-20 (tagged notes)
 
 - **Tagged notes are GFM footnotes.** ADR 0039, closes issue #20. A `Note` whose text opens

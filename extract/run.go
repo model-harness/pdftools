@@ -796,6 +796,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 		return nil
 	}
 	r.splitAtRules()
+	r.strikeThrough()
 	r.sortLines()
 	r.splitAtGutters()
 	r.joinFractions()

@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"github.com/model-harness/pdftools/geom"
 	"slices"
 	"testing"
 )
@@ -95,5 +96,16 @@ func TestSetMCIDsFollowsTheSpans(t *testing.T) {
 	b.SetMCIDs()
 	if want := []int{1}; !slices.Equal(b.MCIDs, want) {
 		t.Errorf("MCIDs = %v, want %v: a stale entry survived a span removal", b.MCIDs, want)
+	}
+}
+
+// TestAStrikeIsAStyleOfItsOwn: a struck run and a plain one in the same face are two runs, or a
+// strike through a few words would spread to the sentence around them.
+func TestAStrikeIsAStyleOfItsOwn(t *testing.T) {
+	plain := Style{Font: "Helvetica", Size: 12}
+	struck := plain
+	struck.Strike = true
+	if plain.SameRun(struck, geom.DefaultTolerance) {
+		t.Error("a struck run is the same run as a plain one")
 	}
 }

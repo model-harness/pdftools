@@ -204,6 +204,24 @@ func (f *Font) Italic() bool     { return f.italic }
 func (f *Font) Monospaced() bool { return f.mono }
 func (f *Font) Serif() bool      { return f.serif }
 
+// namesStyle reports whether a font's name, lower case, ends in a style after its family: the
+// part after its last hyphen or comma names a weight or a slant, as in "Georgia-Italic",
+// "TimesNewRomanPS-BoldMT" and "LMRoman10-Regular". A name that is a family alone states nothing.
+func namesStyle(name string) bool {
+	i := strings.LastIndexAny(name, "-,")
+	if i < 0 {
+		return false
+	}
+	suffix := name[i+1:]
+	for _, w := range []string{"bold", "black", "heavy", "semibold", "demi", "medium", "regular",
+		"book", "light", "thin", "roman", "italic", "oblique", "normal", "plain"} {
+		if strings.Contains(suffix, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // traits derives bold, italic, and monospaced from the descriptor and the name.
 //
 // Both sources are consulted because each misses cases the other catches. The
@@ -228,9 +246,14 @@ func (f *Font) traits(s objects.Store, fd objects.Dict) {
 		// semibold at 600 is bold enough for emphasis. /StemV is the fallback that
 		// many producers write instead: a stem above 120 thousandths of an em is a
 		// bold weight at text sizes.
+		//
+		// Only where the name states no style, because a stem is an estimate and a style
+		// suffix is a statement. Chrome writes Georgia-Italic's /StemV as 129.9 and
+		// Georgia-Bold's as 99.1, so the estimate called the italic bold and the bold not,
+		// and reference/chrome-article.pdf's emphasis came out bold italic (ADR 0040).
 		if w, ok := objects.GetNum(s, fd, "FontWeight"); ok && w >= 600 {
 			f.bold = true
-		} else if v, ok := objects.GetNum(s, fd, "StemV"); ok && v > 120 {
+		} else if v, ok := objects.GetNum(s, fd, "StemV"); ok && v > 120 && !namesStyle(name) {
 			f.bold = true
 		}
 		// /ItalicAngle is nonzero for an oblique face whose flag is unset, which is

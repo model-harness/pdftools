@@ -19,7 +19,7 @@ const benchSlack = 0.0005
 // held from then on. Lowering one needs a reason in the ADR that the change is
 // documented in.
 var benchFloors = map[string]benchFigures{
-	"chrome-article":           {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 0.571},
+	"chrome-article":           {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"clauses":                  {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"footnotes":                {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"fractions":                {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
@@ -34,7 +34,7 @@ var benchFloors = map[string]benchFigures{
 	"scan-table":               {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 0.000, style: 1.000},
 	"scan-two-column":          {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 0.000, tables: 1.000, style: 1.000},
 	"scan-unnumbered-headings": {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 0.000, tables: 1.000, style: 1.000},
-	"strikethrough":            {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 0.000},
+	"strikethrough":            {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"superscripts":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"table-across-pages":       {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"table-merged":             {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
@@ -48,7 +48,7 @@ var benchFloors = map[string]benchFigures{
 	"two-column":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"type3-unmapped":           {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"unnumbered-headings":      {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.500, tables: 1.000, style: 0.667},
+	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.800, tables: 1.000, style: 0.800},
 }
 
 // benchTargets is what v1 needs, as means over the reference fixtures (ADR 0029). A

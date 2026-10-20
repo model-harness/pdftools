@@ -957,3 +957,26 @@ func TestAFootnoteMarkInPlainTextIsItsText(t *testing.T) {
 		t.Errorf("plain = %q, want %q", got, "1 Scope")
 	}
 }
+
+func strike(s *doc.Span) { s.Style.Strike = true }
+
+// TestAStruckRunIsTildes: GFM's strikethrough goes outside the run's other delimiters, and its
+// whitespace outside both, as emphasis's does.
+func TestAStruckRunIsTildes(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		spans []doc.Span
+		want  string
+	}{
+		{"plain", []doc.Span{span("from "), span("Tuesday afternoon ", strike), span("to Thursday")}, "from ~~Tuesday afternoon~~ to Thursday"},
+		{"bold", []doc.Span{span("a "), span("b", strike, bold), span(" c")}, "a ~~**b**~~ c"},
+		{"code", []doc.Span{span("a "), span(" x ", strike, mono), span(" c")}, "a  ~~`x`~~  c"},
+		{"alone", []doc.Span{span("gone", strike)}, "~~gone~~"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := strings.TrimSpace(render(t, para(c.spans...))); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
