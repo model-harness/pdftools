@@ -52,6 +52,8 @@ func TestUnmappedGlyphsAreReportedByPage(t *testing.T) {
 		{Number: 1, Blocks: []doc.Block{{Spans: []doc.Span{{Text: "a" + u + u}}}}},
 		{Number: 2, Blocks: []doc.Block{{Spans: []doc.Span{{Text: "clean"}}}}},
 		{Number: 3, Blocks: []doc.Block{{Spans: []doc.Span{{Text: u}}}, {Spans: []doc.Span{{Text: u + " " + u}}}}},
+		// A page read by OCR: its [err] are words read below the threshold, reported with OCR.
+		{Number: 4, Rasterized: true, Blocks: []doc.Block{{Spans: []doc.Span{{Text: u}}}}},
 	}}
 	var w bytes.Buffer
 	warnIfUnmapped(&w, unmapped(d))

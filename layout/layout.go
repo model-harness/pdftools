@@ -776,9 +776,8 @@ type ListStats struct {
 // Reading Text() and not Alt is why StripMarker can edit the spans alone. A block with
 // Alt set emits that instead of its spans, so stripping a marker out of spans nothing
 // reads would promote the block and leave the marker in the output. It cannot happen
-// today: extract never sets Alt, and doctags sets it only on RoleFigure, which the
-// paragraph gate here already excludes. It is worth stating because the two facts live in
-// other packages — a producer that starts setting Alt on a paragraph breaks this, and the
+// today: neither extract nor ocr.Page sets Alt. It is worth stating because the fact lives
+// in other packages — a producer that starts setting Alt on a paragraph breaks this, and the
 // symptom would be a "- • item" in the output rather than a test failure.
 func isListItem(b *doc.Block) bool {
 	return b.Role == doc.RoleParagraph && doc.ListMarker(b.Text()) != 0

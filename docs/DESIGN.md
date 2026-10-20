@@ -409,13 +409,10 @@ sectionize/           Section reconstruction by heading sequence: each heading
                         doc.Section
 render/               Interface: Rasterizer — page → image.Image at DPI
 render/pdfium/          Adapter: go-pdfium on wazero WASM. No CGO
-ocr/                  Interface: Engine — image → DocTags. Also Route, the
-                        text-coverage rule that decides which pages cost a model
-ocr/doctags/            DocTags → doc.Page parser (granite-docling output)
-ocr/ipc/                The wire, byte-identical to inferd's generation protocol.
-                        Client, server, and an in-process bridge, all one Engine
-ocr/docd/               Host: llama-server as a subprocess over loopback HTTP.
-                        The interim backend until inferd carries docling
+ocr/                  Interface: Engine — image → words with confidence. Also
+                        Route, the text-coverage rule that decides which pages
+                        are read, and Page, words → doc.Page
+ocr/tesseract/          Adapter: the tesseract CLI as a subprocess. No CGO
 sink/markdown/        doc.Document → one .md or per-page .md
 sink/okf/             doc.Section tree → OKF bundle
 cmd/pdfspec/          CLI
@@ -861,6 +858,12 @@ number has characters and no content. Both paths converge on `doc.Page`, so no s
 pages were recognized; `doc.Page.Rasterized` is the only trace the model leaves. ADR 0006
 records the rest, including the two things about DocTags that are not guessable from a model's
 output — the 500-unit normalized `<loc_>` grid, and the top-down Y that the parser must flip.
+
+**Superseded by ADR 0043 (2026-10-20).** The model path is gone: `ocr/doctags`, `ocr/ipc` and
+`ocr/docd`, with granite-docling and llama-server. Tesseract reads a routed page, measured at
+2.3% median CER against a vision model's 5.9% in its best shape, and its words carry a
+confidence, so an unsure word is `[err]` rather than a fluent guess. inferd (#10) is the model
+step after it. The router stays; what it routes to changed.
 
 **Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
 sections without paying for inference. **Landed.** Heading *rank* came first (ADR 0008);

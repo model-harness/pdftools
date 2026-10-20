@@ -89,11 +89,9 @@ type Options struct {
 
 // DefaultOptions is 200 DPI capped at 64 megapixels.
 //
-// 200 DPI is DESIGN.md §6's default and is what the OCR models want:
-// LightOnOCR-2 asks for 200 DPI at 1540 px on the longest edge, and granite-docling
-// is trained at a comparable scale. It is also enough for the thing rasterization
-// exists to serve here — a scanned page's text — where 150 DPI starts costing
-// small type and 300 DPI costs four times the pixels for no measured gain.
+// 200 DPI is DESIGN.md §6's default, and it is enough for the thing rasterization exists
+// to serve here, a page's text: Tesseract read seven born-digital pages within 0.3 points
+// of CER at 200 and at 300 (ADR 0043), and 300 costs 2.25 times the pixels.
 //
 // The cap is 64 Mpx because the image is RGBA: 4 bytes a pixel puts the largest
 // allocation at 256 MiB. The largest page in this project's corpus and fixtures is

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	stdimage "image"
-	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,42 +18,39 @@ import (
 	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
 
-// These tests run the ocr verb's whole pipeline — extract, route, rasterize, recognize,
-// parse, merge, write — with a fake Engine in place of the model. That substitution is
-// the reason the pipeline is testable at all: everything except the generation is
-// deterministic, and the generation is behind an interface precisely so that a test can
-// state what the model said and assert on what the document became. There is no
-// llama-server on CI and there should not need to be one.
+// These tests run the ocr verb's pipeline — extract, route, rasterize, read, build, write —
+// with a fake Engine in place of Tesseract, which CI does not have: everything but the reading
+// is deterministic, and the reading is behind an interface so a test can state what the engine
+// read and assert on what the document became.
 
-// fakeEngine returns fixed DocTags for every page, and records the images it was given.
+// fakeEngine returns fixed words for every page, and records the images it was given.
 type fakeEngine struct {
-	dt     string
+	words  []ocr.Word
 	err    error
 	calls  int
 	widths []int
 }
 
-func (f *fakeEngine) Recognize(_ context.Context, img *stdimage.RGBA, opt ocr.Options) (string, error) {
+func (f *fakeEngine) Read(_ context.Context, img stdimage.Image) ([]ocr.Word, error) {
 	f.calls++
 	f.widths = append(f.widths, img.Bounds().Dx())
-	// The verb must always pass a bound, since an unbounded generation on a dense page
-	// is the repetition-loop failure defaultMaxTokens exists for.
-	if opt.MaxTokens <= 0 {
-		return "", errNoBound
-	}
-	return f.dt, f.err
+	return f.words, f.err
 }
 
-func (f *fakeEngine) Close() error { return nil }
-
-var errNoBound = errors.New("the verb passed no token bound")
+func (f *fakeEngine) Name() string { return "fake" }
 
 // The substitution only works if the fake is what the verb accepts.
 var _ ocr.Engine = (*fakeEngine)(nil)
 
-// oneParagraph is the smallest DocTags a model could return for a page: one text block
-// with a location, in the top-left eighth of the page.
-const oneParagraph = `<doctag><text><loc_10><loc_20><loc_240><loc_60>Recognized body text.</text></doctag>`
+// fakeLine is one line of three words in the top left of a 612-pixel-wide image, the second
+// read at a confidence of 40.
+func fakeLine() []ocr.Word {
+	return []ocr.Word{
+		{Text: "Recognized", Box: stdimage.Rect(60, 40, 200, 60), Conf: 96, Block: 1, Par: 1, Line: 1},
+		{Text: "body", Box: stdimage.Rect(210, 40, 260, 60), Conf: 40, Block: 1, Par: 1, Line: 1},
+		{Text: "text.", Box: stdimage.Rect(270, 40, 320, 60), Conf: 95, Block: 1, Par: 1, Line: 1},
+	}
+}
 
 // extractOnly runs the extractor the way the verb does, so a test can compare the
 // document before recognition with the one after.
@@ -70,14 +66,6 @@ func extractOnly(t *testing.T, path string) *doc.Document {
 		t.Fatalf("extract: %v", err)
 	}
 	return d
-}
-
-func allPages(n int) []int {
-	out := make([]int, n)
-	for i := range out {
-		out[i] = i + 1
-	}
-	return out
 }
 
 // digitalFixture is a page of real body text, and the choice took a measurement.
@@ -141,15 +129,15 @@ func TestOCRThresholdZeroDisables(t *testing.T) {
 	}
 }
 
-// TestOCRVerbReplacesScannedPage is the end-to-end claim: a scanned page comes out
-// holding the model's text, marked as inferred, while the rest of the document is
-// untouched.
+// TestOCRVerbReplacesScannedPage is the end-to-end claim: a scanned page comes out holding the
+// words the engine read, a word below the confidence threshold as [err], and marked as read
+// from pixels.
 func TestOCRVerbReplacesScannedPage(t *testing.T) {
 	in := fixture(t, "pymupdf-utilities/scanned.pdf")
 	d := extractOnly(t, in)
 	before := d.Pages[0].Text()
 	if strings.Contains(before, "Recognized") {
-		t.Fatal("test setup: the fixture already contains the fake model's text")
+		t.Fatal("test setup: the fixture already contains the fake engine's text")
 	}
 
 	r, err := renderpdfium.Open(in)
@@ -158,34 +146,30 @@ func TestOCRVerbReplacesScannedPage(t *testing.T) {
 	}
 	defer func() { _ = r.Close() }()
 
-	eng := &fakeEngine{dt: oneParagraph}
+	eng := &fakeEngine{words: fakeLine()}
 	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
-	if err := recognize(context.Background(), d, []int{1}, eng, r, ropt, defaultMaxTokens); err != nil {
-		t.Fatalf("recognize: %v", err)
+	if err := readWith(context.Background(), d, []int{1}, eng, r, ropt, 50, false, func(int) doc.Page { return d.Pages[0] }); err != nil {
+		t.Fatalf("readWith: %v", err)
 	}
 
 	if eng.calls != 1 {
 		t.Errorf("engine called %d times for 1 routed page", eng.calls)
 	}
-	// The model receives the page at the requested resolution, not the page box. A verb
-	// that passed the unrendered size would hand the model a 612-pixel image of a page it
-	// is trained to read at 1540 on the long edge, and the symptom would be poor
-	// recognition rather than an error.
+	// The engine receives the page at the requested resolution.
 	if len(eng.widths) != 1 || eng.widths[0] < 500 {
 		t.Errorf("engine saw image widths %v at 72 dpi over a US Letter page", eng.widths)
 	}
 	p := d.Pages[0]
-	if !strings.Contains(p.Text(), "Recognized body text.") {
-		t.Errorf("page 1 text is %q, want the model's output", p.Text())
+	if want := "Recognized " + doc.Unmapped + " text."; p.Text() != want {
+		t.Errorf("page 1 text is %q, want %q", p.Text(), want)
 	}
-	// Rasterized is the only record that this page's text was inferred rather than read,
-	// and a knowledge bundle a model will later treat as fact depends on it being set.
+	// Rasterized is the only record that this page's text was read from pixels.
 	if !p.Rasterized {
 		t.Error("the recognized page is not marked Rasterized")
 	}
-	// The recognized boxes must land inside the page, which is the Y-flip working: DocTags
-	// counts down from the top and PDF user space counts up from the bottom, so a missing
-	// flip mirrors every rectangle and no text comparison would notice.
+	// The boxes must land inside the page, which is the Y flip working: pixels count down
+	// from the top and PDF user space up from the bottom, so a missing flip mirrors every
+	// rectangle and no text comparison would notice.
 	if len(p.Blocks) == 0 {
 		t.Fatal("no blocks")
 	}
@@ -193,17 +177,15 @@ func TestOCRVerbReplacesScannedPage(t *testing.T) {
 	if box.Y1 > p.Box.Y1 || box.Y0 < p.Box.Y0 || box.X1 > p.Box.X1 {
 		t.Errorf("block box %+v is outside the page box %+v", box, p.Box)
 	}
-	// loc_20..loc_60 out of 500 is the top eighth of the page, so in PDF coordinates the
-	// block sits in the upper part — above the midpoint. Reversed, it would be below.
+	// Pixel rows 40 to 60 are the top of the page, so the block sits above the midpoint.
 	if mid := (p.Box.Y0 + p.Box.Y1) / 2; box.Y0 < mid {
 		t.Errorf("block at y %g-%g is below the page midpoint %g: the Y flip is inverted",
 			box.Y0, box.Y1, mid)
 	}
 }
 
-// TestOCRVerbKeepsExtractedTextOnFailure is the conservative direction, and the one worth
-// pinning: a page the model failed on keeps whatever the file actually said. Replacing it
-// with nothing would make a failed call indistinguishable from a blank page.
+// TestOCRVerbKeepsExtractedTextOnFailure is the conservative direction: a page the engine
+// failed on keeps whatever the file said, and so does one it read no text on.
 func TestOCRVerbKeepsExtractedTextOnFailure(t *testing.T) {
 	in := fixture(t, "pymupdf-utilities/ocr-ed.pdf")
 	d := extractOnly(t, in)
@@ -218,49 +200,36 @@ func TestOCRVerbKeepsExtractedTextOnFailure(t *testing.T) {
 	}
 	defer func() { _ = r.Close() }()
 
-	// Empty output with an error: the model produced nothing salvageable.
-	eng := &fakeEngine{dt: "", err: errors.New("backend unavailable")}
 	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
-	err = recognize(context.Background(), d, []int{1}, eng, r, ropt, defaultMaxTokens)
-	if err == nil {
-		t.Error("recognize reported success after every page failed")
-	}
-	if got := d.Pages[0].Text(); got != before {
-		t.Errorf("a failed page lost its extracted text:\n got  %q\n want %q", got, before)
-	}
-	if d.Pages[0].Rasterized {
-		t.Error("a failed page was marked Rasterized")
+	full := func(int) doc.Page { return d.Pages[0] }
+	noisy := []ocr.Word{{Text: "eee", Box: stdimage.Rect(0, 0, 10, 10), Conf: 79, Block: 1, Par: 1, Line: 1}}
+	for _, c := range []struct {
+		name string
+		eng  *fakeEngine
+		fail bool
+	}{
+		{"an engine error", &fakeEngine{err: errors.New("tesseract exited 1")}, true},
+		// A blank page and a picture read as noise add nothing; neither is a failure.
+		{"no words", &fakeEngine{}, false},
+		{"noise", &fakeEngine{words: noisy}, false},
+	} {
+		// Against a page of nothing, so that only the gate keeps the noise out.
+		if c.name == "noise" {
+			full = func(int) doc.Page { return doc.Page{} }
+		}
+		if err := readWith(context.Background(), d, []int{1}, c.eng, r, ropt, 50, false, full); (err != nil) != c.fail {
+			t.Errorf("%s: readWith error %v, want failure %v", c.name, err, c.fail)
+		}
+		if got := d.Pages[0].Text(); got != before {
+			t.Errorf("a failed page lost its extracted text:\n got  %q\n want %q", got, before)
+		}
+		if d.Pages[0].Rasterized {
+			t.Error("a failed page was marked Rasterized")
+		}
 	}
 }
 
-// TestOCRVerbKeepsPartialGeneration is the other half of that policy. A generation that
-// errored *after* emitting DocTags is the dominant failure on a dense table — the token
-// bound cuts it mid-grid — and ocr/doctags parses truncated input by design, so the page
-// is kept rather than discarded.
-func TestOCRVerbKeepsPartialGeneration(t *testing.T) {
-	in := fixture(t, "pymupdf-utilities/scanned.pdf")
-	d := extractOnly(t, in)
-
-	r, err := renderpdfium.Open(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = r.Close() }()
-
-	// Truncated mid-element, with the error a real Engine returns for a token bound.
-	const truncated = `<doctag><text><loc_10><loc_20><loc_240><loc_60>Half a page of `
-	eng := &fakeEngine{dt: truncated, err: errors.New("generation hit the token limit")}
-	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
-	if err := recognize(context.Background(), d, []int{1}, eng, r, ropt, defaultMaxTokens); err != nil {
-		t.Fatalf("a truncated page must still count as recognized: %v", err)
-	}
-	if !strings.Contains(d.Pages[0].Text(), "Half a page of") {
-		t.Errorf("partial generation was discarded: %q", d.Pages[0].Text())
-	}
-}
-
-// TestOCRVerbRejects pins the flag errors. Each must fail before a model is loaded,
-// because the alternative is learning about a typo after a 500 MB download.
+// TestOCRVerbRejects pins the flag errors, each raised before anything runs.
 func TestOCRVerbRejects(t *testing.T) {
 	good := fixture(t, "pymupdf-utilities/test.pdf")
 	for _, tc := range []struct {
@@ -271,7 +240,8 @@ func TestOCRVerbRejects(t *testing.T) {
 		{"two inputs", []string{good, good}},
 		{"negative threshold", []string{"-threshold", "-1", good}},
 		{"threshold above 1", []string{"-threshold", "2", good}},
-		{"negative max-tokens", []string{"-max-tokens", "-1", good}},
+		{"negative min-conf", []string{"-min-conf", "-1", good}},
+		{"min-conf above 100", []string{"-min-conf", "101", good}},
 		{"zero dpi", []string{"-dpi", "0", good}},
 		{"page out of range", []string{"-pages", "99", good}},
 	} {
@@ -283,11 +253,9 @@ func TestOCRVerbRejects(t *testing.T) {
 	}
 }
 
-// TestOCRVerbWithoutModelOnDigitalDocument is the case that must never touch a backend:
-// a document whose every page carries text. The verb writes the same Markdown `md` would
-// and returns without loading anything — which is also why this test can run on a machine
-// with no llama-server, and would fail if the ordering were reversed.
-func TestOCRVerbWithoutModelOnDigitalDocument(t *testing.T) {
+// TestOCRVerbOnDigitalDocument is the case that must never run an engine: a document whose
+// every page carries text gets the Markdown md writes.
+func TestOCRVerbOnDigitalDocument(t *testing.T) {
 	in := fixture(t, digitalFixture)
 	out := filepath.Join(t.TempDir(), "out.md")
 
@@ -304,10 +272,9 @@ func TestOCRVerbWithoutModelOnDigitalDocument(t *testing.T) {
 	}
 }
 
-// TestOCRDryRunLoadsNoModel checks the free answer to the first question anyone asks —
-// which pages of this file need OCR — including on a scanned document, where the
-// non-dry-run path would have started a model.
-func TestOCRDryRunLoadsNoModel(t *testing.T) {
+// TestOCRDryRunRunsNoEngine checks the free answer to the first question anyone asks, which
+// pages of this file need OCR, on a scanned document.
+func TestOCRDryRunRunsNoEngine(t *testing.T) {
 	var sb strings.Builder
 	d := extractOnly(t, fixture(t, "pymupdf-utilities/scanned.pdf"))
 	want := allPages(len(d.Pages))
@@ -320,7 +287,7 @@ func TestOCRDryRunLoadsNoModel(t *testing.T) {
 		t.Errorf("plan did not mark the scanned page for OCR:\n%s", sb.String())
 	}
 
-	// And through the verb, which must not reach a backend.
+	// And through the verb.
 	if err := runOCR([]string{"-dry-run", fixture(t, "pymupdf-utilities/scanned.pdf")}); err != nil {
 		t.Errorf("runOCR -dry-run: %v", err)
 	}
@@ -340,10 +307,10 @@ func TestOCRDryRunMeasuresWhatWasRead(t *testing.T) {
 	}
 }
 
-// TestOCRBoxUsesRasterExtent pins the coordinate space the parser resolves against.
+// TestOCRBoxUsesRasterExtent pins the coordinate space the words are resolved against.
 //
 // The two boxes differ on purpose — doc.Page.Box is the unrotated crop box, while
-// render.Raster.Box has /Rotate applied — and the model saw the rotated pixels. Taking
+// render.Raster.Box has /Rotate applied — and the engine saw the rotated pixels. Taking
 // the extent from the raster is what makes a rotated page's blocks describe the page as
 // read; taking the origin from the crop box is what keeps them in the same space as
 // every neighbouring page's.
@@ -357,28 +324,5 @@ func TestOCRBoxUsesRasterExtent(t *testing.T) {
 	if !tol.NearlyEqual(got.X0, want.X0) || !tol.NearlyEqual(got.Y0, want.Y0) ||
 		!tol.NearlyEqual(got.X1, want.X1) || !tol.NearlyEqual(got.Y1, want.Y1) {
 		t.Errorf("ocrBox = %+v, want %+v", got, want)
-	}
-}
-
-// TestOCRRGBAConversion covers the interface's cost. render/pdfium always returns RGBA,
-// so the conversion is for a future adapter — a native rasterizer, or one rendering
-// grayscale for a scan — and without it that adapter would fail at runtime instead.
-func TestOCRRGBAConversion(t *testing.T) {
-	rgb := stdimage.NewRGBA(stdimage.Rect(0, 0, 4, 3))
-	if got := rgba(rgb); got != rgb {
-		t.Error("an *image.RGBA was copied instead of passed through")
-	}
-
-	gray := stdimage.NewGray(stdimage.Rect(0, 0, 4, 3))
-	gray.SetGray(1, 1, color.Gray{Y: 200})
-	out := rgba(gray)
-	if out.Bounds() != gray.Bounds() {
-		t.Fatalf("converted bounds %v, want %v", out.Bounds(), gray.Bounds())
-	}
-	// The pixel survives the conversion. A draw.Src into the wrong bounds origin would
-	// produce a correctly sized image of nothing, which is the failure a bounds check
-	// alone would pass.
-	if r, _, _, _ := out.At(1, 1).RGBA(); r>>8 != 200 {
-		t.Errorf("pixel (1,1) is %d, want 200", r>>8)
 	}
 }

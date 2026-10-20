@@ -2,35 +2,25 @@
 //
 // It is the fallback path, and naming it that is the whole design. A scanned page
 // has an image and no text; a born-digital page has text and the extractor already
-// read it. Running a vision model over the second kind costs a GPU-second to produce
-// a worse answer than the one already in hand — the content stream states its
-// glyphs, while a model infers them — so the decision of *which* pages to send is
-// worth more than any model choice. That decision is Route, and it is the only part
-// of this package that runs without a model.
+// read it. Reading the second kind from pixels produces a worse answer than the one
+// already in hand — the content stream states its glyphs, while OCR infers them — so
+// the decision of *which* pages to send is worth more than any engine choice. That
+// decision is Route.
 //
-// # The interface is the point
+// # Words, with a confidence
 //
-// Engine is three methods this repo declares, and no type belonging to any backend
-// appears in them. That follows the pattern objects/pdfcpu and render/pdfium
-// established: the consuming package owns the interface, adapters live in a
-// subpackage, and swapping a backend is a wiring change in cmd rather than a
-// refactor. Here it matters more than usual, because the backend question is
-// genuinely open — a local daemon, a subprocess, a hosted model, or a native
-// implementation are all plausible, and this package is finished either way.
+// An Engine returns the words it read, each with its box and its confidence. Page builds
+// the same doc.Page the extractor produces from them, so every sink downstream is
+// unchanged, and a document can be part scanned and part digital without the caller
+// knowing which pages were which. doc.Page.Rasterized is the record of that.
 //
-// # DocTags, not Markdown
+// The confidence is what the issue (#9) asked for and what DocTags could not give: a
+// model's transcription states every word with the same assurance, right or wrong. A word
+// below the threshold is written [err] (ADR 0042) instead of a guess.
 //
-// An Engine returns DocTags: the structured output format of the granite-docling
-// models, parsed by ocr/doctags into the same doc.Page the extractor produces. That
-// is the reason for choosing a model that emits structure at all. A model that
-// writes Markdown has already discarded what it knew — which line was a heading,
-// where the table's cells were — and recovering it means running layout heuristics
-// over generated prose, which is the original problem with a worse input.
-//
-// So both paths converge on doc.Page, every sink downstream is unchanged, and a
-// document can be part scanned and part digital without the caller knowing which
-// pages were which. doc.Page.Rasterized is the record of that, and it is the only
-// difference the model's involvement leaves behind.
+// The interface is this repo's, and no backend's type appears in it: the consuming
+// package owns the interface and adapters live in subpackages, as with objects/pdfcpu
+// and render/pdfium. ocr/tesseract is the one adapter (ADR 0043).
 package ocr
 
 import (
@@ -41,70 +31,34 @@ import (
 	"github.com/model-harness/pdftools/doc"
 )
 
-// Engine turns one page image into DocTags.
+// Word is one word an Engine read.
+type Word struct {
+	// Text is the word as read.
+	Text string
+
+	// Box is the word's extent in the image's pixels.
+	Box image.Rectangle
+
+	// Conf is the engine's confidence in Text, from 0 to 100.
+	Conf float64
+
+	// Block, Par and Line number the word's block, paragraph and line within the image, as
+	// the engine segmented it. Words sharing all three are one line, in reading order.
+	Block, Par, Line int
+}
+
+// Engine reads the words in one page image.
 //
-// One page per call, not one document. A page is the unit a vision model accepts,
-// the unit the router decides about, and the unit a failure should be confined to:
-// a fifty-page scan with one page the model chokes on should yield forty-nine.
-//
-// Implementations are not required to be safe for concurrent use, matching
-// render.Rasterizer — an engine typically wraps one connection, and parallelism is
-// several engines rather than one shared. Callers that fan out open one per worker.
+// One page per call: a page is the unit the router decides about, and the unit a failure
+// is confined to, so a fifty-page scan with one unreadable page yields forty-nine.
+// Implementations need not be safe for concurrent use.
 type Engine interface {
-	// Recognize sends img and returns the DocTags the model produced.
-	//
-	// The image is *image.RGBA because that is what render produces; the alpha
-	// channel is ignored, and an adapter whose wire wants packed RGB drops it.
-	// Returns the text generated so far along with the error when generation
-	// failed partway, because a truncated page is worth more than nothing and
-	// ocr/doctags parses truncated input by design.
-	Recognize(ctx context.Context, img *image.RGBA, opt Options) (string, error)
+	// Read returns the words in img, in reading order.
+	Read(ctx context.Context, img image.Image) ([]Word, error)
 
-	// Close releases the engine's connection or process. Safe to call twice.
-	Close() error
+	// Name identifies the engine and its model, for the page report: "tesseract 5.5.3 eng".
+	Name() string
 }
-
-// Options are the per-page knobs an Engine honours.
-type Options struct {
-	// Prompt is what the model is asked to do. Empty means PromptPage.
-	//
-	// Exposed because granite-docling is prompted for a task rather than being a
-	// single-purpose OCR model: the same weights convert a page, a chart, a
-	// formula, or a table, and the prompt is the whole difference. See the Prompt
-	// constants.
-	Prompt string
-
-	// MaxTokens bounds the generation. Zero means the backend's default.
-	//
-	// Worth setting for OCR specifically, because the failure mode of a vision
-	// model on a dense page is not silence — it is a repetition loop that emits
-	// the same table row until something stops it. The bound is what turns that
-	// into a truncated page ocr/doctags still parses.
-	MaxTokens int
-
-	// OnDelta, when set, is called with each incremental chunk of generated text.
-	//
-	// A page of dense DocTags takes tens of seconds on modest hardware, so a run
-	// with no output at all is indistinguishable from a hang. This is how the verb
-	// reports progress; it is not how output is collected, since Recognize returns
-	// the whole string regardless.
-	OnDelta func(string)
-}
-
-// Prompts granite-docling recognizes. Taken from the model's own documentation
-// rather than invented: the model was instruction-tuned on these exact strings, and
-// a paraphrase measurably degrades the output — this is prompt-as-API, so they are
-// constants rather than a format string a caller assembles.
-const (
-	// PromptPage converts a whole page. The default and the only one the router
-	// uses; the rest are for a caller targeting a region it already located.
-	PromptPage = "Convert this page to docling."
-
-	PromptChart   = "Convert chart to table."
-	PromptFormula = "Convert formula to LaTeX."
-	PromptCode    = "Convert code to text."
-	PromptTable   = "Convert table to OTSL."
-)
 
 // Route reports whether a page should be sent to an Engine.
 //
@@ -120,11 +74,11 @@ const (
 // doc.Page.Coverage was written for this and documents itself as "the numerator of
 // the OCR router's coverage rule", including the two defensive cases that matter
 // here: a block outside the crop box clamps rather than pushing coverage above 1,
-// and a zero-area page box yields 0, so a defective page routes to the model rather
+// and a zero-area page box yields 0, so a defective page routes to OCR rather
 // than being silently accepted as complete.
 //
-// A page already marked Rasterized is never routed again — it came from a model, so
-// sending it back would ask the model to read its own output.
+// A page already marked Rasterized is never routed again — it came from OCR, so
+// sending it back would ask the engine to read its own output.
 func Route(p doc.Page, threshold float64) bool {
 	if p.Rasterized {
 		return false
@@ -147,12 +101,71 @@ func Coverage(p doc.Page) float64 {
 	return p.Coverage()
 }
 
+// MeanConf is the words' confidence weighted by their length, so a page is not judged by its
+// stray one-character fragments; 0 for no words.
+func MeanConf(ws []Word) float64 {
+	sum, n := 0.0, 0
+	for _, w := range ws {
+		k := len([]rune(w.Text))
+		sum += w.Conf * float64(k)
+		n += k
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / float64(n)
+}
+
+// PageMinConf is the mean confidence below which a page's reading is not taken as text.
+//
+// A photo is read as a few words of noise: the spike's three image-only fixtures gave 1 to 4
+// words at a mean of 32 to 74, "eee eee eee eee" among them. Pages of text read at 84.0 to
+// 95.7, the lowest a scan-like page of a dense paper (ADR 0043). 80 sits between.
+const PageMinConf = 80
+
+// IsText reports whether a page's words read as text: at a mean confidence of PageMinConf or
+// more.
+func IsText(ws []Word) bool { return MeanConf(ws) >= PageMinConf }
+
+// Adds reports whether read, a page built from OCR, adds to orig, the page the extractor found
+// with its artifacts: whether it holds at least addsFactor times orig's words with a character
+// read.
+//
+// The file's own text comes first, and OCR only adds to it. Route sends a page by its
+// coverage, and a born-digital page can cover very little: the reference fixtures set a few
+// lines on a full page, under the 5% threshold. Read again, such a page gives back the words
+// it already had, now inferred from pixels, and replacing it cost every enforced bench
+// dimension: tables fell from 0.875 to 0.375 and style from 0.960 to 0.560 (ADR 0043).
+func Adds(orig, read doc.Page) bool {
+	return words(read) > 0 && words(read) >= addsFactor*words(orig)
+}
+
+// addsFactor is how many times the extracted words a reading must hold to replace a page.
+//
+// Over the corpus's 209 routed pages, a born-digital page read back at most 1.3 times its
+// words, except where its figure is a raster with labels in it: ISO 32000-2's figure pages
+// read at 3.0 to 5.7 times, the labels taken for new text, and a tagged figure page replaced
+// lost its caption from the outline. A scan with a stamped header reads at 50 times or more.
+// 10 sits between.
+const addsFactor = 10
+
+// words counts the page's words that hold a character read.
+func words(p doc.Page) int {
+	n := 0
+	for _, w := range strings.Fields(p.Text()) {
+		if readable(w) {
+			n++
+		}
+	}
+	return n
+}
+
 // readable reports whether s holds a character other than whitespace and doc.Unmapped.
 func readable(s string) bool {
 	return strings.TrimSpace(strings.ReplaceAll(s, doc.Unmapped, "")) != ""
 }
 
-// DefaultThreshold is the coverage below which a page is sent to the model.
+// DefaultThreshold is the coverage below which a page is sent to OCR.
 //
 // 5% rather than 0. A pure scan is exactly zero and any positive threshold catches
 // it, so the number is really about the mixed page: a scan whose only digital text

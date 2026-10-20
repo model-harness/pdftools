@@ -290,8 +290,8 @@ func TestUntaggedTitleIsCleanedAndBounded(t *testing.T) {
 
 // TestUntaggedUnrankedHeadingStaysInTheOutline covers a heading whose producer named it
 // without ranking it. layout never emits one — it assigns a level or does not promote — but
-// doctags reads a recognition model's output, and dropping such a heading would lose the
-// clause and every block under it.
+// the model is open to any producer, and dropping such a heading would lose the clause and
+// every block under it.
 func TestUntaggedUnrankedHeadingStaysInTheOutline(t *testing.T) {
 	d := blocks(blk{page: 1, role: doc.RoleHeading, level: 0, text: "Introduction"}, para(1, "Body."))
 

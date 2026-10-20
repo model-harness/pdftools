@@ -16,10 +16,14 @@ type pageErrs struct {
 }
 
 // unmapped counts, page by page, the glyphs the file gives no Unicode value to, each of which the
-// Markdown writes as part of an [err] (ADR 0042). A page with none is left out.
+// Markdown writes as part of an [err] (ADR 0042). A page with none is left out, and so is a page
+// read by OCR, whose [err] are words read below the confidence threshold and reported with it.
 func unmapped(d *doc.Document) []pageErrs {
 	var out []pageErrs
 	for i := range d.Pages {
+		if d.Pages[i].Rasterized {
+			continue
+		}
 		if n := strings.Count(d.Pages[i].Text(), doc.Unmapped); n > 0 {
 			out = append(out, pageErrs{Page: d.Pages[i].Number, Glyphs: n})
 		}

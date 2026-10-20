@@ -27,8 +27,12 @@ func runMD(args []string) error {
 	frontmatter := fs.Bool("frontmatter", false, "emit YAML frontmatter")
 	artifacts := fs.Bool("artifacts", false, "keep running headers, folios, and watermarks")
 	flat := fs.Bool("flat", false, "page-ordered prose with no headings, even when the file is tagged")
+	useOCR := fs.Bool("ocr", true, "read pages that carry no text with Tesseract, when it is installed")
+	backend := fs.String("backend", "pdfium", "rasterizer for OCR: "+backendNames)
+	var eo engineFlags
+	eo.register(fs)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: pdfspec md [-o out] [-split] [-frontmatter] [-artifacts] [-flat] <file.pdf>\n\n")
+		fmt.Fprint(os.Stderr, "usage: pdfspec md [-o out] [-split] [-frontmatter] [-artifacts] [-flat] [-ocr=false] <file.pdf>\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -43,6 +47,9 @@ func runMD(args []string) error {
 	}
 	if *split && *out == "" {
 		return fmt.Errorf("-split writes one file per page and needs -o <dir>")
+	}
+	if err := eo.validate(); err != nil {
+		return err
 	}
 
 	in := fs.Arg(0)
@@ -61,9 +68,12 @@ func runMD(args []string) error {
 	}
 	// The extractor reads the file, so it cannot know what the user called it.
 	d.Meta.Path = in
+	warnIfPagesFailed(ex.Failed(), len(d.Pages))
+	if *useOCR {
+		autoOCR(d, in, eo, *backend)
+	}
 	warnIfEmpty(d)
 	warnIfUnmapped(os.Stderr, unmapped(d))
-	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 
 	mopt := markdown.Options{Frontmatter: *frontmatter, Artifacts: *artifacts}
 	if *split {
@@ -204,10 +214,9 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 // first removes the other collision the ADR names, a numeric first column.
 //
 // Shared by md and ocr so the two agree. They have to — ocr on a born-digital document
-// writes what md writes and consults no model, and
-// TestOCRVerbWithoutModelOnDigitalDocument holds them to it. Recognized pages are
-// unaffected either way: doctags assigns RoleHeading and RoleListItem itself, and all
-// passes consider only paragraphs.
+// writes what md writes and runs no engine, and TestOCRVerbOnDigitalDocument holds them to
+// it. A page read by OCR is built of paragraphs with lines (ocr.Page), so every pass
+// considers it as it does an extracted page.
 func inferRoles(d *doc.Document) {
 	layout.Furniture(d)
 	layout.Tables(d, layout.DefaultOptions)
@@ -255,8 +264,9 @@ func convertDefault(path string) ([]byte, error) {
 		return nil, err
 	}
 	d.Meta.Path = path
-	warnIfEmpty(d)
 	warnIfPagesFailed(ex.Failed(), len(d.Pages))
+	autoOCR(d, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: defaultMinConf}, "pdfium")
+	warnIfEmpty(d)
 
 	var buf bytes.Buffer
 	if err := writeMarkdown(&buf, s, d, false, markdown.Options{}); err != nil {

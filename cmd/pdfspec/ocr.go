@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	stdimage "image"
-	"image/draw"
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/model-harness/pdftools/doc"
@@ -16,42 +17,31 @@ import (
 	"github.com/model-harness/pdftools/geom"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/ocr"
-	"github.com/model-harness/pdftools/ocr/docd"
-	"github.com/model-harness/pdftools/ocr/doctags"
-	"github.com/model-harness/pdftools/ocr/ipc"
+	"github.com/model-harness/pdftools/ocr/tesseract"
 	"github.com/model-harness/pdftools/render"
 	"github.com/model-harness/pdftools/sink/markdown"
 )
 
-// runOCR converts a PDF to Markdown, sending only the pages that need it through a
-// vision model.
+// runOCR converts a PDF to Markdown, reading the pages that need it with Tesseract.
 //
-// The verb is `md` plus a fallback, not a separate pipeline, and that is the design:
-// the extractor runs over the whole document first, the router picks the pages whose
-// content stream carries nothing, and only those cost a model. A document that is
-// entirely born-digital produces exactly what `md` produces and never loads a model at
-// all; a document that is entirely scanned goes through the model page by page. The
-// common real case — a specification with scanned annexes — is handled without the user
-// having to know which pages were which.
+// The verb is md with the router's knobs: md already reads the pages Route picks when
+// Tesseract is installed (ADR 0043), and this verb adds -force, -threshold and -dry-run.
+// A document that is entirely born-digital produces exactly what md produces and never runs
+// an engine at all.
 func runOCR(args []string) error {
 	fs := flag.NewFlagSet("ocr", flag.ExitOnError)
 	out := fs.String("o", "", "output file (default: stdout)")
 	pages := fs.String("pages", "", "page ranges to consider, e.g. 1,4-9,20- (default: all)")
-	threshold := fs.Float64("threshold", ocr.DefaultThreshold, "text coverage below which a page is sent to the model; 0 disables OCR")
-	force := fs.Bool("force", false, "send every selected page to the model, ignoring coverage")
-	dryRun := fs.Bool("dry-run", false, "report which pages would be sent and exit without loading a model")
-	dpi := fs.Float64("dpi", render.DefaultOptions.DPI, "resolution pages are rasterized at before recognition")
+	threshold := fs.Float64("threshold", ocr.DefaultThreshold, "text coverage below which a page is read by OCR; 0 disables OCR")
+	force := fs.Bool("force", false, "read every selected page by OCR, ignoring coverage")
+	dryRun := fs.Bool("dry-run", false, "report which pages would be read and exit without running an engine")
 	backend := fs.String("backend", "pdfium", "rasterizer: "+backendNames)
-	maxTokens := fs.Int("max-tokens", defaultMaxTokens, "token bound per page; 0 means the backend's default")
-	addr := fs.String("addr", "", "IPC address of a running model host (default: run one in-process)")
-	exe := fs.String("exe", "", "llama-server executable (default: look on PATH)")
-	model := fs.String("model", docd.Model, "HuggingFace GGUF repo the host loads")
-	ngl := fs.Int("ngl", 0, "model layers to offload to the GPU; 0 is CPU only")
-	nctx := fs.Int("ctx", 0, "context window in tokens; 0 means the backend's default")
 	frontmatter := fs.Bool("frontmatter", false, "emit YAML frontmatter")
 	artifacts := fs.Bool("artifacts", false, "keep running headers, folios, and watermarks")
+	var eo engineFlags
+	eo.register(fs)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: pdfspec ocr [-o out] [-pages 1,4-9] [-threshold f] [-force] [-dry-run] [-addr sock] <file.pdf>\n\n")
+		fmt.Fprint(os.Stderr, "usage: pdfspec ocr [-o out] [-pages 1,4-9] [-threshold f] [-force] [-dry-run] [-tesseract exe] <file.pdf>\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -64,21 +54,10 @@ func runOCR(args []string) error {
 	if *threshold < 0 || *threshold > 1 {
 		return fmt.Errorf("-threshold %g is outside 0-1: it is a fraction of the page area", *threshold)
 	}
-	if *maxTokens < 0 {
-		return fmt.Errorf("-max-tokens %d is negative", *maxTokens)
-	}
-
-	ropt := render.Options{DPI: *dpi, MaxPixels: render.DefaultOptions.MaxPixels}
-	// Validated before anything is opened or downloaded. A typo in -dpi that surfaced
-	// after a ten-minute first-run model download would be the worst possible time to
-	// learn about it.
-	if _, _, _, err := render.Fit(letterBox, ropt); err != nil {
+	if err := eo.validate(); err != nil {
 		return err
 	}
 
-	// Ctrl-C reaches the child. docd starts llama-server with a cancellable context, so
-	// cancelling here is what stops a model that is mid-page instead of leaving an
-	// orphan holding the GPU and the port.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -110,63 +89,55 @@ func runOCR(args []string) error {
 		return plan(os.Stdout, d, want, routed, *threshold)
 	}
 	if len(routed) == 0 {
-		// Nothing to recognize, so nothing is loaded. Said out loud, because a run that
-		// silently produced the same output as `md` would otherwise look like the model
-		// was consulted and agreed.
 		fmt.Fprintf(os.Stderr, "no pages need recognition: all %d selected page(s) carry text above %.0f%% coverage\n",
 			len(want), *threshold*100)
-		if !d.Meta.Tagged {
-			inferRoles(d)
-		}
-		return writeWhole(d, *out, mopt)
-	}
-
-	eng, closeEngine, err := openEngine(ctx, engineOptions{
-		addr: *addr, exe: *exe, model: *model, ngl: *ngl, ctx: *nctx,
-	})
-	if err != nil {
-		return err
-	}
-	defer closeEngine()
-
-	r, err := openRasterizer(*backend, in)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = r.Close() }()
-
-	if err := recognize(ctx, d, routed, eng, r, ropt, *maxTokens); err != nil {
+	} else if err := readPages(ctx, d, in, routed, eo, *backend, *force); err != nil {
 		return err
 	}
 	if !d.Meta.Tagged {
-		// A partly-scanned document keeps its born-digital pages' extracted text, and
-		// those pages get the same inference `md` would give them. The recognized pages
-		// are already levelled — doctags reads a heading's rank out of the model's
-		// output — and carry no font size for a cluster to be measured from, so they
-		// are not reconsidered here.
 		inferRoles(d)
 	}
 	return writeWhole(d, *out, mopt)
 }
 
-// defaultMaxTokens bounds one page's generation.
-//
-// Bounded by default rather than left to the backend, because the failure mode of a
-// vision model on a dense page is not silence but a repetition loop that emits the same
-// table row until something stops it — on a 200-page document that is the difference
-// between an hour and a night. 8192 is comfortably more than a full page of DocTags
-// (the densest fixture in testdata/docling is under 3000 tokens) and still short enough
-// that a looping page gives up in seconds rather than minutes.
-const defaultMaxTokens = 8192
+// engineFlags are the Tesseract settings md and ocr share.
+type engineFlags struct {
+	exe, tessdata, lang string
+	dpi, minConf        float64
+}
+
+func (e *engineFlags) register(fs *flag.FlagSet) {
+	fs.StringVar(&e.exe, "tesseract", "", "tesseract executable (default: look on PATH)")
+	fs.StringVar(&e.tessdata, "tessdata", "", "directory of Tesseract language models (default: TESSDATA_PREFIX or the install's)")
+	fs.StringVar(&e.lang, "lang", "eng", "Tesseract language model")
+	fs.Float64Var(&e.dpi, "dpi", ocrDPI, "resolution pages are rasterized at before OCR")
+	fs.Float64Var(&e.minConf, "min-conf", defaultMinConf, "Tesseract confidence (0-100) below which a word is written [err]")
+}
+
+func (e *engineFlags) validate() error {
+	if e.minConf < 0 || e.minConf > 100 {
+		return fmt.Errorf("-min-conf %g is outside 0-100", e.minConf)
+	}
+	// Validated before anything is opened, so a typo in -dpi surfaces at once.
+	_, _, _, err := render.Fit(letterBox, render.Options{DPI: e.dpi, MaxPixels: render.DefaultOptions.MaxPixels})
+	return err
+}
+
+// ocrDPI is the resolution pages are read at, the rasterizer's default. Tesseract read the
+// spike's seven born-digital pages within 0.3 points of CER at 200 dpi and at 300, and 300 is
+// 2.25 times the pixels (ADR 0043).
+const ocrDPI = 200
+
+// defaultMinConf is the confidence below which a word is [err] (ADR 0043).
+const defaultMinConf = 30
 
 // route returns the selected pages that need recognition, in page order.
 func route(d *doc.Document, want []int, threshold float64, force bool) []int {
 	var routed []int
 	for _, n := range want {
 		p := d.Pages[n-1]
-		// -force still respects Rasterized, which ocr.Route checks: a page that already
-		// came from a model is not re-read, because asking the model to convert its own
-		// output is not a stronger reading of the page.
+		// -force still respects Rasterized, which ocr.Route checks: a page that already came
+		// from OCR is not re-read.
 		if force && !p.Rasterized {
 			routed = append(routed, n)
 			continue
@@ -178,11 +149,7 @@ func route(d *doc.Document, want []int, threshold float64, force bool) []int {
 	return routed
 }
 
-// plan reports the routing decision without loading a model.
-//
-// This exists because the model is the expensive part and the decision is free. "Which
-// pages of this 1,000-page file need OCR" is the first question anyone asks, and
-// answering it should not cost a 500 MB download.
+// plan reports the routing decision without running an engine.
 func plan(w io.Writer, d *doc.Document, want, routed []int, threshold float64) error {
 	set := make(map[int]bool, len(routed))
 	for _, n := range routed {
@@ -203,165 +170,174 @@ func plan(w io.Writer, d *doc.Document, want, routed []int, threshold float64) e
 	return nil
 }
 
-// recognize sends each routed page through the engine and replaces its blocks.
-//
-// Serial, and deliberately without a -jobs flag. The bottleneck is a single model: the
-// host runs one slot, the wire allows one in-flight request per connection, and
-// ipc.Local serializes for the same reason — so page-level fan-out would add queueing
-// and interleaved progress output without adding throughput. Rasterization, which is
-// milliseconds against tens of seconds of generation, is not worth parallelizing on its
-// own.
-//
-// A page that fails keeps whatever the extractor found for it, rather than being
-// emptied. That is the conservative direction: the extracted text may be sparse, but it
-// is what the file actually says, and discarding it in favour of nothing would make a
-// failed model call look like a blank page.
-func recognize(ctx context.Context, d *doc.Document, routed []int, eng ocr.Engine, r render.Rasterizer, ropt render.Options, maxTokens int) error {
-	start := time.Now()
-	var failed []int
+// autoOCR is md's step after extraction: the pages Route picks are read with Tesseract when it
+// is installed, which is the order the converter works in, the file's own text first (ADR 0043).
+// A page OCR fails on keeps its extracted text, and md goes on with a warning: the conversion
+// is the file's, and OCR only adds to it.
+func autoOCR(d *doc.Document, path string, eo engineFlags, backend string) {
+	routed := route(d, allPages(len(d.Pages)), ocr.DefaultThreshold, false)
+	if len(routed) == 0 {
+		return
+	}
+	if err := readPages(context.Background(), d, path, routed, eo, backend, false); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	}
+}
 
-	for i, n := range routed {
+// allPages is 1..n.
+func allPages(n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = i + 1
+	}
+	return out
+}
+
+// tesseractEnv names the tesseract executable when no flag does, or "off" to run none. Tests
+// set it to "off", so what is installed on a machine cannot change what they measure.
+const tesseractEnv = "PDFSPEC_TESSERACT"
+
+// readPages reads the routed pages with Tesseract and replaces their blocks.
+//
+// Without Tesseract the run still succeeds: the pages keep what the extractor found, and
+// stderr says which ones they are, since a scan written as nothing would otherwise read as a
+// blank page.
+//
+// A page that fails keeps its extracted text too, rather than being emptied: that text may
+// be sparse, but it is what the file says.
+func readPages(ctx context.Context, d *doc.Document, path string, routed []int, eo engineFlags, backend string, force bool) error {
+	exe := eo.exe
+	if exe == "" {
+		exe = os.Getenv(tesseractEnv)
+	}
+	if exe == "off" {
+		return nil
+	}
+	eng, err := tesseract.New(ctx, tesseract.Options{Exe: exe, TessData: eo.tessdata, Lang: eo.lang, DPI: eo.dpi})
+	if errors.Is(err, tesseract.ErrNotFound) {
+		fmt.Fprintf(os.Stderr, "warning: %d page(s) need OCR and %v; they keep their extracted text: %s\n",
+			len(routed), err, pageList(routed))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	r, err := openRasterizer(backend, path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = r.Close() }()
+
+	return readWith(ctx, d, routed, eng, r, render.Options{DPI: eo.dpi, MaxPixels: render.DefaultOptions.MaxPixels}, eo.minConf, force,
+		withArtifacts(path))
+}
+
+// withArtifacts returns the function that extracts page n with its artifacts kept, which is
+// what OCR's reading is compared against: OCR reads a running header and a watermark as text,
+// and compared with a page they were stripped from, a page blank but for its furniture reads as
+// all new. ISO/TS 32001's blank pages gave back the licence watermark naming its buyer.
+func withArtifacts(path string) func(n int) doc.Page {
+	return func(n int) doc.Page {
+		s, err := pcstore.Open(path)
+		if err != nil {
+			return doc.Page{}
+		}
+		defer func() { _ = s.Close() }()
+		opt := extract.DefaultOptions
+		opt.KeepArtifacts = true
+		p, err := extract.New(s, opt).Page(n)
+		if err != nil {
+			return doc.Page{}
+		}
+		return p
+	}
+}
+
+// readWith reads the routed pages with eng, rasterized by r. A reading replaces a page only
+// where ocr.Adds says it adds to what the extractor found, or under -force.
+func readWith(ctx context.Context, d *doc.Document, routed []int, eng ocr.Engine, r render.Rasterizer, ropt render.Options, minConf float64, force bool, full func(int) doc.Page) error {
+	start := time.Now()
+	var failed, kept []int
+	var unsure []pageErrs
+	for _, n := range routed {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		began := time.Now()
-		p, err := recognizePage(ctx, n, eng, r, ropt, maxTokens, d.Pages[n-1])
+		p, err := readPage(ctx, n, eng, r, ropt, minConf, d.Pages[n-1])
 		if err != nil {
-			// Reported per page as it happens rather than collected for the end: a run
-			// where every page fails should say so on the first one, not after an hour.
 			fmt.Fprintf(os.Stderr, "  page %d: %v\n", n, err)
 			failed = append(failed, n)
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
+			continue
+		}
+		if !force && !ocr.Adds(full(n), p) {
+			kept = append(kept, n)
 			continue
 		}
 		d.Pages[n-1] = p
-		fmt.Fprintf(os.Stderr, "page %d (%d of %d): %d block(s) in %v\n",
-			n, i+1, len(routed), len(p.Blocks), time.Since(began).Round(time.Millisecond))
+		if k := strings.Count(p.Text(), doc.Unmapped); k > 0 {
+			unsure = append(unsure, pageErrs{Page: n, Glyphs: k})
+		}
 	}
-
-	fmt.Fprintf(os.Stderr, "recognized %d of %d page(s) in %v\n",
-		len(routed)-len(failed), len(routed), time.Since(start).Round(time.Second))
+	fmt.Fprintf(os.Stderr, "read %d of %d page(s) with %s in %v\n",
+		len(routed)-len(failed), len(routed), eng.Name(), time.Since(start).Round(time.Millisecond))
+	if len(kept) > 0 {
+		fmt.Fprintf(os.Stderr, "  kept the extracted text of %d page(s), which OCR did not add to: %s\n", len(kept), pageList(kept))
+	}
+	if len(unsure) > 0 {
+		fmt.Fprintf(os.Stderr, "  %d word(s) read below confidence %g are written [err]: %s\n", errTotal(unsure), minConf, errPages(unsure))
+	}
 	if len(failed) > 0 {
-		// A partial document is still written — the caller has the output and the count
-		// of what is missing from it — but the exit status reflects the failure, because
-		// a silently incomplete conversion is the one outcome worth failing over.
-		return fmt.Errorf("%d of %d page(s) failed recognition and kept their extracted text", len(failed), len(routed))
+		return fmt.Errorf("%d of %d page(s) failed OCR and kept their extracted text", len(failed), len(routed))
 	}
 	return nil
 }
 
-// recognizePage rasterizes one page, recognizes it, and parses the result.
-func recognizePage(ctx context.Context, n int, eng ocr.Engine, r render.Rasterizer, ropt render.Options, maxTokens int, orig doc.Page) (doc.Page, error) {
+// readPage rasterizes one page and builds it from the words Tesseract reads.
+func readPage(ctx context.Context, n int, eng ocr.Engine, r render.Rasterizer, ropt render.Options, minConf float64, orig doc.Page) (doc.Page, error) {
 	ra, err := r.Page(n, ropt)
 	if err != nil {
 		return doc.Page{}, err
 	}
-
-	src, err := eng.Recognize(ctx, rgba(ra.Image), ocr.Options{MaxTokens: maxTokens})
-	// Parsed even when generation failed. A page truncated by its token bound is the
-	// dominant failure on a dense table, and ocr/doctags reads a truncated document by
-	// design — so the error is reported only when there is nothing to salvage.
-	if src == "" {
-		if err != nil {
-			return doc.Page{}, err
-		}
-		return doc.Page{}, fmt.Errorf("the model returned no output")
-	}
+	words, err := eng.Read(ctx, ra.Image)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  page %d: %v (keeping what was generated)\n", n, err)
+		return doc.Page{}, err
 	}
-
-	p, perr := doctags.ParsePage(src, n, ocrBox(orig, ra))
-	if perr != nil {
-		return doc.Page{}, perr
+	if !ocr.IsText(words) {
+		// A blank page, or a picture read as noise: nothing read is text, and the page keeps
+		// what the extractor found.
+		words = nil
 	}
-	if len(p.Blocks) == 0 {
-		// A page the model read as empty is not obviously wrong — a blank scan is a real
-		// thing — but replacing extracted text with nothing is, so it is a failure for
-		// this page and the extractor's version survives.
-		return doc.Page{}, fmt.Errorf("the model produced no blocks from %d characters of output", len(src))
-	}
-	return p, nil
+	return ocr.Page(words, n, ocrBox(orig, ra), ra.Image.Bounds(), minConf), nil
 }
 
-// ocrBox is the rectangle DocTags coordinates are resolved against.
+// ocrBox is the rectangle the image's pixels are resolved against.
 //
-// Origin from the extractor's page box, extent from the raster. The two differ on
-// purpose: doc.Page.Box carries the unrotated crop box while render.Raster.Box has
-// /Rotate applied, and the model saw the rotated pixels. Taking the extent from the
-// raster is therefore what makes a rotated page's boxes describe the page as read
-// rather than as stored; taking the origin from the crop box is what keeps them in the
-// same coordinate space as the blocks on every neighbouring page.
-//
-// The consequence, for a rotated page only, is that the recognized blocks are in the
-// rotated frame. The recognized page's Rotate is zero — doctags.ParsePage does not set
-// it, and recognize replaces the whole page rather than merging into it — which says so
-// exactly: a sink that applied the original /Rotate to these boxes would place them
-// twice.
+// Origin from the extractor's page box, extent from the raster. The two differ on purpose:
+// doc.Page.Box carries the unrotated crop box while render.Raster.Box has /Rotate applied,
+// and the engine saw the rotated pixels. Taking the extent from the raster is what makes a
+// rotated page's boxes describe the page as read; taking the origin from the crop box keeps
+// them in the same space as every neighbouring page's. The page built is in the rotated
+// frame, and its Rotate is zero, which says so.
 func ocrBox(orig doc.Page, ra *render.Raster) geom.Rect {
 	return geom.NewRect(orig.Box.X0, orig.Box.Y0,
 		orig.Box.X0+ra.Box.Width(), orig.Box.Y0+ra.Box.Height())
 }
 
-// rgba returns img as *image.RGBA, converting only when it is not one already.
-//
-// render/pdfium always returns RGBA, so the conversion is the cost of the interface
-// rather than of this path: render.Rasterizer promises image.Image, and a future
-// adapter — a native rasterizer, or one that renders grayscale for a scan — would
-// otherwise fail here at runtime rather than convert.
-func rgba(img stdimage.Image) *stdimage.RGBA {
-	if r, ok := img.(*stdimage.RGBA); ok {
-		return r
-	}
-	out := stdimage.NewRGBA(img.Bounds())
-	draw.Draw(out, out.Bounds(), img, img.Bounds().Min, draw.Src)
-	return out
-}
-
-// engineOptions is the wiring choice: an address, or a host to start.
-type engineOptions struct {
-	addr  string
-	exe   string
-	model string
-	ngl   int
-	ctx   int
-}
-
-// openEngine returns an ocr.Engine and the function that releases it.
-//
-// Two paths behind one interface. With -addr the verb talks to a host someone else is
-// running — inferd once it carries docling, or a docd on the machine with the GPU — and
-// starts nothing. Without it, it starts llama-server itself and reaches it in-process,
-// which is the right default for the common case of one CLI invocation over one
-// document: the model is loaded and discarded by the same run either way, so a socket
-// between two halves of one process would only add framing.
-//
-// Neither side can tell which one it is. That is the whole point of the wire in ocr/ipc
-// being byte-compatible with inferd's, and it is why this function is the only place in
-// the verb that knows a backend exists.
-func openEngine(ctx context.Context, o engineOptions) (ocr.Engine, func(), error) {
-	if o.addr != "" {
-		eng, err := ipc.Dial(ctx, o.addr)
-		if err != nil {
-			return nil, nil, err
+// pageList writes ascending page numbers as "3, 7-12, 20": a blank scan of 151 pages is one
+// range, not 151 numbers.
+func pageList(ns []int) string {
+	var parts []string
+	for i := 0; i < len(ns); {
+		j := i
+		for j+1 < len(ns) && ns[j+1] == ns[j]+1 {
+			j++
 		}
-		return eng, func() { _ = eng.Close() }, nil
+		if j > i {
+			parts = append(parts, strconv.Itoa(ns[i])+"-"+strconv.Itoa(ns[j]))
+		} else {
+			parts = append(parts, strconv.Itoa(ns[i]))
+		}
+		i = j + 1
 	}
-
-	host, err := docd.Start(ctx, docd.Options{
-		Model:     o.model,
-		Exe:       o.exe,
-		GPULayers: o.ngl,
-		Ctx:       o.ctx,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	eng := ipc.NewLocal(host)
-	// The host's Close, not the engine's: ipc.Local deliberately does not stop the model
-	// it was handed, because the caller owns that lifetime. Here the caller is this
-	// function, and forgetting it would leave llama-server running after the CLI exits.
-	return eng, func() { _ = host.Close() }, nil
+	return strings.Join(parts, ", ")
 }

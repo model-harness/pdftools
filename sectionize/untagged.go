@@ -14,12 +14,11 @@ import "github.com/model-harness/pdftools/doc"
 //
 // No geometry, no typography, no font-size clustering — those belong to package layout,
 // which has the measurements behind them and the negative results that bound them. A
-// block arrives here already marked, and the marking may come from either of two
-// producers: layout.Headings promotes a numbered heading in an untagged file, and
-// package doctags assigns RoleHeading and RoleListItem from a recognition model's own
-// output. Reading the role rather than re-deriving it is what lets one function serve
-// both, and it is the same precedence the tagged path keeps — a declaration outranks a
-// guess, wherever the declaration came from.
+// block arrives here already marked, by layout.Headings, which promotes a numbered heading
+// in an untagged file, or by any other producer that sets a role. Reading the role rather
+// than re-deriving it is what lets one function serve them all, and it is the same
+// precedence the tagged path keeps — a declaration outranks a guess, wherever the
+// declaration came from.
 //
 // The consequence worth naming is that this is only as good as its input. layout
 // promotes a heading only where the document numbers it, so an unnumbered "Foreword"

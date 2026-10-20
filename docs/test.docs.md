@@ -16,10 +16,9 @@ to be read, and one that was dropped there joined every aggregate baseline silen
 repo carried 245 images and 143 soft masks for two phases when the corpus has 239 and 142.
 A glob cannot distinguish a spec document from a stray download.
 
-**`testdata/` — the reference fixtures.** 37 files from PyMuPDF, Adobe, and docling-core,
-committed, each one chosen upstream *as a test input*. Thirty are PDFs; the other seven are
-DocTags/Markdown pairs for the OCR parser, which needs a model's output rather than a
-model's input. See §Provenance.
+**`testdata/` — the reference fixtures.** 30 PDFs from PyMuPDF and Adobe, committed, each
+one chosen upstream *as a test input*. See §Provenance. The seven DocTags/Markdown pairs
+from docling-core went with the DocTags parser they tested (ADR 0043).
 
 The corpus is a good regression baseline and a bad witness. All eleven files are tagged
 standards prose from one family of producers, so it exercises the tagged path exclusively,
@@ -83,22 +82,6 @@ Adobe considers a representative or a problematic document.
   — the sample inputs, named for the operation they demonstrate.
 - `src/resources/invalidinputs/` — deliberately bad inputs. `zeroLength.pdf` is 0 bytes
   and `disqualifiedScannedPages.pdf` is 151 pages Adobe's own OCR declines.
-
-### docling-core — `github.com/docling-project/docling-core`
-
-**MIT** — the same licence as this repo, and the only source here with no licensing
-friction at all. It is also the only source that supplies no PDFs: what it supplies is
-DocTags, the tag stream `granite-docling-258M` emits, and the Markdown docling itself
-renders that stream to. These are the ground-truth pairs `ocr/doctags` is written against
-(§Fixtures), and they are what made the parser finishable before a model was ever loaded.
-
-- [`docling_core/types/doc/tokens.py`](https://github.com/docling-project/docling-core/blob/main/docling_core/types/doc/tokens.py)
-  — the vocabulary, and the only normative statement of it. `ADR 0006` pins it at commit
-  `23fa247e`. Two things in it are not guessable: `<loc_>` is a **500-unit normalized grid**
-  (`round(500*val)` clamped to `[0, 499]`, four tokens in x0,y0,x1,y1 order), and `<table>`
-  and `<chart>` are members of *both* the element set and the picture-classification set.
-- [`test/data/doc/`](https://github.com/docling-project/docling-core/tree/main/test/data/doc)
-  — the fixtures, as `.dt`/`.md` pairs.
 
 ### Adobe PDF Services docs — `github.com/AdobeDocs/pdfservices-api-documentation`
 
@@ -247,84 +230,6 @@ which is the point — the invisible text layer is invisible.
 | `watermark.pdf` | 1 | tagged | Tagged, and the text really is only spaces: every showing operator is `[( )] TJ` inside a `/Span`. 0 characters is correct. |
 | `zeroLength.pdf` | 0 | *error* | **0 bytes.** Every corpus file opens; this one must not, and must fail with a reason rather than a panic or an empty success. |
 
-### docling-core (`testdata/docling/`)
-
-The only fixtures that are not PDFs, because the thing they test is not a PDF. `ocr/doctags`
-parses what a vision model *emits*, so its input is a tag stream and its ground truth is
-docling's own Markdown for that stream. Asserted in `ocr/doctags/doctags_test.go`, which
-never skips: no model, no GPU, no daemon, and nothing downloaded at test time.
-
-| File | Covers |
-|---|---|
-| `2206.01062.yaml.dt` | **The wide case.** 9 pages of a real paper carrying every construct the parser handles: 5 OTSL tables with `lcel`/`ucel` spans, 6 pictures with captions nested inside them, 8 `<page_break>`s, unordered lists, footnotes. 567 blocks across every `doc.Role`. |
-| `2206.01062.yaml.md` | docling's Markdown for the file above — the ground truth our sink is measured against. |
-| `barchart.dt` | **The smallest complete document**, and the only one with a `<chart>`: a picture-classification token (`<bar_chart>`) ahead of the OTSL grid of the chart's data. Small enough that all 22 blocks are asserted individually. |
-| `barchart.gt.md` | Ground truth for the above, short enough to read whole. |
-| `01030000000083.dt` | **One page as a model actually emits it** — no document wrapper, `<page_header>`/`<page_footer>`, three `<otsl>` tables each with its caption nested inside. This is the shape `ParsePage` sees from the router, which is the only shape the OCR path ever produces. |
-| `bad_doc.yaml.dt` | **Upstream's deliberately degenerate input:** tags with no `<loc_>` tokens anywhere. A model that stops emitting coordinates mid-generation is a real failure, and this is the no-panics rule applied to model output — the text comes through with zero rectangles. |
-| `bad_doc.yaml.md` | Ground truth for the degenerate case, and the pin for a **deliberate divergence**: docling renders `section_header_level_1` as `###`, because its serializer nests headings relative to the `<title>` before them. This package assigns level 2, because a level that depends on what came earlier cannot be assigned while parsing a single page — and a single page is all the router ever asks for. Recorded as a decision rather than left as a surprise. |
-
-Two things these files pin that no amount of reading the model's output would reveal.
-`<loc_>` is a **500-unit normalized grid**, not points and not a percentage, so the four
-tokens are `round(500*val)` clamped to `[0, 499]` in x0,y0,x1,y1 order. And **DocTags Y runs
-top-down while PDF user space runs bottom-up**, so the parser flips it — a document parsed
-without the flip reads perfectly and has every rectangle mirrored, which no text comparison
-can catch. `TestCoordinates` is the arithmetic; `TestOCRVerbReplacesScannedPage` catches it
-again at the verb.
-
-The other trap is a token-set collision. `<table>` and `<chart>` are in the element set
-*and* the picture-classification set, and a classification is shaped exactly like an element
-name. Nesting context resolves it — inside a `<picture>`, one of those names is the
-classification — and getting it backwards is not subtle: the first implementation read every
-element name as a classification and produced 561 paragraphs and zero headings from a 9-page
-paper.
-
-### The CJK line wrap
-
-The second defect these fixtures found, and the clearest argument for having them.
-
-`extract` joined every wrapped line with a space. For Latin that is right and necessary —
-a line break is the only thing marking the word boundary. For Chinese it is wrong, because
-a CJK line has no boundaries to break at: it fills and wraps wherever it runs out of
-measure. So the company name 中诚信国际信用评级有限责任公司, set across three lines in
-`chinese-tables.pdf`, came out as:
-
-```
-中诚信国际信 用评级有限责 任公司
-```
-
-Three words where the page says one. `appendLine` now looks at the characters on either
-side of the join and adds a space unless both are Han, kana, Hangul, or CJK punctuation.
-Han-to-Han spaces on this page fell from 22 to 7, and the 7 that remain are correct: a
-clause number before its title (`第七章 企业资信状况`) and table header cells
-(`序号 金融机构名称 授信总额`). Removing those would be the opposite defect, which is why
-the test names the four words the wraps fall inside rather than asserting a ratio — a
-ratio cannot tell a broken word from a table column, and that distinction is the whole
-question.
-
-The decision is per join, not per document, because documents are mixed: this one sets its
-prose in Chinese and its rating codes and amounts in Latin, and a line wrapping from one
-into the other is a real boundary. That case cannot be expressed with a fixture, so the
-predicate has its own unit test in `extract`.
-
-Eleven English-language documents cannot find this, however carefully they are measured.
-No Latin measurement in the suite moved when it was fixed.
-
-### The producer-stub heuristic
-
-`sampleInvoice.pdf` earns a paragraph because it justifies a line of code that would
-otherwise look wrong. `probe.go` does not route on whether a structure tree exists:
-
-```go
-r.Tagged = st.Headings > 0 || st.Paras > 0
-```
-
-A `StructTreeRoot` and `/MarkInfo /Marked true` are what a conforming tagged PDF has, so
-trusting them looks correct. This file has both and no content under them — a producer
-wrote the scaffolding and never filled it in. Trusting the flag takes the tagged path,
-finds no MCIDs to join page text to, and emits nothing from a document that has three
-pages of visible text. The check was written before this file was in the tree; the file is
-an independent witness for it, and it is Adobe's own sample.
 
 ---
 
@@ -404,9 +309,9 @@ measured. The numbers are the argument for 5% being safe (ADR 0006):
 
 Two orders of magnitude separate the two populations, which is what makes the exact default
 not load-bearing. What no fixture here covers is whether the model reads a given page
-*correctly*: that is a property of the weights, and no test in this repository can assert it.
-`ocr/doctags` is tested against upstream's ground truth (§above) and the verb's pipeline is
-tested with a fake `Engine`, which is what the interface is for.
+*correctly*: that is the engine's property. The verb's pipeline is tested with a fake
+`Engine`, which is what the interface is for, and Tesseract itself by the tests that run when
+`PDFSPEC_TEST_TESSERACT` names it (ADR 0043).
 
 ---
 

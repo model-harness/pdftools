@@ -5,6 +5,22 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 (Tesseract)
+
+- **Scanned pages are read with Tesseract.** ADR 0043, closes issue #9. `md` reads the pages
+  `ocr.Route` picks with the `tesseract` CLI when it is installed, found on `PATH`, by
+  `-tesseract`, or by `PDFSPEC_TESSERACT`. `-ocr=false` turns this off. Words come with their
+  confidence, and a word under `-min-conf` (30) is `[err]`. The gold set's scans went from CER
+  1.000 to a mean of 0.022, and type3-unmapped's 15 `[err]` are read whole.
+- **OCR only adds.** A reading replaces a page only with 10 times the words the page has with
+  its artifacts, and only at a mean confidence of 80 or more. Born-digital pages, furniture
+  pages and photos keep their extracted text. On the corpus, only the 7 scanned documents
+  change.
+- **Without Tesseract** the run succeeds, and stderr names the pages that needed it.
+- **Removed:** the granite-docling path (`ocr/docd`, `ocr/doctags`, `ocr/ipc`,
+  `testdata/docling`), and the ocr verb's `-addr`, `-exe`, `-model`, `-ngl`, `-ctx` and
+  `-max-tokens`. `ocr.Engine` returns words now.
+
 ### Changed — 2026-10-20 (unmapped glyphs)
 
 - **A glyph with no Unicode value is `[err]`.** ADR 0042, issue #8. A glyph the file gives no

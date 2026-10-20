@@ -342,10 +342,8 @@ func TestRenderMatchesProbeRouting(t *testing.T) {
 }
 
 // TestRenderDefaultDPIMatchesDesign pins the default against DESIGN.md §6, which
-// specifies 200 DPI, and against what the OCR models want: LightOnOCR-2 asks for 200
-// DPI at 1540 px on the longest edge, and granite-docling is trained at a comparable
-// scale. A default that drifted from the model's expected input would degrade OCR
-// with nothing in the output to say why.
+// specifies 200 DPI, and which OCR reads at (ADR 0043). A default that drifted would
+// change what OCR reads with nothing in the output to say why.
 func TestRenderDefaultDPIMatchesDesign(t *testing.T) {
 	if render.DefaultOptions.DPI != 200 {
 		t.Errorf("default DPI is %v, want 200 per DESIGN.md §6", render.DefaultOptions.DPI)

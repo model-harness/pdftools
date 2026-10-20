@@ -126,22 +126,23 @@ lines, flag parsing included.
 | `extract`, `sectionize`, `doc` | text runs, clause reconstruction, the document model |
 | `image`, `bits` | image XObjects, sub-byte sample unpacking |
 | `render`, `render/pdfium` | rasterization over a pdfium WASM adapter |
-| `ocr`, `ocr/doctags`, `ocr/ipc`, `ocr/docd` | per-page routing, DocTags parsing, the model host |
+| `ocr`, `ocr/tesseract` | per-page routing, words to pages, the Tesseract adapter |
 | `sink/markdown`, `sink/okf` | output formats |
 
 ## OCR
 
-`pdfspec ocr` extracts text deterministically and sends only pages whose text coverage
-falls below `-threshold` to a vision model — granite-docling-258M (Apache-2.0) over an
-NDJSON IPC wire, wire-compatible with `inferd`. `-dry-run` reports which pages would be
-sent without loading anything:
+Text comes from the file first. A page whose readable text covers under 5% of it is read
+with [Tesseract](https://github.com/tesseract-ocr/tesseract) when it is installed, found on
+`PATH` or named with `-tesseract`. The reading replaces the page only where it adds to what
+the file gave, and a word Tesseract is less than 30% confident of is written `[err]`
+(ADR 0043). Without Tesseract the page keeps its extracted text, and stderr names it.
+
+`md` does this by default (`-ocr=false` turns it off). `pdfspec ocr` adds the router's knobs:
 
 ```sh
-pdfspec ocr -dry-run scan.pdf     # which pages need a model, and why
-pdfspec ocr -addr /tmp/model.sock scan.pdf   # use an already-running host
+pdfspec ocr -dry-run scan.pdf     # which pages need OCR, and why
+pdfspec ocr -force scan.pdf       # read every page, whatever its text
 ```
-
-Without `-addr`, a host is started in-process, which downloads a GGUF on first use.
 
 ## Building and testing
 
@@ -152,7 +153,7 @@ go test ./...      # passes with no PDFs on disk at all
 
 The test suite draws on two populations, and the split is deliberate:
 
-- **`testdata/`** — 37 fixtures from PyMuPDF, Adobe, and docling-core, committed with a
+- **`testdata/`** — 30 fixtures from PyMuPDF and Adobe, committed with a
   pinned upstream commit SHA and a SHA-256 per file (`testdata/manifest.json`). A test never
   skips for these. Each one covers something the corpus cannot.
 - **`docs/`** — eleven ISO 32000 and PDF Association specifications, where the aggregate

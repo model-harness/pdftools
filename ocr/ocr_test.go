@@ -144,21 +144,3 @@ func TestDefaultThresholdSeparatesPopulations(t *testing.T) {
 		t.Errorf("a page of body text covers only %.3f, too close to the %.2f default", c, DefaultThreshold)
 	}
 }
-
-// TestPromptsAreExact pins the prompt strings. granite-docling was instruction-tuned
-// on these exact sentences and a paraphrase measurably degrades the output, so this is
-// prompt-as-API: a "harmless" reword here is a silent quality regression with no test
-// anywhere else to catch it.
-func TestPromptsAreExact(t *testing.T) {
-	for got, want := range map[string]string{
-		PromptPage:    "Convert this page to docling.",
-		PromptChart:   "Convert chart to table.",
-		PromptFormula: "Convert formula to LaTeX.",
-		PromptCode:    "Convert code to text.",
-		PromptTable:   "Convert table to OTSL.",
-	} {
-		if got != want {
-			t.Errorf("prompt = %q, want %q", got, want)
-		}
-	}
-}
