@@ -689,6 +689,7 @@ func rebuild(blocks []doc.Block, bands []band) []doc.Block {
 func spanBlock(src *doc.Block, spans []doc.Span) doc.Block {
 	b := *src
 	b.Spans = append([]doc.Span(nil), spans...)
+	b.Lines = nil // a cell's lines are not its row's, and a cell does not know where its own wrap
 	b.Cell = nil
 	b.Box = spansBox(spans)
 	b.SetMCIDs()

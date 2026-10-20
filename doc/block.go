@@ -111,6 +111,11 @@ type Block struct {
 	// on across lines whenever its style does, so the spans cannot say where a line ended,
 	// and a pass that asks whether a paragraph's last line is full, or its first flush, needs
 	// that. Empty for a block no extractor drew.
+	//
+	// They describe Spans as they are, so a writer that edits the spans' text keeps the starts
+	// in step, as StripMarker and layout.Hyphens do, or empties Lines, as a table cell cut from
+	// its row's spans does. Stale lines index past a block's spans: that is what made
+	// layout.Hyphens panic on every table before TestBlockLinesDescribeTheirSpans existed.
 	Lines []Line
 
 	// Lang is a language override from the structure tree, when the block declares

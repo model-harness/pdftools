@@ -107,6 +107,25 @@ func TestTablesReadsTheDrawnGrid(t *testing.T) {
 	}
 }
 
+// TestATableCellHasNoLines: a cell is cut from its row's spans, and the row's lines index
+// spans the cell does not hold, so the cell has none rather than wrong ones (doc.Block.Lines).
+func TestATableCellHasNoLines(t *testing.T) {
+	d := tableDoc(
+		[]string{"Header A", "Header B", "Header C"},
+		[]string{"Cell A1", "Cell B1", "Cell C1"},
+	)
+	src := &d.Pages[0].Blocks[0]
+	src.Lines = []doc.Line{{Span: 0}, {Span: 3}}
+	if st := Tables(d, DefaultOptions); st.Cells != 6 {
+		t.Fatalf("stats = %+v, want 6 cells", st)
+	}
+	for _, b := range d.Pages[0].Blocks {
+		if b.Cell != nil && b.Lines != nil {
+			t.Errorf("cell %q kept its row's lines %+v", b.Text(), b.Lines)
+		}
+	}
+}
+
 // TestTablesNeedsARule is the negative half, and the reason this package reads strokes at
 // all: the same nine cells at the same coordinates, with no rules on the page, stay one
 // paragraph.

@@ -216,6 +216,8 @@ func inferRoles(d *doc.Document) {
 	layout.Lists(d, layout.DefaultOptions)
 	layout.OrderedLists(d, layout.DefaultOptions)
 	layout.PageBreaks(d)
+	// Again after PageBreaks, which makes line starts of its own; see writeMarkdown.
+	layout.Hyphens(d)
 }
 
 // writeMarkdown writes the whole document as Markdown: the structure tree's outline when
@@ -223,6 +225,9 @@ func inferRoles(d *doc.Document) {
 // layout infers. It is the md verb's choice of output, and bench scores what it writes,
 // so the two cannot drift apart.
 func writeMarkdown(w io.Writer, s objects.Store, d *doc.Document, flat bool, opt markdown.Options) error {
+	// Before the outline, which copies the spans it is built from, and on every path, since a
+	// typesetter's hyphen is not a role. inferRoles runs it once more for the page breaks it joins.
+	layout.Hyphens(d)
 	if !flat {
 		o, err := readOutline(s, d)
 		if err != nil {

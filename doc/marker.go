@@ -337,6 +337,7 @@ func (b *Block) stripMarkerIn(vocab map[rune]bool) bool {
 	if listMarkerIn(b.Text(), vocab) == 0 {
 		return false
 	}
+	defer b.trimmedFronts(b.spanLens())
 	found := rune(0)
 	for i := range b.Spans {
 		s := &b.Spans[i]
@@ -397,6 +398,7 @@ func (b *Block) StripOrderedLabel() bool {
 	if lbl == "" {
 		return false
 	}
+	defer b.trimmedFronts(b.spanLens())
 	// The count includes any whitespace before the label, which Text() carries and
 	// OrderedLabel trimmed off before matching.
 	n := len([]rune(lbl))
@@ -448,6 +450,7 @@ func (b *Block) StripOrderedLabel() bool {
 // prose.
 func (b *Block) SetMarker(marker string) {
 	b.Marker = marker
+	defer b.trimmedFronts(b.spanLens())
 	for i := range b.Spans {
 		s := &b.Spans[i]
 		if s.Text == "" {
@@ -457,6 +460,25 @@ func (b *Block) SetMarker(marker string) {
 		if s.Text != "" {
 			return
 		}
+	}
+}
+
+// spanLens returns the length of each span's text, for trimmedFronts.
+func (b *Block) spanLens() []int {
+	out := make([]int, len(b.Spans))
+	for i := range b.Spans {
+		out[i] = len(b.Spans[i].Text)
+	}
+	return out
+}
+
+// trimmedFronts moves b's line starts back by what an edit took from the front of each span,
+// given the spans' lengths before it, which is the only edit the strips above make. A line
+// that started inside the text taken now starts where its span's text does.
+func (b *Block) trimmedFronts(before []int) {
+	for k := range b.Lines {
+		ln := &b.Lines[k]
+		ln.Offset = max(0, ln.Offset-(before[ln.Span]-len(b.Spans[ln.Span].Text)))
 	}
 }
 

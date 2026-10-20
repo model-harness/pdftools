@@ -1,6 +1,9 @@
 package doc
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // item builds a list-item block from spans, one style, no geometry — the marker rules
 // read text and nothing else.
@@ -499,5 +502,39 @@ func TestStripOrderedLabelStopsAtContent(t *testing.T) {
 	}
 	if got := b.Text(); got != "First.  and its continuation." {
 		t.Errorf("text = %q, want the second span's spacing kept", got)
+	}
+}
+
+// TestStripsKeepLinesInStep: a marker or label taken from the front of a block's text moves its
+// line starts back by what was taken, so each still names its line's first character.
+func TestStripsKeepLinesInStep(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		spans []string
+		strip func(*Block) bool
+	}{
+		{"a bullet", []string{"• The first line ", "and the second"}, (*Block).StripMarker},
+		{"a bullet in one span", []string{"• The first line and the second"}, (*Block).StripMarker},
+		{"a label", []string{"12. The first line ", "and the second"}, (*Block).StripOrderedLabel},
+		{"a label in one span", []string{"12. The first line and the second"}, (*Block).StripOrderedLabel},
+		{"a declared marker's gap", []string{"  The first line and the second"}, func(b *Block) bool { b.SetMarker("•"); return true }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var b Block
+			for _, s := range c.spans {
+				b.Spans = append(b.Spans, Span{Text: s, MCID: -1})
+			}
+			second := strings.Index(b.Text(), "and")
+			b.Lines = []Line{{Span: 0, Offset: 0}, {Span: len(b.Spans) - 1, Offset: second - (len(b.Text()) - len(b.Spans[len(b.Spans)-1].Text))}}
+			if !c.strip(&b) {
+				t.Fatal("nothing stripped")
+			}
+			for k, want := range []string{"The first line ", "and the second"} {
+				ln := b.Lines[k]
+				if got := b.Spans[ln.Span].Text[ln.Offset:]; !strings.HasPrefix(got, want) {
+					t.Errorf("line %d starts %q, want %q", k, got, want)
+				}
+			}
+		})
 	}
 }

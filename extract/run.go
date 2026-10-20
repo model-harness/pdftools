@@ -1475,9 +1475,11 @@ func wrapNeedsSpace(prev, next string) bool {
 // were 218 right against 170 wrong, and they were measured over a seventeen-file corpus that no
 // longer exists: prose-heavy PDFs hyphenate for justification, and a specification is full of
 // hyphenated compounds instead. So the conclusion is unchanged and its justification is no
-// longer against it. The dash stays either way, because an unsplit word with a hyphen in it is
-// a reading a consumer can still repair while a deleted hyphen is not recoverable from the
+// longer against it. The dash stays here either way, because an unsplit word with a hyphen in it
+// is a reading a consumer can still repair while a deleted hyphen is not recoverable from the
 // output — but it is worth knowing that the corpus now agrees rather than being overridden.
+// layout.Hyphens makes that repair once the whole document is in hand, which a page alone is
+// not (ADR 0035).
 //
 // An independent implementation is the other check, and it is the wrong instrument for this
 // question: of the 94 words Poppler emits that this package does not, 78 are a dash it drops

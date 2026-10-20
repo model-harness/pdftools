@@ -24,7 +24,7 @@ var benchFloors = map[string]benchFigures{
 	"footnotes":                {cer: 0.019, recall: 0.936, precision: 0.917, order: 1.000, blocks: 0.571, headings: 1.000, tables: 1.000, style: 1.000},
 	"fractions":                {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"headings":                 {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
-	"hyphenation":              {cer: 0.012, recall: 0.921, precision: 0.854, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"hyphenation":              {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"image":                    {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"lists":                    {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"metadata":                 {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},

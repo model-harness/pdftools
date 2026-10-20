@@ -105,6 +105,7 @@ func Untagged(d *doc.Document, opt Options) (*doc.Outline, Stats) {
 // of one call site's ordering.
 func detach(blk doc.Block) doc.Block {
 	blk.Spans = append([]doc.Span(nil), blk.Spans...)
+	blk.Lines = append([]doc.Line(nil), blk.Lines...)
 	blk.MCIDs = append([]int(nil), blk.MCIDs...)
 	return blk
 }

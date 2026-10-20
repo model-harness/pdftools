@@ -363,6 +363,7 @@ func TestUntaggedEmptyBlocksAreDropped(t *testing.T) {
 // ordering that makes it safe is one call site's and not the type's.
 func TestUntaggedOutlineDoesNotAliasTheDocument(t *testing.T) {
 	d := blocks(head(1, 1, "1 Scope"), para(1, "— an item."))
+	d.Pages[0].Blocks[1].Lines = []doc.Line{{Span: 0, Offset: 0}, {Span: 0, Offset: len("— an ")}}
 
 	out, _ := Untagged(d, DefaultOptions)
 
@@ -377,6 +378,11 @@ func TestUntaggedOutlineDoesNotAliasTheDocument(t *testing.T) {
 	}
 	if out.Sections[0].Blocks[0].Marker != "" {
 		t.Error("the document's marker reached the outline's block")
+	}
+	// StripMarker moves the document's line starts back, and the outline's must stay where they were.
+	if got := out.Sections[0].Blocks[0].Lines[1].Offset; got != len("— an ") {
+		t.Errorf("outline line offset = %d after the document was edited, want %d: the lines are shared",
+			got, len("— an "))
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/layout"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/sectionize"
 	"github.com/model-harness/pdftools/sink/okf"
@@ -52,6 +53,7 @@ func runOKF(args []string) error {
 	d.Meta.Path = in
 	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 
+	layout.Hyphens(d) // before the outline copies the spans, as md does
 	o, err := readOutline(s, d)
 	if err != nil {
 		return err

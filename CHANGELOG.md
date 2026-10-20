@@ -5,6 +5,17 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-20
+
+- **A typesetter's hyphen at a line end is taken out.** ADR 0035, issue #6. The document is
+  its own dictionary. A hyphen goes when the document spells the joined word elsewhere and never
+  the hyphenated one, or when neither half is a word anywhere in it. Otherwise it stays, as the
+  ambiguous case does. Soft hyphens always go. This applies on every path, tagged or not.
+  `hyphenation` went from CER 0.012 to 0.000. Across the corpus 249 hyphens go, and 2 of them
+  were compounds.
+- **`Block.Lines` stay true to the spans.** The marker strips move line starts with the text
+  they take, a table cell drops its row's lines, and an untagged outline copies them.
+
 ### Changed — 2026-10-19
 
 - **A paragraph runs on across a page break.** ADR 0034, issue #6. On an untagged page, the
