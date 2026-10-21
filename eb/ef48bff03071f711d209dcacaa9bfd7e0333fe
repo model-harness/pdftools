@@ -1,0 +1,97 @@
+cmd/pdfspec/recover_test.go
+  s_5cd1b28ed520c1::t_d2b5962b92b52a 15-17,20,39-42,45,59,63,65-67,86-91,97,117
+  s_5cd1b28ed520c1::t_40c471fd70bb9a 1-4,6-14,18-19,21-38,43-44,46-58,60-62,64,68-85,92-96,98-116,118-121
+  s_5cd1b28ed520c1::t_98d944cda19653 5,159-216
+  s_5cd1b28ed520c1::t_01975f24dede41 122-129,131-141,143-152,154-158,217-218
+  s_5cd1b28ed520c1::t_3954e41171f2cb 130,142,153
+testdata/reference/README.md
+  s_5cd1b28ed520c1::t_2aff996cae2ea1 161
+ocr/confirm.go
+  s_5cd1b28ed520c1::t_78979c258b1fcc 8
+  s_5cd1b28ed520c1::t_fcf9d053246131 52,72-76,110-117
+cmd/pdfspec/recover.go
+  s_5cd1b28ed520c1::t_f41740f65b56d9 213
+  s_5cd1b28ed520c1::t_ca3af0c38f1694 192
+  s_5cd1b28ed520c1::t_3618b794f00b6d 12,36,49-51,56-57,60,62,66-129,132-137,141-144,146,148,151-152,166-178,181,184,187-190,195-197,204,208,212,215-216,219-220,222-223,225-229,232-248
+  s_5cd1b28ed520c1::t_5fdbc0c0f967d4 138-139,150
+  s_5cd1b28ed520c1::t_b2485e10c88940 253-254,257-271,273
+  s_5cd1b28ed520c1::t_7377bcc7e37af8 140,145
+  s_5cd1b28ed520c1::t_b67b364d0989dd 1-4,6-11,13-19,24-26,30-35,37-41,48,53-55,58-59,61,63-65,130-131,147,149,153-160,162-165,179-180,182-183,194,210-211,217-218,221,230-231,249-252,255-256,272,274-300
+  s_5cd1b28ed520c1::t_c7c4622cb4220c 20-23,27-29
+  s_5cd1b28ed520c1::t_1f1571f29864c8 42-47,52
+  s_5cd1b28ed520c1::t_bef9310b0ca85a 161
+  s_5cd1b28ed520c1::t_cbb6b4966c9f13 5,185-186,191,193,198-203,205-207,209,214,224
+ocr/gemma/gemma_test.go
+  s_5cd1b28ed520c1::t_75c38e5ae3238a 65-66
+testdata/reference/type3-words.tex
+  s_5cd1b28ed520c1::t_7d7b604e98349f 22-28
+  s_5cd1b28ed520c1::t_d3b6a6e07488dd 1-21,29
+ocr/fill.go
+  s_5cd1b28ed520c1::t_a506c14216a1c0 124,129,203,214,221,227,234,236,239-240,246
+  s_5cd1b28ed520c1::t_f41740f65b56d9 23-26,108,130
+  s_5cd1b28ed520c1::t_42e04ab66f1860 154
+  s_5cd1b28ed520c1::t_08f572ad0a85b3 113-118,123,125-126,128
+  s_5cd1b28ed520c1::t_4f237353d99fe3 79,81
+  s_5cd1b28ed520c1::t_8b11e346b16cfb 1-5,7-12,14,17-22,27-28,31-32,35,37-39,41,47-51,53-54,63-73,75-78,80,82-99,101-107,109-112,119-122,127,131-135,138-150,156-163,166-185,191-195
+  s_5cd1b28ed520c1::t_bcce6e4fb3da94 164-165
+  s_5cd1b28ed520c1::t_2f7f4f69d682b7 196-198,204-213,215-218,223-226,228-233,235,237-238,241-245,247
+  s_5cd1b28ed520c1::t_6d66095f62b4cf 136-137
+  s_5cd1b28ed520c1::t_14f90a085de0c3 219-220,222
+  s_5cd1b28ed520c1::t_46cffd2b230e85 13,15-16,29-30,33-34,36,43,45,52,55-62,100,151-153,155
+  s_5cd1b28ed520c1::t_a07a137251dd5e 6,40,42,44,46,186-190
+  s_5cd1b28ed520c1::t_83cde65691a273 74
+  s_5cd1b28ed520c1::t_00341d5ec4a96f 199-202
+ocr/confirm_test.go
+  s_5cd1b28ed520c1::t_a78eb4ad3e1f3d 121-141
+doc/doc.go
+  s_5cd1b28ed520c1::t_ddb9af76f59586 170-190
+ocr/fill_test.go
+  s_5cd1b28ed520c1::t_b2bd85da4cfed8 66
+  s_5cd1b28ed520c1::t_6f5604dc2be6cb 48
+  s_5cd1b28ed520c1::t_98c0bc035b3eda 68-73
+  s_5cd1b28ed520c1::t_212014c6a42508 1-9,12-35,37,39,41,45,50,52,56,63-64,74-98,100-109
+  s_5cd1b28ed520c1::t_ee00abbbe5e8d8 58,60
+  s_5cd1b28ed520c1::t_27068e86c3bf20 59
+  s_5cd1b28ed520c1::t_8a9624937c924e 67
+  s_5cd1b28ed520c1::t_2e11efa5b5bbde 10-11,36,38,40,42-44,46-47,49,51,53-55,57,61-62,65,99
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_45f6cda9b7fba2 65,68
+  s_5cd1b28ed520c1::t_5bf3f5ec8d95c1 51
+testdata/reference/type3-words.gold.md
+  s_5cd1b28ed520c1::t_974fd75e1e1d79 1-3
+  s_5cd1b28ed520c1::t_f33e61a727af5a 4-5
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_e76a2e4b71f58b 185,193-196
+  s_5cd1b28ed520c1::t_2cd6b481ecfb4c 319-326
+  s_5cd1b28ed520c1::t_f9b70c278388fa 197-198
+ocr/gemma/gemma.go
+  s_5cd1b28ed520c1::t_78c535b5d03b0f 147-148
+cmd/pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_5bf3f5ec8d95c1 113
+  s_5cd1b28ed520c1::t_c0bd424fbd0350 110-112,114-115
+docs/adr/0048-a-glyph-with-no-value-is-read-where-its-line-places-it.md
+  s_5cd1b28ed520c1::t_5390ad855537c8 64
+  s_5cd1b28ed520c1::t_c3cb059b9c3d18 116
+  s_5cd1b28ed520c1::t_af6145914dd07d 1-63,65-97,112-115,117-119
+  s_5cd1b28ed520c1::t_2fc6466abe0f0b 98-111
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_412df7b1b1c834 8-21
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_535329ada6287d 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebef48bff03071f711d209dcacaa9bfd7e0333fe",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
