@@ -465,6 +465,9 @@ func parsePara(data []byte) (curveFn, error) {
 	// flat is the |a| below which lcms reads a line as having no slope (MATRIX_DET_TOLERANCE), and
 	// the curve as 0 everywhere, rather than divide by it for the break point -b/a.
 	const flat = 1e-4
+	// Each product is rounded before it is added, float64(a*x), because arm64 fuses a*x+b into one
+	// multiply-add that skips the rounding, and a break that lands within an ulp of -b/a then reads
+	// another side of it than lcms does.
 	switch fn {
 	case 0:
 		g := p[0]
@@ -472,10 +475,10 @@ func parsePara(data []byte) (curveFn, error) {
 	case 1:
 		g, a, b := p[0], p[1], p[2]
 		return func(x float64) float64 {
-			if math.Abs(a) < flat || x < -b/a || a*x+b <= 0 {
+			if math.Abs(a) < flat || x < -b/a || float64(a*x)+b <= 0 {
 				return 0
 			}
-			return clamp01(math.Pow(a*x+b, g))
+			return clamp01(math.Pow(float64(a*x)+b, g))
 		}, nil
 	case 2:
 		g, a, b, c := p[0], p[1], p[2], p[3]
@@ -485,10 +488,10 @@ func parsePara(data []byte) (curveFn, error) {
 				return 0
 			case x < -b/a: // lcms raises a negative break to 0, which no x here, always in [0,1], can tell apart.
 				return clamp01(c)
-			case a*x+b <= 0:
+			case float64(a*x)+b <= 0:
 				return 0
 			}
-			return clamp01(math.Pow(a*x+b, g) + c)
+			return clamp01(math.Pow(float64(a*x)+b, g) + c)
 		}, nil
 	case 3:
 		g, a, b, c, d := p[0], p[1], p[2], p[3], p[4]
@@ -496,21 +499,21 @@ func parsePara(data []byte) (curveFn, error) {
 			switch {
 			case x < d:
 				return clamp01(c * x)
-			case a*x+b <= 0:
+			case float64(a*x)+b <= 0:
 				return 0
 			}
-			return clamp01(math.Pow(a*x+b, g))
+			return clamp01(math.Pow(float64(a*x)+b, g))
 		}, nil
 	default: // 4, the only value parametricParamCount has not already excluded.
 		g, a, b, c, d, e, f := p[0], p[1], p[2], p[3], p[4], p[5], p[6]
 		return func(x float64) float64 {
 			switch {
 			case x < d:
-				return clamp01(c*x + f)
-			case a*x+b <= 0:
+				return clamp01(float64(c*x) + f)
+			case float64(a*x)+b <= 0:
 				return clamp01(e)
 			}
-			return clamp01(math.Pow(a*x+b, g) + e)
+			return clamp01(math.Pow(float64(a*x)+b, g) + e)
 		}, nil
 	}
 }

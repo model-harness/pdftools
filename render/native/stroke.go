@@ -269,7 +269,7 @@ func stroke(p *path, w float64, ctm geom.Matrix, pn pen) *path {
 // when ctm collapses the plane.
 func newStroker(out *path, w float64, ctm geom.Matrix, pn pen) (stroker, bool) {
 	a, b, c, d := ctm.A, ctm.B, ctm.C, ctm.D
-	det := a*d - b*c
+	det := float64(a*d) - float64(b*c)
 	if det == 0 || math.IsNaN(det) || math.IsInf(det, 0) {
 		// A CTM that collapses the plane collapses the pen with it, and the stroke has no area.
 		return stroker{}, false
@@ -288,9 +288,11 @@ func newStroker(out *path, w float64, ctm geom.Matrix, pn pen) (stroker, bool) {
 	r := hw * math.Max(math.Abs(a), math.Abs(b))
 	return stroker{
 		out: out, hw: hw, pen: pn,
-		fwd:  func(q point) point { return point{a*q.x + c*q.y, b*q.x + d*q.y} },
-		back: func(q point) point { return point{(d*q.x - c*q.y) / det, (a*q.y - b*q.x) / det} },
-		da:   math.Max(2*math.Acos(r/(r+1.0/8)), math.Pi/maxArcSteps),
+		fwd: func(q point) point { return point{float64(a*q.x) + float64(c*q.y), float64(b*q.x) + float64(d*q.y)} },
+		back: func(q point) point {
+			return point{(float64(d*q.x) - float64(c*q.y)) / det, (float64(a*q.y) - float64(b*q.x)) / det}
+		},
+		da: math.Max(2*math.Acos(r/(r+1.0/8)), math.Pi/maxArcSteps),
 	}, true
 }
 
@@ -504,7 +506,10 @@ func (s *stroker) offset(a, b point) point {
 func (s *stroker) join(v0, v1, v2 point) {
 	d1, d2 := s.offset(v0, v1), s.offset(v1, v2)
 	// calc_point_location: which side of the segment from v0 v2 is on.
-	if (v2.x-v1.x)*(v1.y-v0.y)-(v2.y-v1.y)*(v1.x-v0.x) > 0 {
+	// Each product is rounded before the difference, as AGG's are, because arm64 fuses p*q-r*s into
+	// one multiply-subtract: at an exact reversal the two products are equal, and fused they leave a
+	// residue that turns the join to the wrong side.
+	if float64((v2.x-v1.x)*(v1.y-v0.y))-float64((v2.y-v1.y)*(v1.x-v0.x)) > 0 {
 		s.miter(v0, v1, v2, d1, d2, innerMiter)
 		return
 	}
@@ -541,8 +546,8 @@ func (s *stroker) miter(v0, v1, v2, d1, d2 point, limit float64) {
 // intersection is calc_intersection: where the line through a and b meets the line through c and
 // d, or false when they are parallel to within AGG's 1e-30.
 func intersection(a, b, c, d point) (point, bool) {
-	num := (a.y-c.y)*(d.x-c.x) - (a.x-c.x)*(d.y-c.y)
-	den := (b.x-a.x)*(d.y-c.y) - (b.y-a.y)*(d.x-c.x)
+	num := float64((a.y-c.y)*(d.x-c.x)) - float64((a.x-c.x)*(d.y-c.y))
+	den := float64((b.x-a.x)*(d.y-c.y)) - float64((b.y-a.y)*(d.x-c.x))
 	if math.Abs(den) < 1e-30 {
 		return point{}, false
 	}
