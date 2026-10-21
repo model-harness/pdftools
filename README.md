@@ -4,9 +4,15 @@
 model.
 
 ```sh
-go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
+curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | sh
 pdfspec md report.pdf > report.md
 ```
+
+On Windows, install it from PowerShell with
+`irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex`. Both
+installers download the build for your machine from the latest release and check it against the
+release's checksums before installing it. If you have Go, you can also run
+`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0`.
 
 If you've ever tried this with an ordinary PDF library, you probably got back text with words
 run together, two columns shuffled into one, and a page number stuck in the middle of a
@@ -160,6 +166,13 @@ The imports are `github.com/model-harness/pdftools/extract`,
 `github.com/model-harness/pdftools/objects/pdfcpu` (as `pcstore`) and
 `github.com/model-harness/pdftools/sink/markdown`. `cmd/pdfspec` shows the full pipeline,
 including tagged documents and text recognition.
+
+## Using it with coding agents
+
+If you work with Claude Code, Codex or another coding agent, you can teach it to reach for
+`pdfspec` whenever it needs what's inside a PDF, and to treat `[err]` and `[image]` as gaps
+rather than guess at them. The skill is in [`skills/`](skills/), along with where each agent
+expects to find it.
 
 ## Licence and further reading
 

@@ -164,7 +164,7 @@
       <div>
         <h1>A PDF is a drawing of a page.</h1>
         <p>pdfspec reads it back into Markdown, with the words, columns, headings and tables put together again, for people and for language models.</p>
-        <pre class="install"><code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
+        <pre class="install"><code>curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | sh
 pdfspec md report.pdf &gt; report.md</code></pre>
         <div class="links">
           <a href="https://github.com/model-harness/pdftools">Read the source</a>
@@ -238,15 +238,16 @@ pdfspec md report.pdf &gt; report.md</code></pre>
       <div class="try">
         <div>
           <h3>Convert a file</h3>
-<pre class="block"><code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
+<pre class="block"><code>curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | sh
 pdfspec md report.pdf &gt; report.md</code></pre>
+          <p>On Windows, run <code>irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex</code> in PowerShell. Either installer checks the download against the release&rsquo;s checksums first. With Go, <code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0</code> works too.</p>
           <p>Everything a computer-made PDF holds converts with nothing else installed. For scans and pictures, add Tesseract: <code>apt install tesseract-ocr</code>, <code>brew install tesseract</code>, or the UB Mannheim installer on Windows.</p>
         </div>
         <div>
           <h3>Look before you convert</h3>
 <pre class="block"><code>pdfspec probe report.pdf</code></pre>
           <p><code>probe</code> describes a file without converting it: how pdfspec will read it, which helpers it found, and which pages would need them.</p>
-          <p>It’s also a Go library. Everything the command does is a package you can call yourself.</p>
+          <p>It’s also a Go library, and it comes with a <a href="https://github.com/model-harness/pdftools/tree/main/skills">skill for coding agents</a> such as Claude Code and Codex, so they use pdfspec whenever they need what’s inside a PDF.</p>
         </div>
       </div>
     </section>
