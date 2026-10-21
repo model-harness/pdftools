@@ -48,6 +48,10 @@ func TestWarnIfEmptySpeaksOnlyWhenNothingCameOut(t *testing.T) {
 		// No pages is a different failure — an unreadable or zero-page file — and the
 		// store reports that. Warning here would attach a font-encoding hint to it.
 		{"no pages", doc.Document{}, false},
+		// A page that is one image read off its pixels yielded what it holds (ADR 0046); one
+		// unread is still a page with nothing in it but "[image]".
+		{"an image read", doc.Document{Pages: []doc.Page{{Number: 1, Images: []doc.Image{{Read: &doc.ImageRead{Kind: "picture"}}}}}}, false},
+		{"an image unread", doc.Document{Pages: []doc.Page{{Number: 1, Images: []doc.Image{{}}}}}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := captureStderr(t, func() { warnIfEmpty(&tc.d) })

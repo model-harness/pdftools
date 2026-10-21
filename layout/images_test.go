@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/model-harness/pdftools/doc"
@@ -203,5 +204,38 @@ func TestPageBreaksJoinPastAnImage(t *testing.T) {
 	}
 	if d.Pages[1].Blocks[0].Role != doc.RoleImage {
 		t.Errorf("page 2 = %q, want the image kept", texts(d.Pages[1].Blocks))
+	}
+}
+
+// TestImageBlocksStandInForWhatWasRead: text and a table are their blocks, a picture its line
+// with a description, a chart its line and then its table, and an unread image "[image]".
+func TestImageBlocksStandInForWhatWasRead(t *testing.T) {
+	para := textBlock(100, 400, 300, 450, "read words")
+	cell := doc.Block{Role: doc.RoleTableCell, Cell: &doc.Cell{Table: 9}}
+	for _, c := range []struct {
+		name string
+		read *doc.ImageRead
+		want string
+	}{
+		{"unread", nil, "image:"},
+		{"text", &doc.ImageRead{Kind: "text", Blocks: []doc.Block{para}}, "paragraph:read words"},
+		{"a table", &doc.ImageRead{Kind: "table", Blocks: []doc.Block{cell, cell}}, "table_cell:|table_cell:"},
+		{"text that read empty", &doc.ImageRead{Kind: "text"}, "image:"},
+		{"a picture", &doc.ImageRead{Kind: "picture", Alt: "photo: a geyser"}, "image:photo: a geyser"},
+		{"a chart", &doc.ImageRead{Kind: "chart", Alt: "chart: sales", Blocks: []doc.Block{cell}}, "image:chart: sales|table_cell:"},
+	} {
+		im := picture(100, 400, 300, 600)
+		im.Read = c.read
+		var got []string
+		for _, b := range ImageBlocks(&im) {
+			s := string(b.Role) + ":" + b.Alt
+			if b.Role == doc.RoleParagraph {
+				s = string(b.Role) + ":" + b.Text()
+			}
+			got = append(got, s)
+		}
+		if strings.Join(got, "|") != c.want {
+			t.Errorf("%s: %s, want %s", c.name, strings.Join(got, "|"), c.want)
+		}
 	}
 }

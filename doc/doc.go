@@ -187,6 +187,25 @@ type Image struct {
 	// decoration.
 	MCID     int
 	Artifact bool
+
+	// Read is what was read off the image, nil when nothing was (ADR 0046).
+	Read *ImageRead
+}
+
+// ImageRead is what an image was read as, and the content that stands in its place.
+type ImageRead struct {
+	// Kind is what the image holds: "text", "table", "chart" or "picture".
+	Kind string
+
+	// Blocks stand in for the image, in page coordinates: a text image's paragraphs, a table
+	// image's cells, a chart's table of its values.
+	Blocks []Block
+
+	// Alt is a model's description of a picture or a chart, "tag: description".
+	Alt string
+
+	// By names what read it, "tesseract 5.5.3 eng" and the model, for the page report.
+	By string
 }
 
 // Rule is one axis-aligned straight stroke or fill edge, in page coordinates.

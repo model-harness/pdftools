@@ -25,6 +25,7 @@ var benchFloors = map[string]benchFigures{
 	"fractions":                {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"headings":                 {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"hyphenation":              {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"image-kinds":              {cer: 0.606, recall: 0.372, precision: 1.000, order: 1.000, blocks: 0.769, headings: 1.000, tables: 0.000, style: 1.000},
 	"image":                    {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"lists":                    {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"metadata":                 {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
@@ -57,6 +58,13 @@ var benchFloors = map[string]benchFigures{
 var benchTargets = benchFigures{
 	cer: 0.03, recall: 0.97, precision: 0.97, order: 0.98,
 	blocks: 0.90, headings: 0.90, tables: 0.85, style: 0.85,
+}
+
+// benchNeedsOCR names the fixtures whose content is only in pixels: the scans, the page of
+// images, and the page of bitmap glyphs with no Unicode value.
+var benchNeedsOCR = map[string]bool{
+	"scan-paragraphs": true, "scan-table": true, "scan-two-column": true, "scan-unnumbered-headings": true,
+	"image-kinds": true, "type3-unmapped": true,
 }
 
 // benchEnforced names the dimensions whose v1 target now fails the build, each from the
@@ -119,7 +127,16 @@ func TestBenchmarkTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := benchMeans(rows)
+	// A fixture whose content is only in pixels is measured where an engine reads pixels: by
+	// TestBenchmarkWithTesseract. Here, as in a clone, none does, and a scan or an image of a
+	// table scores 0 on what nothing here can read (ADR 0046).
+	var read []benchRow
+	for _, r := range rows {
+		if !benchNeedsOCR[r.name] {
+			read = append(read, r)
+		}
+	}
+	m := benchMeans(read)
 	for _, d := range []struct {
 		name           string
 		got, target    float64

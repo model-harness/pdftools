@@ -5,6 +5,18 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (images read)
+
+- **An image is read as what it holds.** ADR 0046, closes issue #11. With Tesseract, an image of
+  text becomes its paragraphs and an image of a ruled table a GFM table, with no model. With
+  inferd's vision model too, a chart becomes `[tag: description]` and a table of its values, and
+  a picture `[photo: …]`. Without either, `[image]`.
+- **A tagged Figure's `/Alt` is kept** and its image is not read again.
+- **New fixture** `image-kinds`, one image of each kind. With Tesseract and Gemma it scores 1.000
+  on every dimension.
+- **Pixel-only fixtures** (the scans, `image-kinds`, `type3-unmapped`) leave the enforced means
+  in a run with no OCR engine, and `TestBenchmarkWithTesseract` enforces them over every fixture.
+
 ### Changed — 2026-10-21 (images)
 
 - **An image stands where it is painted.** ADR 0045, the first half of issue #11. The extractor

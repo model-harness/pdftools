@@ -139,6 +139,7 @@ work.
 | `lists.tex` | Bulleted and nested list items | no |
 | `table.tex` | A ruled table's cell text | no |
 | `image.tex` | A page whose only content is an image | no |
+| `image-kinds.tex` | One image of each kind: text, a ruled table, a bar chart, a picture | no |
 | `clauses.tex` | Numbered clause hierarchy via the structure tree | yes |
 | `tagged-lists.tex` | Declared list markers, bulleted and numbered | yes |
 | `tagged-table.tex` | A declared table grid with a header row | yes |
@@ -186,6 +187,17 @@ pdfspec render -o png -dpi 200 two-column.pdf
 go run degrade.go png/page-1.png scan-two-column.jpg
 pdflatex -interaction=nonstopmode scan-two-column.tex
 ```
+
+`image-kinds.pdf` embeds three images built the same way from sources of known content, so
+its gold file is what they hold:
+
+```sh
+pdflatex -interaction=nonstopmode image-kinds-text.tex     # and -table, -chart
+pdfspec render -o png -dpi 200 image-kinds-text.pdf        # page-1.png is image-kinds-text.png
+pdflatex -interaction=nonstopmode image-kinds.tex
+```
+
+The three intermediate PDFs are not kept: the PNGs are what `image-kinds.pdf` holds.
 
 `degrade.go` seeds its noise, so the same render gives the same JPEG bytes. Each scan's
 gold file is a copy of its source's, because the document is the same one.

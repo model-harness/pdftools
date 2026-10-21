@@ -70,7 +70,7 @@ func runMD(args []string) error {
 	d.Meta.Path = in
 	warnIfPagesFailed(ex.Failed(), len(d.Pages))
 	if *useOCR {
-		autoOCR(d, in, eo, *backend)
+		autoOCR(d, s, in, eo, *backend)
 	}
 	warnIfEmpty(d)
 	warnIfUnmapped(os.Stderr, unmapped(d))
@@ -106,7 +106,7 @@ func runMD(args []string) error {
 // draws no text at all, which is most often a scan, so the hint names OCR. Written to
 // stderr so redirecting stdout to a .md still shows it.
 func warnIfEmpty(d *doc.Document) {
-	if len(d.Pages) == 0 || strings.TrimSpace(d.Text()) != "" {
+	if len(d.Pages) == 0 || strings.TrimSpace(d.Text()) != "" || anyImageRead(d) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "warning: %d page(s) yielded no text\n", len(d.Pages))
@@ -266,7 +266,7 @@ func convertDefault(path string) ([]byte, error) {
 	}
 	d.Meta.Path = path
 	warnIfPagesFailed(ex.Failed(), len(d.Pages))
-	autoOCR(d, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: defaultMinConf}, "pdfium")
+	autoOCR(d, s, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: defaultMinConf}, "pdfium")
 	warnIfEmpty(d)
 
 	var buf bytes.Buffer
@@ -333,4 +333,17 @@ func writeFile(path string, fn func(io.Writer) error) error {
 		return err
 	}
 	return f.Close()
+}
+
+// anyImageRead reports an image something was read off (ADR 0046): a page that is one image,
+// described or read as text, yielded what it holds, though no glyph of it is text.
+func anyImageRead(d *doc.Document) bool {
+	for _, p := range d.Pages {
+		for _, im := range p.Images {
+			if im.Read != nil {
+				return true
+			}
+		}
+	}
+	return false
 }

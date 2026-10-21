@@ -1600,12 +1600,15 @@ func (b *builder) images(e *tag.Elem, role doc.Role) bool {
 		alt = strings.Join(strings.Fields(e.Alt), " ")
 	}
 	for _, im := range ims {
-		blk := doc.Block{Role: doc.RoleImage, Box: im.Box, Image: im, Lang: e.Lang}
-		if alt != "" {
-			blk.Alt = "image: " + alt
-		}
 		pg := b.index.page[im]
-		b.place(blk, span{lo: pg, hi: pg})
+		if alt != "" {
+			b.place(doc.Block{Role: doc.RoleImage, Box: im.Box, Image: im, Lang: e.Lang, Alt: "image: " + alt}, span{lo: pg, hi: pg})
+			continue
+		}
+		for _, blk := range layout.ImageBlocks(im) {
+			blk.Lang = e.Lang
+			b.place(blk, span{lo: pg, hi: pg})
+		}
 	}
 	return len(ims) > 0 && role == doc.RoleFigure
 }

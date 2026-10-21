@@ -15,12 +15,15 @@ import (
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/layout"
+	"github.com/model-harness/pdftools/objects"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/ocr"
 	"github.com/model-harness/pdftools/ocr/gemma"
 	"github.com/model-harness/pdftools/ocr/tesseract"
 	"github.com/model-harness/pdftools/render"
 	"github.com/model-harness/pdftools/sink/markdown"
+	"github.com/model-harness/pdftools/tag"
 )
 
 // runOCR converts a PDF to Markdown, reading the pages that need it with Tesseract.
@@ -92,7 +95,8 @@ func runOCR(args []string) error {
 	if len(routed) == 0 {
 		fmt.Fprintf(os.Stderr, "no pages need recognition: all %d selected page(s) carry text above %.0f%% coverage\n",
 			len(want), *threshold*100)
-	} else if err := readPages(ctx, d, in, routed, eo, *backend, *force); err != nil {
+	}
+	if err := readPages(ctx, d, in, routed, eo, *backend, *force, describedImages(s, d)); err != nil {
 		return err
 	}
 	if !d.Meta.Tagged {
@@ -176,14 +180,70 @@ func plan(w io.Writer, d *doc.Document, want, routed []int, threshold float64) e
 // is installed, which is the order the converter works in, the file's own text first (ADR 0043).
 // A page OCR fails on keeps its extracted text, and md goes on with a warning: the conversion
 // is the file's, and OCR only adds to it.
-func autoOCR(d *doc.Document, path string, eo engineFlags, backend string) {
+func autoOCR(d *doc.Document, s objects.Store, path string, eo engineFlags, backend string) {
 	routed := route(d, allPages(len(d.Pages)), ocr.DefaultThreshold, false)
-	if len(routed) == 0 {
+	if len(routed) == 0 && !hasImages(d) {
 		return
 	}
-	if err := readPages(context.Background(), d, path, routed, eo, backend, false); err != nil {
+	if err := readPages(context.Background(), d, path, routed, eo, backend, false, describedImages(s, d)); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
+}
+
+// hasImages reports whether any page paints an image worth reading.
+func hasImages(d *doc.Document) bool {
+	for _, p := range d.Pages {
+		for _, im := range p.Images {
+			if layout.Decoration(im) == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// describedImages reports the images a tagged file already describes: those its Figures with
+// an /Alt name by marked content. The author's description is the file's own, and comes before
+// anything read off the pixels (ADR 0046).
+func describedImages(s objects.Store, d *doc.Document) func(page int, im doc.Image) bool {
+	if s == nil || !d.Meta.Tagged {
+		return nil
+	}
+	t, err := tag.Read(s)
+	if err != nil || t == nil {
+		return nil
+	}
+	// A reference's page is resolved from the /Pg its element chain names, which Read leaves
+	// to this call: without it every reference is on page 0 and names no image.
+	if err := t.ResolvePages(s); err != nil {
+		return nil
+	}
+	return figureAlts(t)
+}
+
+// figureAlts is describedImages' answer for t: the images its Figures with an /Alt name.
+func figureAlts(t *tag.Tree) func(page int, im doc.Image) bool {
+	seen := map[[2]int]bool{}
+	var walk func(e *tag.Elem)
+	walk = func(e *tag.Elem) {
+		if e.Role == tag.RoleFigure && strings.TrimSpace(e.Alt) != "" {
+			var under func(x *tag.Elem)
+			under = func(x *tag.Elem) {
+				for _, r := range x.Content {
+					seen[[2]int{r.Page, r.MCID}] = true
+				}
+				for _, k := range x.Kids {
+					under(k)
+				}
+			}
+			under(e)
+		}
+		for _, k := range e.Kids {
+			walk(k)
+		}
+	}
+	walk(t.Root)
+	return func(page int, im doc.Image) bool { return seen[[2]int{page, im.MCID}] }
 }
 
 // allPages is 1..n.
@@ -207,7 +267,8 @@ const tesseractEnv = "PDFSPEC_TESSERACT"
 //
 // A page that fails keeps its extracted text too, rather than being emptied: that text may
 // be sparse, but it is what the file says.
-func readPages(ctx context.Context, d *doc.Document, path string, routed []int, eo engineFlags, backend string, force bool) error {
+func readPages(ctx context.Context, d *doc.Document, path string, routed []int, eo engineFlags, backend string, force bool,
+	described func(page int, im doc.Image) bool) error {
 	exe := eo.exe
 	if exe == "" {
 		exe = os.Getenv(tesseractEnv)
@@ -217,8 +278,10 @@ func readPages(ctx context.Context, d *doc.Document, path string, routed []int, 
 	}
 	eng, err := tesseract.New(ctx, tesseract.Options{Exe: exe, TessData: eo.tessdata, Lang: eo.lang, DPI: eo.dpi})
 	if errors.Is(err, tesseract.ErrNotFound) {
-		fmt.Fprintf(os.Stderr, "warning: %d page(s) need OCR and %v; they keep their extracted text: %s\n",
-			len(routed), err, pageList(routed))
+		if len(routed) > 0 {
+			fmt.Fprintf(os.Stderr, "warning: %d page(s) need OCR and %v; they keep their extracted text: %s\n",
+				len(routed), err, pageList(routed))
+		}
 		return nil
 	}
 	if err != nil {
@@ -231,8 +294,23 @@ func readPages(ctx context.Context, d *doc.Document, path string, routed []int, 
 	defer func() { _ = r.Close() }()
 
 	run := &ocrRun{eng: eng, r: r, ropt: render.Options{DPI: eo.dpi, MaxPixels: render.DefaultOptions.MaxPixels},
-		second: openSecond(ctx, eo), minConf: eo.minConf, force: force, full: withArtifacts(path)}
-	return run.read(ctx, d, routed)
+		minConf: eo.minConf, force: force, full: withArtifacts(path)}
+	var describe describer
+	// A nil *gemma.Model in an interface is not a nil interface, so each is set only from a
+	// model there is.
+	if m := openSecond(ctx, eo); m != nil {
+		run.second, describe = m, m
+	}
+	if len(routed) > 0 {
+		if err := run.read(ctx, d, routed); err != nil {
+			return err
+		}
+	}
+	if n := run.images(ctx, d, describe, described); n != (imageCounts{}) {
+		fmt.Fprintf(os.Stderr, "read %d image(s): %d text, %d table, %d chart, %d picture, %d unread\n",
+			n.text+n.table+n.chart+n.picture+n.unread, n.text, n.table, n.chart, n.picture, n.unread)
+	}
+	return nil
 }
 
 // inferdEnv is "off" to ask no model, which tests set, or names inferd's generation endpoint.
@@ -241,7 +319,7 @@ const inferdEnv = "PDFSPEC_INFERD"
 // openSecond is inferd's vision model as the second reader, or nil when there is none: no
 // daemon, a model still loading, or one that sees no images. The run is the same without it,
 // with Tesseract's confidence alone deciding.
-func openSecond(ctx context.Context, eo engineFlags) ocr.Reader {
+func openSecond(ctx context.Context, eo engineFlags) *gemma.Model {
 	addr := eo.inferd
 	if addr == "" {
 		addr = os.Getenv(inferdEnv)

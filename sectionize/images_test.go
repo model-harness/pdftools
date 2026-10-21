@@ -96,3 +96,16 @@ func TestOnlyAFiguresAltDescribesItsImage(t *testing.T) {
 		t.Errorf("blocks = %s, want %s: the image undescribed, the paragraph's /Alt its own", got, want)
 	}
 }
+
+// TestATaggedImageReadStandsAsWhatItHolds: an image read as text, with no /Alt to describe it,
+// is its paragraphs where the Figure stands.
+func TestATaggedImageReadStandsAsWhatItHolds(t *testing.T) {
+	im := figureImage(8)
+	im.Read = &doc.ImageRead{Kind: "text", Blocks: []doc.Block{{Role: doc.RoleParagraph,
+		Spans: []doc.Span{{Text: "read off the pixels", MCID: -1}}}}}
+	d := withImages(docWith(sp{1, 0, "body text"}), im)
+	out, _ := Tagged(d, tree(el(tag.RoleFigure, 1, 8), el(tag.RoleP, 1, 0)), DefaultOptions)
+	if len(out.Preamble) != 2 || out.Preamble[0].Text() != "read off the pixels" {
+		t.Errorf("blocks = %s", roles(out.Preamble))
+	}
+}

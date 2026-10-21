@@ -10,8 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/model-harness/pdftools/bench"
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
+	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/ocr"
+	"github.com/model-harness/pdftools/ocr/gemma"
 	"github.com/model-harness/pdftools/render"
 	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
@@ -103,6 +107,12 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 			if r.s.CER > 0.01 || r.s.Errs != 0 {
 				t.Errorf("type3-unmapped: CER %.3f with %d [err], want it read", r.s.CER, r.s.Errs)
 			}
+		case r.name == "image-kinds":
+			// The text and the table are read off their images; the chart is a model's to read,
+			// and without one stays [image] (TestImageKindsAreRead).
+			if r.s.CER > 0.1 || r.s.Tables < 0.7 {
+				t.Errorf("image-kinds: CER %.3f, tables %.3f, want its text and table read", r.s.CER, r.s.Tables)
+			}
 		case r.s != off[i].s:
 			t.Errorf("%s moved with Tesseract present: %+v, was %+v", r.name, r.s, off[i].s)
 		}
@@ -112,6 +122,63 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 	}
 	if mean := cer / float64(n); mean > benchTargets.cer {
 		t.Errorf("scanned pages' mean CER %.4f, above the v1 target %.2f", mean, benchTargets.cer)
+	}
+	// With an engine for pixels, every fixture counts, and the enforced targets hold over all.
+	m := benchMeans(on)
+	for name, got := range map[string]float64{"order": m.order, "tables": m.tables, "style": m.style} {
+		if want := map[string]float64{"order": benchTargets.order, "tables": benchTargets.tables, "style": benchTargets.style}[name]; got < want {
+			t.Errorf("%s: %.3f over every fixture with Tesseract, under its target %.2f", name, got, want)
+		}
+	}
+}
+
+// TestImageKindsAreRead is #11's done-when on the gold set's page of images (ADR 0046): with
+// Tesseract the text image is text and the table image a table, each at its character and cell
+// target; with inferd's vision model too, the chart is a chart, its values a table, and the
+// picture a picture. Skipped without the engines.
+func TestImageKindsAreRead(t *testing.T) {
+	testTesseract(t)
+	path := fixture(t, "reference/image-kinds.pdf")
+	s, err := pcstore.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	d, err := extract.New(s, extract.DefaultOptions).Document()
+	if err != nil {
+		t.Fatal(err)
+	}
+	withModel := os.Getenv("PDFSPEC_TEST_INFERD") != ""
+	if withModel {
+		t.Setenv(inferdEnv, "auto")
+	}
+	_ = captureStderr(t, func() { autoOCR(d, s, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: defaultMinConf}, "pdfium") })
+	var kinds []string
+	for _, im := range d.Pages[0].Images {
+		k := "unread"
+		if im.Read != nil {
+			k = im.Read.Kind
+		}
+		kinds = append(kinds, k)
+	}
+	want := "text table unread unread"
+	if withModel {
+		want = "text table chart picture"
+	}
+	if got := strings.Join(kinds, " "); got != want {
+		t.Errorf("kinds = %s, want %s", got, want)
+	}
+	gold, err := os.ReadFile(fixture(t, "reference/image-kinds.gold.md")) // #nosec G304 -- a committed fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	md, err := convertDefault(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bench.Score(gold, md)
+	if withModel && (sc.CER > benchTargets.cer || sc.Tables < benchTargets.tables) {
+		t.Errorf("with the model: CER %.3f tables %.3f, want the v1 targets", sc.CER, sc.Tables)
 	}
 }
 
@@ -321,7 +388,7 @@ func TestOpenSecondHonoursOff(t *testing.T) {
 		{inferdEnv + "=off", "off", engineFlags{}},
 	} {
 		t.Setenv(inferdEnv, c.env)
-		var got ocr.Reader
+		var got *gemma.Model
 		warned := captureStderr(t, func() { got = openSecond(context.Background(), c.eo) })
 		if got != nil || warned != "" {
 			t.Errorf("%s: reader %v, stderr %q; off asks nothing and says nothing", c.name, got, warned)

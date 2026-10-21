@@ -37,12 +37,33 @@ const imageMinSamples = 16
 //     invisible text layer is for: pymupdf's two OCR'd fixtures lay 5 and 6 lines over a
 //     full-page scan, a few percent of it.
 func Images(d *doc.Document) ImageStats {
-	var st ImageStats
-	repeats := imageRepeats(d)
+	keep, st := keepImages(d)
 	for pi := range d.Pages {
 		p := &d.Pages[pi]
 		for i := range p.Images {
-			im := p.Images[i]
+			if keep[pi][i] {
+				placeImage(p, p.Images[i].Box, ImageBlocks(&p.Images[i]))
+			}
+		}
+	}
+	return st
+}
+
+// Keep reports, for each page and each of its images, whether Images places it: what is worth
+// reading off the page, since what is decoration is not (ADR 0046).
+func Keep(d *doc.Document) [][]bool {
+	keep, _ := keepImages(d)
+	return keep
+}
+
+func keepImages(d *doc.Document) ([][]bool, ImageStats) {
+	var st ImageStats
+	repeats := imageRepeats(d)
+	keep := make([][]bool, len(d.Pages))
+	for pi := range d.Pages {
+		p := &d.Pages[pi]
+		keep[pi] = make([]bool, len(p.Images))
+		for i, im := range p.Images {
 			switch Decoration(im) {
 			case "artifact":
 				st.Artifacts++
@@ -63,13 +84,11 @@ func Images(d *doc.Document) ImageStats {
 				st.Read++
 				continue
 			}
-			// No MCIDs: a block's are the union of its spans', and an image block has none.
-			// The image's own is on Block.Image.
-			placeImage(p, doc.Block{Role: doc.RoleImage, Box: im.Box, Image: &p.Images[i]})
+			keep[pi][i] = true
 			st.Placed++
 		}
 	}
-	return st
+	return keep, st
 }
 
 // imageKey is an image's size and place, to a point, which is how a repeated logo is told.
@@ -96,9 +115,34 @@ func imageRepeats(d *doc.Document) map[imageKey]int {
 	return n
 }
 
-// placeImage inserts b among p's blocks: before the first block below its top that shares its
-// columns, or after the last block above it that does, or last.
-func placeImage(p *doc.Page, b doc.Block) {
+// ImageBlocks is what stands in for im (ADR 0046): the paragraphs or the cells read off it, for
+// text and a table; its line, "[tag: description]", for a picture; its line and then its table
+// of values for a chart; and "[image]" when nothing was read. The tagged path asks it too.
+func ImageBlocks(im *doc.Image) []doc.Block {
+	// No MCIDs on the image's line: a block's are the union of its spans', and the line has
+	// none. The image's own is on Block.Image.
+	line := doc.Block{Role: doc.RoleImage, Box: im.Box, Image: im}
+	if im.Read == nil {
+		return []doc.Block{line}
+	}
+	switch im.Read.Kind {
+	case "text", "table":
+		if len(im.Read.Blocks) > 0 {
+			return append([]doc.Block(nil), im.Read.Blocks...)
+		}
+	case "chart":
+		line.Alt = im.Read.Alt
+		return append([]doc.Block{line}, im.Read.Blocks...)
+	}
+	line.Alt = im.Read.Alt
+	return []doc.Block{line}
+}
+
+// placeImage inserts blocks, which stand for one image at box, among p's blocks: before the first
+// block below the image's top that shares its columns, or after the last block above it that
+// does, or last.
+func placeImage(p *doc.Page, box geom.Rect, blocks []doc.Block) {
+	b := doc.Block{Box: box}
 	at, after := -1, -1
 	for i, o := range p.Blocks {
 		if o.Box.X1 <= b.Box.X0 || o.Box.X0 >= b.Box.X1 {
@@ -119,9 +163,7 @@ func placeImage(p *doc.Page, b doc.Block) {
 	default:
 		at = len(p.Blocks)
 	}
-	p.Blocks = append(p.Blocks, doc.Block{})
-	copy(p.Blocks[at+1:], p.Blocks[at:])
-	p.Blocks[at] = b
+	p.Blocks = append(p.Blocks[:at], append(append([]doc.Block(nil), blocks...), p.Blocks[at:]...)...)
 }
 
 // hiddenOver is the area of p's invisible text inside box, the text layer an OCR'd PDF lays

@@ -1,0 +1,12 @@
+% image-kinds-text — a paragraph set as type and then rasterised, for image-kinds.tex.
+%
+% Rendered at 200 dpi to image-kinds-text.png, so the only way to read these words in
+% image-kinds.pdf is from pixels: no glyph of it reaches the content stream.
+\documentclass[border=6pt]{standalone}
+\usepackage{lmodern}
+\begin{document}
+\begin{minipage}{9cm}
+A paragraph set as an image cannot be read from the file's text, because the file holds
+no text for it, only pixels. Read from those pixels, its words belong where it stands.
+\end{minipage}
+\end{document}
