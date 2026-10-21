@@ -47,7 +47,9 @@ type imageCounts struct{ text, table, chart, picture, unread int }
 // they are.
 func (o *ocrRun) images(ctx context.Context, d *doc.Document, describe describer, skip func(page int, im doc.Image) bool) imageCounts {
 	var n imageCounts
-	table := imageTables
+	if o.tables < imageTables {
+		o.tables = imageTables
+	}
 	keep := layout.Keep(d)
 	for pi := range d.Pages {
 		p := &d.Pages[pi]
@@ -74,7 +76,7 @@ func (o *ocrRun) images(ctx context.Context, d *doc.Document, describe describer
 				fmt.Fprintf(os.Stderr, "  page %d: an image: %v\n", p.Number, err)
 				continue
 			}
-			read := o.image(ctx, p.Number, im.Box, crop, box, words, describe, &table)
+			read := o.image(ctx, p.Number, im.Box, crop, box, words, describe, &o.tables)
 			if read == nil {
 				n.unread++
 				continue
@@ -101,7 +103,7 @@ func (o *ocrRun) image(ctx context.Context, page int, at geom.Rect, crop image.I
 	words []ocr.Word, describe describer, table *int) *doc.ImageRead {
 	by := o.eng.Name()
 	if xs, ys, ok := ocr.Grid(crop); ok && ocr.IsText(words) {
-		if cells := ocr.Cells(words, xs, ys); filled(cells) {
+		if cells := ocr.Cells(words, xs, ys); ocr.Filled(cells) {
 			*table++
 			return &doc.ImageRead{Kind: "table", By: by, Blocks: cellBlocks(cells, *table, page, at, box, xs, ys)}
 		}
@@ -186,19 +188,4 @@ func (rp *rasterPage) crop(r geom.Rect) (image.Image, image.Rectangle, bool) {
 	out := image.NewRGBA(image.Rect(0, 0, px.Dx(), px.Dy()))
 	draw.Draw(out, out.Bounds(), rp.img, px.Min, draw.Src)
 	return out, px, true
-}
-
-// filled reports a grid with words in two rows and two columns of its cells, which a table is
-// and a photograph with lines in it, read as a few words, is not: test-rewrite-images.pdf's
-// "Never look back!" fell in one column of a grid its photograph's edges drew.
-func filled(cells [][]string) bool {
-	rows, cols := map[int]bool{}, map[int]bool{}
-	for r, row := range cells {
-		for c, text := range row {
-			if strings.TrimSpace(text) != "" {
-				rows[r], cols[c] = true, true
-			}
-		}
-	}
-	return len(rows) >= 2 && len(cols) >= 2
 }

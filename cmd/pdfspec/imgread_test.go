@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,8 +226,8 @@ func TestFilledNeedsTwoRowsAndTwoColumns(t *testing.T) {
 		{[][]string{{"a", ""}, {"b", ""}}, false},
 		{nil, false},
 	} {
-		if got := filled(c.cells); got != c.want {
-			t.Errorf("filled(%q) = %v, want %v", c.cells, got, c.want)
+		if got := ocr.Filled(c.cells); got != c.want {
+			t.Errorf("Filled(%q) = %v, want %v", c.cells, got, c.want)
 		}
 	}
 }
@@ -299,5 +300,81 @@ func TestAutoOCRReadsImagesOnPagesWithText(t *testing.T) {
 	warned := captureStderr(t, func() { autoOCR(d, nil, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: 30}, "pdfium") })
 	if !strings.Contains(warned, "no-tesseract.exe does not run") {
 		t.Errorf("stderr = %q, want the images to have asked for an engine", warned)
+	}
+}
+
+// turnedTable is a 1000 by 1400 page image with a ruled table of 3 columns and 2 rows, from x 200
+// to 800 and y 400 to 600, turned by deg degrees about the page's centre.
+func turnedTable(deg float64) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 1000, 1400))
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	sin, cos := math.Sincos(deg * math.Pi / 180)
+	put := func(x, y float64) {
+		dx, dy := x-500, y-700
+		img.Set(int(cos*dx-sin*dy+500), int(sin*dx+cos*dy+700), color.Black)
+	}
+	for _, y := range []float64{400, 500, 600} {
+		for x := 200.0; x <= 802; x += 0.5 {
+			for th := 0.0; th < 3; th += 0.5 {
+				put(x, y+th)
+			}
+		}
+	}
+	for _, x := range []float64{200, 400, 600, 800} {
+		for y := 400.0; y <= 602; y += 0.5 {
+			for th := 0.0; th < 3; th += 0.5 {
+				put(x+th, y)
+			}
+		}
+	}
+	return img
+}
+
+// pageRasterizer renders every page as one image.
+type pageRasterizer struct{ img image.Image }
+
+func (r *pageRasterizer) PageCount() int { return 1 }
+func (r *pageRasterizer) Page(n int, _ render.Options) (*render.Raster, error) {
+	return &render.Raster{Number: n, Image: r.img, DPI: 200, Box: geom.NewRect(0, 0, 360, 504)}, nil
+}
+func (r *pageRasterizer) Close() error { return nil }
+
+// TestOCRPageIsLevelledAndItsTableRead: a scan turned by a degree is levelled before it is read,
+// so its ruled table is found and its words, read off the level page, are its cells and not text
+// again; a cell's word read below the floor is [err].
+func TestOCRPageIsLevelledAndItsTableRead(t *testing.T) {
+	var words []ocr.Word
+	for i, w := range []struct {
+		text string
+		x, y int
+	}{{"Name", 220, 440}, {"Qty", 420, 440}, {"Apples", 220, 540}, {"3", 420, 540}} {
+		words = append(words, ocr.Word{Text: w.text, Box: image.Rect(w.x, w.y, w.x+60, w.y+20), Conf: 95, Block: 1, Par: 1, Line: i/2 + 1})
+	}
+	words[3].Conf = 10
+	for i := 0; i < 8; i++ {
+		words = append(words, ocr.Word{Text: "prose", Box: image.Rect(200, 800+i*30, 300, 820+i*30), Conf: 95, Block: 2, Par: 1, Line: i + 1})
+	}
+	o := &ocrRun{eng: &fakeEngine{words: words}, r: &pageRasterizer{img: turnedTable(1)}, minConf: 30, force: true,
+		full: func(int) doc.Page { return doc.Page{} }}
+	p, _, err := o.page(context.Background(), 1, doc.Page{Number: 1, Box: geom.NewRect(0, 0, 360, 504)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cells, doubted int
+	for _, b := range p.Blocks {
+		if b.Role == doc.RoleTableCell {
+			cells++
+			if b.Text() == doc.Unmapped {
+				doubted++
+			}
+		} else if strings.Contains(b.Text(), "Apples") {
+			t.Errorf("a cell's word written again as text: %q", b.Text())
+		}
+	}
+	if doubted != 1 {
+		t.Errorf("%d cells [err], want the one read at 10", doubted)
+	}
+	if cells != 4 || p.Blocks[0].Role != doc.RoleTableCell || p.Blocks[0].Text() != "Name" {
+		t.Errorf("%d cells, first block %s %q: want the table read, first", cells, p.Blocks[0].Role, p.Blocks[0].Text())
 	}
 }

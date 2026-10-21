@@ -371,6 +371,9 @@ type ocrRun struct {
 	force   bool
 	// full is the extractor's page with its artifacts, which a reading must add to.
 	full func(int) doc.Page
+
+	// tables numbers the tables read off pages and images, from imageTables.
+	tables int
 }
 
 // read reads the routed pages and replaces their blocks. A reading replaces a page only where
@@ -432,6 +435,10 @@ func (o *ocrRun) page(ctx context.Context, n int, orig doc.Page) (doc.Page, ocr.
 	if err != nil {
 		return doc.Page{}, c, err
 	}
+	// Level before it is read: a scan placed by hand is turned, and a turned table's rules lie
+	// along no row of pixels (ADR 0047). Tesseract reads the level page better too.
+	level, _ := ocr.Deskew(ra.Image)
+	ra = &render.Raster{Number: ra.Number, Image: level, DPI: ra.DPI, Box: ra.Box}
 	words, err := o.eng.Read(ctx, ra.Image)
 	if err != nil {
 		return doc.Page{}, c, err
@@ -457,7 +464,52 @@ func (o *ocrRun) page(ctx context.Context, n int, orig doc.Page) (doc.Page, ocr.
 			words, minConf = confirmed, ocr.SureConf
 		}
 	}
-	return ocr.Page(words, n, box, ra.Image.Bounds(), minConf), c, nil
+	return o.withTables(words, n, box, ra, minConf), c, nil
+}
+
+// withTables builds the page from words, its ruled tables as tables (ADR 0047): each table's
+// words in its cells, placed where the table stands among the page's other blocks, and the rest
+// of the words as text.
+func (o *ocrRun) withTables(words []ocr.Word, n int, box geom.Rect, ra *render.Raster, minConf float64) doc.Page {
+	for i := range words {
+		if words[i].Conf < minConf && !words[i].Agreed {
+			words[i].Text = doc.Unmapped
+		}
+	}
+	tables := ocr.Tables(ra.Image, words, ra.DPI)
+	if len(tables) == 0 {
+		return ocr.Page(words, n, box, ra.Image.Bounds(), minConf)
+	}
+	taken := map[int]bool{}
+	for _, t := range tables {
+		for _, i := range t.Words {
+			taken[i] = true
+		}
+	}
+	var rest []ocr.Word
+	for i, w := range words {
+		if !taken[i] {
+			rest = append(rest, w)
+		}
+	}
+	p := ocr.Page(rest, n, box, ra.Image.Bounds(), minConf)
+	if o.tables < imageTables {
+		o.tables = imageTables
+	}
+	for _, t := range tables {
+		o.tables++
+		cells := cellBlocks(t.Cells, o.tables, n, box, ra.Image.Bounds(), t.XS, t.YS)
+		top := pixelRect(box, ra.Image.Bounds(), t.Box).Y1
+		at := len(p.Blocks)
+		for i, b := range p.Blocks {
+			if b.Box.Y1 <= top {
+				at = i
+				break
+			}
+		}
+		p.Blocks = append(p.Blocks[:at], append(cells, p.Blocks[at:]...)...)
+	}
+	return p
 }
 
 // ocrBox is the rectangle the image's pixels are resolved against.

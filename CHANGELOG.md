@@ -5,6 +5,18 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (scanned pages)
+
+- **A scanned page reads as a page.** ADR 0047, closes issue #12. With Tesseract and no model,
+  the gold set's four scans meet every v1 target: CER 0.005, recall and precision 0.986, blocks
+  and headings 1.000, tables 0.889.
+- **A page is levelled before it is read** (`ocr.Deskew`), searched from -3 to 3 degrees.
+- **A line's size is read from its letters**, not its box, and near sizes are made one; a line
+  drawn with a heavier stroke than the page's body reads bold.
+- **A ruled table on a scan becomes a GFM table** (`ocr.Tables`), and a paragraph cut by a
+  column break is joined.
+- A table cell's word below the confidence floor is written `[err]`, as the page's text is.
+
 ### Changed — 2026-10-21 (images read)
 
 - **An image is read as what it holds.** ADR 0046, closes issue #11. With Tesseract, an image of

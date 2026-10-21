@@ -146,13 +146,20 @@ func TestReadsAPage(t *testing.T) {
 	if len(ws) < len(want)*9/10 || len(ws) > len(want)*11/10 {
 		t.Errorf("read %d words, want about the gold's %d", len(ws), len(want))
 	}
-	sure := 0
+	sure, stroked := 0, 0
 	for _, w := range ws {
 		if w.Conf >= 90 && strings.Contains(string(gold), w.Text) {
 			sure++
 		}
+		if w.Stroke > 0 {
+			stroked++
+		}
 	}
 	if sure < len(ws)*9/10 {
 		t.Errorf("%d of %d words read at 90 or more are in the gold", sure, len(ws))
+	}
+	// Every word is weighed, for bold (ADR 0047).
+	if stroked != len(ws) {
+		t.Errorf("%d of %d words have a stroke", stroked, len(ws))
 	}
 }

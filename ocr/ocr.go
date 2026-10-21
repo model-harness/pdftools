@@ -26,6 +26,8 @@ package ocr
 import (
 	"context"
 	"image"
+	"image/color"
+	"sort"
 	"strings"
 
 	"github.com/model-harness/pdftools/doc"
@@ -49,6 +51,37 @@ type Word struct {
 	// Agreed reports that a second reader read the word as the engine did (Confirm), which
 	// Page takes as the engine's reading confirmed, whatever its confidence.
 	Agreed bool
+
+	// Stroke is the median width, in pixels, of the word's horizontal runs of ink: how thick its
+	// strokes are drawn, which tells a bold word, since Tesseract reads no weight (ADR 0047).
+	// Zero where the engine did not measure it.
+	Stroke float64
+}
+
+// Stroke measures the median width of the horizontal runs of ink in r in img, ink being a luma
+// under 128. On the gold set's scans at 200 dpi, body type's strokes are 2 pixels on every line
+// and bold type's 3 to 5.
+func Stroke(img image.Image, r image.Rectangle) float64 {
+	r = r.Intersect(img.Bounds())
+	var runs []int
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		n := 0
+		for x := r.Min.X; x <= r.Max.X; x++ {
+			if x < r.Max.X && color.GrayModel.Convert(img.At(x, y)).(color.Gray).Y < 128 {
+				n++
+				continue
+			}
+			if n > 0 {
+				runs = append(runs, n)
+				n = 0
+			}
+		}
+	}
+	if len(runs) == 0 {
+		return 0
+	}
+	sort.Ints(runs)
+	return float64(runs[len(runs)/2])
 }
 
 // Engine reads the words in one page image.

@@ -51,16 +51,18 @@ func TestPageBuildsTheExtractorsShape(t *testing.T) {
 	if got := b.Lines[0].Box; !near(got.X0, want.X0) || !near(got.Y0, want.Y0) || !near(got.X1, want.X1) || !near(got.Y1, want.Y1) {
 		t.Errorf("line 0 box = %+v, want %+v", got, want)
 	}
+	// "three" is 20 points tall and reaches its ascenders' height and no lower, 0.69 of an em,
+	// so its type is 29 points to the half point.
 	l1 := b.Lines[1]
-	if l1.Span != 1 || l1.Offset != 0 || l1.Page != 3 || !near(l1.Size, 20) {
+	if l1.Span != 1 || l1.Offset != 0 || l1.Page != 3 || !near(l1.Size, 29) {
 		t.Errorf("line 1 = %+v", l1)
 	}
 	// The gap between "One" and "two" is 20 pixels, 10 points; a line of one word has a
 	// quarter of its size.
-	if !near(b.Lines[0].Space, 10) || !near(l1.Space, 5) {
-		t.Errorf("spaces = %g and %g, want 10 and 5", b.Lines[0].Space, l1.Space)
+	if !near(b.Lines[0].Space, 10) || !near(l1.Space, 29.0/4) {
+		t.Errorf("spaces = %g and %g, want 10 and %g", b.Lines[0].Space, l1.Space, 29.0/4)
 	}
-	if sp := b.Spans[1]; sp.Page != 3 || sp.MCID != -1 || !near(sp.Style.Size, 20) {
+	if sp := b.Spans[1]; sp.Page != 3 || sp.MCID != -1 || !near(sp.Style.Size, 29) {
 		t.Errorf("span 1 = %+v", sp)
 	}
 	if !near(b.Box.Y0, 900) || !near(b.Box.Y1, 950) {
@@ -166,5 +168,38 @@ func TestIsTextAtEighty(t *testing.T) {
 	}
 	if IsText(nil) {
 		t.Error("no words read as text")
+	}
+}
+
+// TestSnapSizesMakesOneSizeOfNearOnes: sizes within sizeCluster of each other become their
+// median, and a size a step away stays apart.
+func TestSnapSizesMakesOneSizeOfNearOnes(t *testing.T) {
+	block := func(sizes ...float64) doc.Block {
+		var b doc.Block
+		for i, s := range sizes {
+			b.Lines = append(b.Lines, doc.Line{Size: s, Span: i})
+			b.Spans = append(b.Spans, doc.Span{Text: "w", Style: doc.Style{Size: s}})
+		}
+		return b
+	}
+	p := doc.Page{Blocks: []doc.Block{block(15, 10.5, 10.5, 11, 10), block(14.5, 12.5, 10.5), block(18, 19, 20, 21)}}
+	snapSizes(&p)
+	var got []float64
+	for _, b := range p.Blocks {
+		for i, l := range b.Lines {
+			got = append(got, l.Size)
+			if b.Spans[i].Style.Size != l.Size {
+				t.Errorf("a span's size %g is not its line's %g", b.Spans[i].Style.Size, l.Size)
+			}
+		}
+	}
+	// 10, 10.5 and 11 chain into one size; 12.5 is more than twice the step from 10. 18 to 21
+	// step by under 6% each, and the chain stops short of 21, 17% from its start.
+	want := []float64{14.5, 10.5, 10.5, 10.5, 10.5, 14.5, 12.5, 10.5, 19, 19, 19, 21}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("sizes = %v, want %v", got, want)
+			break
+		}
 	}
 }

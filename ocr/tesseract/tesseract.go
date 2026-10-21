@@ -126,7 +126,11 @@ func (e *Engine) Read(ctx context.Context, img image.Image) ([]ocr.Word, error) 
 	if err != nil {
 		return nil, err
 	}
-	return pick(auto, block), nil
+	words := pick(auto, block)
+	for i := range words {
+		words[i].Stroke = ocr.Stroke(img, words[i].Box.Add(img.Bounds().Min))
+	}
+	return words, nil
 }
 
 // pick is single block's reading if its confidence exceeds automatic's by singleBlockMargin,

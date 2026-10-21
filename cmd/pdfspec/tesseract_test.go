@@ -123,6 +123,43 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 	if mean := cer / float64(n); mean > benchTargets.cer {
 		t.Errorf("scanned pages' mean CER %.4f, above the v1 target %.2f", mean, benchTargets.cer)
 	}
+	// #12's done-when (ADR 0047): over the scans, every v1 target.
+	var scans []benchRow
+	for _, r := range on {
+		if strings.HasPrefix(r.name, "scan-") {
+			scans = append(scans, r)
+		}
+	}
+	sm := benchMeans(scans)
+	// A dimension no scan exercises, every one scoring its vacuous 1, has no mean to miss: the
+	// four scans have no styled span among them.
+	vacuous := func(of func(r benchRow) float64) bool {
+		for _, r := range scans {
+			if of(r) != 1 {
+				return false
+			}
+		}
+		return true
+	}
+	for _, d := range []struct {
+		name        string
+		got, target float64
+		lower, none bool
+	}{
+		{"cer", sm.cer, benchTargets.cer, true, false}, {"recall", sm.recall, benchTargets.recall, false, false},
+		{"precision", sm.precision, benchTargets.precision, false, false}, {"order", sm.order, benchTargets.order, false, false},
+		{"blocks", sm.blocks, benchTargets.blocks, false, false},
+		{"headings", sm.headings, benchTargets.headings, false, vacuous(func(r benchRow) float64 { return r.s.Headings })},
+		{"tables", sm.tables, benchTargets.tables, false, vacuous(func(r benchRow) float64 { return r.s.Tables })},
+		{"style", sm.style, benchTargets.style, false, vacuous(func(r benchRow) float64 { return r.s.Style })},
+	} {
+		if d.none {
+			continue
+		}
+		if (d.lower && d.got > d.target) || (!d.lower && d.got < d.target) {
+			t.Errorf("scans' %s: %.3f misses the v1 target %.2f", d.name, d.got, d.target)
+		}
+	}
 	// With an engine for pixels, every fixture counts, and the enforced targets hold over all.
 	m := benchMeans(on)
 	for name, got := range map[string]float64{"order": m.order, "tables": m.tables, "style": m.style} {
