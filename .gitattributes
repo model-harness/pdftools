@@ -31,3 +31,5 @@ go.sum text eol=lf
 *.ttf binary
 *.ttf.gz binary
 *.gz binary
+# A shell script with CRLF endings fails under sh with a carriage-return error, so the installer stays LF.
+*.sh text eol=lf

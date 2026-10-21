@@ -24,6 +24,13 @@ import (
 // and the inferd a machine has cannot change what the tests measure: md and bench use them when
 // they are found (ADRs 0043 and 0044). The tests that want them name them.
 func TestMain(m *testing.M) {
+	// Run as the command itself, for a test that needs what main does with its arguments, such
+	// as a usage message after which the flag package exits (pdfspecMain).
+	if args, ok := os.LookupEnv("PDFSPEC_TEST_AS_MAIN"); ok {
+		os.Args = append([]string{"pdfspec"}, strings.Fields(args)...)
+		main()
+		os.Exit(0)
+	}
 	for _, v := range []string{tesseractEnv, inferdEnv} {
 		if err := os.Setenv(v, "off"); err != nil {
 			panic(err)
