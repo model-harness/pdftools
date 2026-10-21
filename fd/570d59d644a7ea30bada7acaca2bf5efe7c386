@@ -1,0 +1,87 @@
+extract/images_test.go
+  s_5cd1b28ed520c1::t_8880d6af63ace7 1-51,53-95
+  s_5cd1b28ed520c1::t_c918d570d22bbc 52
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_927c529b54bbc5 221
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_54beefce7e9e35 348,350-353,355,1072-1074,1404-1408,1416-1417,1422-1425,1427-1428,1564-1581,1585-1590,1593-1606,1609,1611
+  s_5cd1b28ed520c1::t_459d08c81597d5 1583-1584,1610
+  s_5cd1b28ed520c1::t_175d207087b162 35,128-131,1409,1418,1426,1591-1592,1607-1608
+  s_5cd1b28ed520c1::t_436284fcc9bef6 1582
+  s_5cd1b28ed520c1::t_8ad0cd19c70a92 1612
+bench/bench.go
+  s_5cd1b28ed520c1::t_d4cc772c12c221 116-120
+  s_5cd1b28ed520c1::t_f292fdbaea0b03 114-115,121-123,208-209
+  s_5cd1b28ed520c1::t_204cf79d2cce2e 210
+bench/bench_test.go
+  s_5cd1b28ed520c1::t_d4cc772c12c221 331-349
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_1d744b89c12cd0 8-19
+extract/run.go
+  s_5cd1b28ed520c1::t_9783b289029bb8 68-70
+  s_5cd1b28ed520c1::t_5a06edd8f29d29 251-256,286-287,306-308
+  s_5cd1b28ed520c1::t_717f9bd2522ffb 304-305,309
+doc/block_test.go
+  s_5cd1b28ed520c1::t_436284fcc9bef6 112-121
+cmd/pdfspec/testdata_test.go
+  s_5cd1b28ed520c1::t_6a75f346780a7a 250,253-255,258-259,448-450,459-460
+layout/images_test.go
+  s_5cd1b28ed520c1::t_fdff503e9b8d6b 1-134
+  s_5cd1b28ed520c1::t_436284fcc9bef6 135-207
+sink/markdown/markdown.go
+  s_5cd1b28ed520c1::t_f292fdbaea0b03 711-712
+  s_5cd1b28ed520c1::t_927c529b54bbc5 443-449,709-710,713-720
+  s_5cd1b28ed520c1::t_b9cd90fa43cbd4 721
+doc/doc.go
+  s_5cd1b28ed520c1::t_5a06edd8f29d29 165-189
+layout/breaks.go
+  s_5cd1b28ed520c1::t_927c529b54bbc5 281-282,284
+cmd/pdfspec/reference_test.go
+  s_5cd1b28ed520c1::t_8d4f3bfa145237 54
+docs/adr/0045-an-image-stands-where-it-is-painted.md
+  s_5cd1b28ed520c1::t_1d744b89c12cd0 70-87
+  s_5cd1b28ed520c1::t_85a3aa0cda379f 1-69,88-93
+extract/images.go
+  s_5cd1b28ed520c1::t_5a06edd8f29d29 1-60
+testdata/reference/image.gold.md
+  s_5cd1b28ed520c1::t_6a75f346780a7a 1-2
+layout/furniture.go
+  s_5cd1b28ed520c1::t_927c529b54bbc5 46
+sectionize/images_test.go
+  s_5cd1b28ed520c1::t_436284fcc9bef6 66,72-82,85-94
+  s_5cd1b28ed520c1::t_1590c6d6931793 1-65,67-71,83-84,97-98
+  s_5cd1b28ed520c1::t_459d08c81597d5 95-96
+sink/markdown/err_test.go
+  s_5cd1b28ed520c1::t_9bca8d1b656a94 49
+  s_5cd1b28ed520c1::t_d1d85ea5a50c39 46-48
+  s_5cd1b28ed520c1::t_1197adaf4a133d 41-45,50-55
+extract/extract.go
+  s_5cd1b28ed520c1::t_5a06edd8f29d29 196
+doc/block.go
+  s_5cd1b28ed520c1::t_927c529b54bbc5 295-296,298
+  s_5cd1b28ed520c1::t_8075d3d6ef390a 55-60,154-155
+  s_5cd1b28ed520c1::t_ce67cdfb36a462 156
+layout/images.go
+  s_5cd1b28ed520c1::t_e2118ab9cc91c1 133
+  s_5cd1b28ed520c1::t_fc50d3aca93e64 36-38,62
+  s_5cd1b28ed520c1::t_652860ef8f26fc 7,12,33-35,58-59,63-64,125-132,134-138
+  s_5cd1b28ed520c1::t_8075d3d6ef390a 1-6,8-11,13-32,39-45,48-49,51-52,54-55,60-61,65,69-124,154
+  s_5cd1b28ed520c1::t_54beefce7e9e35 46-47,50,53,56-57,139-153
+  s_5cd1b28ed520c1::t_6a75f346780a7a 66-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd570d59d644a7ea30bada7acaca2bf5efe7c386",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
