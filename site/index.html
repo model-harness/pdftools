@@ -77,12 +77,14 @@
   .layout.read { font-size: clamp(0.85rem, 1.75vw, 1.3rem); line-height: 1.6; white-space: pre-wrap; }
 
   .live { position: absolute; left: 0; top: 0; white-space: pre; line-height: 1; transform-origin: 0 0; will-change: transform; }
-  .live.glyph { color: var(--ink); }
+  /* Drawn, a letter is only its outline, as the file holds it; read, it is ink. */
+  .live.glyph { color: transparent; -webkit-text-stroke: 0.035em var(--ink); paint-order: stroke; }
+  .is-read .live.glyph { color: var(--ink); -webkit-text-stroke: 0 transparent; }
   .live.extra { color: var(--cyan); opacity: 0; }
   .live.err { color: var(--magenta); font-weight: 700; opacity: 0; }
   .dot { position: absolute; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--cyan); opacity: 0.85; }
 
-  .animate .live, .animate .dot { transition: transform 1.1s cubic-bezier(.6,0,.2,1), opacity .6s ease, color .6s ease; }
+  .animate .live, .animate .dot { transition: transform 1.1s cubic-bezier(.6,0,.2,1), opacity .6s ease, color .6s ease .5s, -webkit-text-stroke .6s ease .5s; }
   .animate .live.extra, .animate .live.err { transition-delay: 0s, .7s, 0s; }
 
   .proof-caption { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2.6rem; }
@@ -179,7 +181,7 @@ pdfspec md report.pdf &gt; report.md</code></pre>
           </div>
         </div>
         <figcaption class="proof-caption">
-          <p id="caption">This is what the file holds: letter shapes, each placed at a point. No words, no spaces, no order.</p>
+          <p id="caption">This is what the file holds: the outlines of letters, each placed at a point. No words, no spaces, no order.</p>
           <button class="read-btn" id="read-btn" type="button" aria-controls="sheet">Read the page</button>
         </figcaption>
       </figure>
@@ -396,11 +398,12 @@ pdfspec md report.pdf &gt; report.md</code></pre>
   function show(asRead, animate) {
     isRead = asRead;
     sheet.classList.toggle("animate", animate && !reduce.matches);
+    sheet.classList.toggle("is-read", isRead);
     place(isRead);
     btn.textContent = isRead ? "Show the drawing" : "Read the page";
     caption.textContent = isRead
       ? "What pdfspec gives back: the words in order, the heading marked, and [err] where a shape never said which letters it was."
-      : "This is what the file holds: letter shapes, each placed at a point. No words, no spaces, no order.";
+      : "This is what the file holds: the outlines of letters, each placed at a point. No words, no spaces, no order.";
   }
   btn.addEventListener("click", function () { show(!isRead, true); });
 
