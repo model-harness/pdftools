@@ -1,0 +1,38 @@
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_cb4b836ea381fe 8-18
+  s_5cd1b28ed520c1::t_0192c45f730c7b 4063-4064
+README.md
+  s_5cd1b28ed520c1::t_f93818eb9e3163 38-41
+  s_5cd1b28ed520c1::t_b1d530da94c356 189-191
+  s_5cd1b28ed520c1::t_7d048c9035e725 177-188
+  s_5cd1b28ed520c1::t_d16869de663bb7 7,11-14
+  s_5cd1b28ed520c1::t_3b79c70b2874ac 98
+  s_5cd1b28ed520c1::t_15e8b3fc851c5e 152-162,164-168
+  s_5cd1b28ed520c1::t_2ce5dc32ab82b9 78-91
+  s_5cd1b28ed520c1::t_23f3e11c3f258d 200,202-207
+  s_5cd1b28ed520c1::t_4462a714fb6cfe 217,222-223
+  s_5cd1b28ed520c1::t_14071a71609dea 130-131
+  s_5cd1b28ed520c1::t_7eee62acc6098b 229-231
+  s_5cd1b28ed520c1::t_6340163f7cd765 142,144-146
+  s_5cd1b28ed520c1::t_5218fb3ca923b4 192
+  s_5cd1b28ed520c1::t_e09436fed39008 224
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_e268b6fe2afb47 871-886
+  s_5cd1b28ed520c1::t_044484ece70480 911-916
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "478e20c64ef39f1f60f61449a9d586e441c7cfc9",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
