@@ -43,7 +43,7 @@ func Furniture(d *doc.Document) int {
 	at := func(pi, bi int) (k key, reached, ok bool) {
 		p := &d.Pages[pi]
 		b := &p.Blocks[bi]
-		if b.Role == doc.RoleArtifact || b.IsEmpty() {
+		if b.Role == doc.RoleArtifact || b.Role == doc.RoleImage || b.IsEmpty() {
 			return key{}, false, false
 		}
 		band, reached := marginBand(p.Box, b.Box, extents[pi])

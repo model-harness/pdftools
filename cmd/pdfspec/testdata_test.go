@@ -247,17 +247,16 @@ func TestFixtureSecondOCREngine(t *testing.T) {
 	}
 }
 
-// A scan with no text layer produces nothing, and that is the correct answer.
+// A scan with no text layer, read with no OCR, is "[image]", and that is the correct answer.
 //
 // scanned.pdf is the same page as ocr-ed.pdf before Tesseract ran: one DCT image and no
-// fonts. Emitting nothing is right, and the pair is the clearest statement of what the
-// Phase 4 OCR path is for — the image is there to be read and this pipeline cannot read
-// it. What must not happen is an error or a page of noise from glyph-shaped drawing
-// operators.
+// fonts. Saying there is an image and nothing else is right: the image is there to be read,
+// and with OCR off this pipeline cannot read it (ADR 0045). What must not happen is an error,
+// silence, or a page of noise from glyph-shaped drawing operators.
 func TestFixtureScanWithoutTextLayerIsEmpty(t *testing.T) {
 	path := fixture(t, "pymupdf-utilities/scanned.pdf")
-	if md := strings.TrimSpace(mdOut(t, path)); md != "" {
-		t.Errorf("text from a page with no text layer: %q", md)
+	if md := strings.TrimSpace(mdOut(t, path)); md != "[image]" {
+		t.Errorf("a page with no text layer: %q, want [image]", md)
 	}
 	ims := readImages(t, path)
 	if len(ims) != 1 {
@@ -446,9 +445,9 @@ func TestFixtureBoldSurvivesToMarkdown(t *testing.T) {
 
 // TestFixtureNoTextIsNotAnError covers the files that correctly produce nothing.
 //
-// Each is a page with one image on it, and empty output is the honest answer. The
-// assertion is that it arrives as empty output and not as an error, and that nothing
-// invents characters out of the drawing operators. type3font.pdf was the fourth, until its
+// Each is a page with one image on it, and "[image]" is the honest answer (ADR 0045). The
+// assertion is that it arrives as that and not as an error, and that nothing invents
+// characters out of the drawing operators. type3font.pdf was the fourth, until its
 // glyphs with no value were written [err] (ADR 0042): TestAnUnmappedFontIsWrittenErr.
 func TestFixtureNoTextIsNotAnError(t *testing.T) {
 	for _, f := range []string{
@@ -457,8 +456,8 @@ func TestFixtureNoTextIsNotAnError(t *testing.T) {
 		"pymupdf/test-rewrite-images.pdf",
 	} {
 		t.Run(f, func(t *testing.T) {
-			if md := strings.TrimSpace(mdOut(t, fixture(t, f))); md != "" {
-				t.Errorf("text from a file that has none: %q", md)
+			if md := strings.TrimSpace(mdOut(t, fixture(t, f))); md != "[image]" {
+				t.Errorf("a file with one image and no text: %q, want [image]", md)
 			}
 		})
 	}

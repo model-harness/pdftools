@@ -109,3 +109,13 @@ func TestAStrikeIsAStyleOfItsOwn(t *testing.T) {
 		t.Error("a struck run is the same run as a plain one")
 	}
 }
+
+// TestAnImageIsNeverEmpty: an image block has no text, and emits "[image]" all the same.
+func TestAnImageIsNeverEmpty(t *testing.T) {
+	if (Block{Role: RoleImage}).IsEmpty() {
+		t.Error("an image block is empty")
+	}
+	if !(Block{Role: RoleParagraph}).IsEmpty() {
+		t.Error("a paragraph with no text is not empty")
+	}
+}

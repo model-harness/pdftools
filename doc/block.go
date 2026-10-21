@@ -52,6 +52,12 @@ const (
 	// description, which for an accessible document is the only text there is.
 	RoleFigure Role = "figure"
 
+	// RoleImage is an image the page paints, where it stands among the text (ADR 0045).
+	// Block.Image is its placement. Alt, when set, is what was read off it, "tag:
+	// description"; a sink writes it as "[tag: description]", and as "[image]" when nothing
+	// was.
+	RoleImage Role = "image"
+
 	// RoleArtifact is page furniture — a running header, a folio, a rule. Kept
 	// rather than dropped at extraction, because "is this a header" is a judgement
 	// and the evidence for it is here; a sink omits them, and probe can count them.
@@ -144,6 +150,9 @@ type Block struct {
 	// For a RoleFigure with no spans it is the only text available, which is why it
 	// is carried on the block rather than dropped once the spans are read.
 	Alt string
+
+	// Image is the painted image a RoleImage block stands for, nil on every other block.
+	Image *Image
 
 	// Replacement is /ActualText: what the content *is* where the glyphs do not
 	// spell it — an image of a word, a ligature drawn as artwork, a decorative
@@ -283,9 +292,10 @@ func (b *Block) SetMCIDs() {
 
 // IsEmpty reports whether the block would emit nothing. A block with no text, no
 // Alt and no Replacement is a positioned rectangle a producer left behind, and
-// every stage from sectionize onward has to skip it.
+// every stage from sectionize onward has to skip it. An image is never empty: it emits
+// "[image]" when nothing else.
 func (b Block) IsEmpty() bool {
-	if b.Alt != "" || b.Replacement != "" {
+	if b.Alt != "" || b.Replacement != "" || b.Role == RoleImage {
 		return false
 	}
 	for i := range b.Spans {

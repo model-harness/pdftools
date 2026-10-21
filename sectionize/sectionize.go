@@ -32,6 +32,7 @@ import (
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/layout"
 	"github.com/model-harness/pdftools/tag"
 )
 
@@ -123,6 +124,10 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 type builder struct {
 	opt   Options
 	index *index
+
+	// noAlt is the element whose /Alt already went to its image's line (images), so its own
+	// block does not write it again.
+	noAlt *tag.Elem
 
 	roots    []*doc.Section
 	preamble []doc.Block
@@ -340,8 +345,14 @@ func (b *builder) block(e *tag.Elem, role doc.Role) {
 	if role == doc.RoleListItem {
 		marker = b.label(e)
 	}
+	described := b.images(e, role)
 	b.gather(e, &spans, &nested, &pg, wrapsText(role), linesText(role))
+	if described {
+		// Its /Alt went to the image's line.
+		b.noAlt = e
+	}
 	b.emitItem(e, role, spans, pg, marker)
+	b.noAlt = nil
 	for _, n := range nested {
 		b.visit(n)
 	}
@@ -1058,6 +1069,9 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 		Alt:         e.Alt,
 		Replacement: inlineText(e.ActualText),
 	}
+	if e == b.noAlt {
+		blk.Alt = ""
+	}
 	if role == doc.RoleListItem {
 		blk.Level = listDepth(e)
 	}
@@ -1387,15 +1401,31 @@ type key struct {
 type index struct {
 	spans    map[key][]*doc.Span
 	consumed map[*doc.Span]bool
+
+	// images are the page images painted inside marked content, by key, and taken as their
+	// spans are (ADR 0045).
+	images map[key][]*doc.Image
+	used   map[*doc.Image]bool
+	page   map[*doc.Image]int
 }
 
 func newIndex(d *doc.Document) *index {
 	ix := &index{
 		spans:    map[key][]*doc.Span{},
 		consumed: map[*doc.Span]bool{},
+		images:   map[key][]*doc.Image{},
+		used:     map[*doc.Image]bool{},
+		page:     map[*doc.Image]int{},
 	}
 	for pi := range d.Pages {
 		p := &d.Pages[pi]
+		for ii := range p.Images {
+			if im := &p.Images[ii]; im.MCID >= 0 && layout.Decoration(*im) == "" {
+				k := key{p.Number, im.MCID}
+				ix.images[k] = append(ix.images[k], im)
+				ix.page[im] = p.Number
+			}
+		}
 		for bi := range p.Blocks {
 			blk := &p.Blocks[bi]
 			for si := range blk.Spans {
@@ -1529,6 +1559,55 @@ func (ix *index) take(refs []tag.MCRef) []*doc.Span {
 		}
 	}
 	return out
+}
+
+// takeImages returns the unclaimed images an element's marked content names, in the order it
+// names them, and marks them claimed.
+func (ix *index) takeImages(refs []tag.MCRef) []*doc.Image {
+	var out []*doc.Image
+	for _, r := range refs {
+		for _, im := range ix.images[key{r.Page, r.MCID}] {
+			if r.Page > 0 && !ix.used[im] {
+				ix.used[im] = true
+				out = append(out, im)
+			}
+		}
+	}
+	return out
+}
+
+// images emits a RoleImage block for each image e's own marked content and its kids' names,
+// ahead of e's text. A Figure's /Alt is the author's description of its image, so it is that
+// image's line, "[image: alt]", and is not written again as the figure's caption.
+//
+// It reports whether e is a Figure that named an image, whose /Alt its own block then does not
+// write again.
+func (b *builder) images(e *tag.Elem, role doc.Role) bool {
+	var ims []*doc.Image
+	var walk func(x *tag.Elem)
+	walk = func(x *tag.Elem) {
+		ims = append(ims, b.index.takeImages(x.Content)...)
+		for _, k := range x.Kids {
+			// A kid with a block role is visited as a block of its own, and claims its own.
+			if _, ok := blockRole(k.Role); !ok {
+				walk(k)
+			}
+		}
+	}
+	walk(e)
+	alt := ""
+	if role == doc.RoleFigure {
+		alt = strings.Join(strings.Fields(e.Alt), " ")
+	}
+	for _, im := range ims {
+		blk := doc.Block{Role: doc.RoleImage, Box: im.Box, Image: im, Lang: e.Lang}
+		if alt != "" {
+			blk.Alt = "image: " + alt
+		}
+		pg := b.index.page[im]
+		b.place(blk, span{lo: pg, hi: pg})
+	}
+	return len(ims) > 0 && role == doc.RoleFigure
 }
 
 // unplaced returns the document's remaining text: every block whose spans no

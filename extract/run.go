@@ -65,6 +65,9 @@ type run struct {
 	// gutters are the verticals splitAtGutters inferred from white space, for doc.Page.Gutters.
 	gutters []doc.Rule
 
+	// images are the images painted, for doc.Page.Images.
+	images []doc.Image
+
 	// links are the page's links to a URI, which linkWords gives the words they cover.
 	links []link
 }
@@ -245,6 +248,12 @@ func (r *run) walkWith(m *content.Machine, data []byte, res objects.Dict, depth 
 			r.show(m, res, fonts, op.Str(2))
 		case "Do":
 			r.doXObject(m, res, op.NameAt(0), depth)
+		case "INLINE_IMAGE":
+			if len(op.Operands) > 0 {
+				if d, ok := op.Operands[0].(objects.Dict); ok {
+					r.paintImage(m, d, true)
+				}
+			}
 		}
 	}
 }
@@ -274,8 +283,8 @@ func (r *run) propertiesMCID(res objects.Dict, name objects.Name) (int, bool) {
 // Descending is not optional. A form carries its own /Resources and the text drawn
 // inside it names fonts from there; a reader that stops at the page dictionary
 // returns nothing for every form, and the corpus tests for the font package
-// measured 8 fonts that appear nowhere but inside one. Image XObjects are ignored
-// here — they belong to the image path.
+// measured 8 fonts that appear nowhere but inside one. An image XObject is recorded
+// where it is painted, and its samples are left to the image path.
 func (r *run) doXObject(m *content.Machine, res objects.Dict, name objects.Name, depth int) {
 	if depth >= maxFormDepth || res == nil || name == "" {
 		return
@@ -292,7 +301,12 @@ func (r *run) doXObject(m *content.Machine, res objects.Dict, name objects.Name,
 	if !isStream {
 		return
 	}
-	if sub, _ := objects.GetName(r.ex.s, st.Dict, "Subtype"); sub != "Form" {
+	kind, _ := objects.GetName(r.ex.s, st.Dict, "Subtype")
+	if kind == "Image" {
+		r.paintImage(m, st.Dict, false)
+		return
+	}
+	if kind != "Form" {
 		return
 	}
 	if st.Decoded == nil {

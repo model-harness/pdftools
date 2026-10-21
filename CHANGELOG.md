@@ -5,6 +5,18 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (images)
+
+- **An image stands where it is painted.** ADR 0045, the first half of issue #11. The extractor
+  records every image it paints (`Page.Images`), and the output writes `[image]` in its place:
+  above its caption in reading order on an untagged page, and where the structure tree puts it on
+  a tagged one. A tagged Figure's `/Alt` is its image's description, `[image: alt]`. 208 image
+  lines across 21 documents, where there were none.
+- **Decoration is left out:** artifacts, icons under 16 points, colour fills, logos repeated
+  on every page, and scans under an OCR text layer.
+- New model: `doc.Image`, `doc.RoleImage`, `Block.Image`. The bench keeps image lines out of its
+  text scores.
+
 ### Changed — 2026-10-21 (inferd)
 
 - **Gemma reads again what Tesseract doubts.** ADR 0044, issue #10. With inferd running and a

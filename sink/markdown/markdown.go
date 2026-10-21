@@ -440,6 +440,13 @@ func (w *writer) block(b doc.Block) {
 		w.str(fence)
 		w.nl()
 
+	case doc.RoleImage:
+		// "[image]", or what was read off the image as "[tag: description]" (ADR 0045):
+		// bracketed, so a reader can tell a description of the page from the page's own
+		// text, and always one line.
+		w.str(imageText(b.Alt))
+		w.nl()
+
 	case doc.RoleCaption, doc.RoleFigure:
 		// Markdown has no figure element, and a figure has no file to point at until
 		// the images verb exists — `![alt]()` with an empty target is a broken image
@@ -698,4 +705,17 @@ func oneLine(s string) string {
 		return s
 	}
 	return strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(s)
+}
+
+// imageText is an image block's line: "[image]" for an image nothing was read off, and
+// "[tag: description]" for one that was, any bracket inside it made a parenthesis so that the
+// line closes where it should and reads as no link.
+func imageText(alt string) string {
+	alt = strings.Join(strings.Fields(alt), " ")
+	if alt == "" {
+		return "[image]"
+	}
+	var sb strings.Builder
+	escapeInto(&sb, strings.NewReplacer("[", "(", "]", ")").Replace(alt), false)
+	return "[" + sb.String() + "]"
 }

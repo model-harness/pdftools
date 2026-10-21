@@ -328,3 +328,22 @@ func TestScoreErrIsOneUnreadCharacter(t *testing.T) {
 		t.Errorf("Errs = %d, want 1", s.Errs)
 	}
 }
+
+// An image's line is not text: "[image]" and "[photo: …]" leave the text scores alone and count
+// as images (ADR 0045).
+func TestScoreImageLinesAreNotText(t *testing.T) {
+	ref := []byte("Figure 1: three colour bands.\n")
+	for _, got := range []string{
+		"[image]\n\nFigure 1: three colour bands.\n",
+		"[photo: three flat bands of colour]\n\nFigure 1: three colour bands.\n",
+	} {
+		s := Score(ref, []byte(got))
+		if s.CER != 0 || s.Precision != 1 || s.Blocks != 1 || s.Images != 1 {
+			t.Errorf("%q: CER %.3f precision %.3f blocks %.3f images %d", got, s.CER, s.Precision, s.Blocks, s.Images)
+		}
+	}
+	// A bracketed line that is not of the form is text.
+	if s := Score(ref, []byte("[Note: see below]\n\nFigure 1: three colour bands.\n")); s.Images != 0 || s.Precision == 1 {
+		t.Errorf("a bracketed note: images %d precision %.3f", s.Images, s.Precision)
+	}
+}

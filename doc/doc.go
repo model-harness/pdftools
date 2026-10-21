@@ -162,6 +162,31 @@ type Page struct {
 	// producer's own statement and a gutter is a reading of the page; layout's band reader
 	// takes both, and its lattice, which needs a drawn frame, takes only Rules.
 	Gutters []Rule
+
+	// Images are the images the page paints, in the order painted: image XObjects and inline
+	// images, inside forms too. Recorded where they stand, so that what an image holds can
+	// be read off the rendered page (ADR 0045); the samples themselves are the image path's.
+	Images []Image
+}
+
+// Image is one painted image: where it stands on the page and what it is.
+type Image struct {
+	// Box is the image's extent in page coordinates: the unit square through the CTM at the
+	// paint, bounded.
+	Box geom.Rect
+
+	// Width and Height are the image's size in samples, as its dictionary declares.
+	Width, Height int
+
+	// Mask reports a stencil mask (/ImageMask true): one bit a sample, painted in the fill
+	// colour, which is how a producer draws a glyph, a rule or a logo as a bitmap.
+	Mask bool
+
+	// MCID is the marked-content identifier the image was painted inside, or -1, and Artifact
+	// reports that it was painted inside an /Artifact, a producer's statement that it is
+	// decoration.
+	MCID     int
+	Artifact bool
 }
 
 // Rule is one axis-aligned straight stroke or fill edge, in page coordinates.

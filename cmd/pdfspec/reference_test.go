@@ -51,7 +51,7 @@ var referenceFixtures = []struct {
 	{"paragraphs", "paragraph breaks carried by the indent alone, at one size and one leading"},
 	{"lists", "bulleted items including a nested level"},
 	{"table", "every cell's text, rows kept together"},
-	{"image", "a page with one image: no prose is the honest answer"},
+	{"image", "a page with one image: the image marked, and its caption"},
 	{"clauses", "numbered clause hierarchy from the structure tree"},
 	{"tagged-lists", "list markers the structure tree declares, bulleted and numbered"},
 	{"tagged-table", "a table grid the structure tree declares, with a header row"},

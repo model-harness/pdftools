@@ -278,8 +278,8 @@ func startsLowerText(s string) bool {
 	return false
 }
 
-// aside reports a block that is not the page's running text: furniture, a footnote, or one that
-// drew only spaces.
+// aside reports a block that is not the page's running text: furniture, a footnote, an image,
+// which a typesetter floats to a page's top or foot, or one that drew only spaces.
 func aside(b doc.Block) bool {
-	return b.Role == doc.RoleArtifact || b.Role == doc.RoleFootnote || b.IsEmpty()
+	return b.Role == doc.RoleArtifact || b.Role == doc.RoleFootnote || b.Role == doc.RoleImage || b.IsEmpty()
 }

@@ -111,7 +111,16 @@ func parse(src []byte) document {
 		case *ast.Heading:
 			d.blocks = append(d.blocks, block{kind: "heading", level: t.Level, text: textOf(t, src)})
 		case *ast.Paragraph:
-			d.blocks = append(d.blocks, block{kind: "para", text: textOf(t, src)})
+			text := textOf(t, src)
+			if imageMark.MatchString(text) {
+				// An image is not text: kept out of every text score and counted, "[image]"
+				// already above with the inline ones (ADR 0045).
+				if text != "[image]" {
+					d.images++
+				}
+				return ast.WalkSkipChildren, nil
+			}
+			d.blocks = append(d.blocks, block{kind: "para", text: text})
 		case *ast.TextBlock:
 			// A tight list's item text arrives as a TextBlock rather than a Paragraph. The
 			// walk goes on into it, as it does into a paragraph, so the item's bold and
@@ -195,6 +204,9 @@ func textOf(n ast.Node, src []byte) string {
 }
 
 var wordRe = regexp.MustCompile(`[\p{L}\p{N}]+`)
+
+// imageMark is a paragraph that is an image's line: "[image]", or "[tag: description]".
+var imageMark = regexp.MustCompile(`^\[(image|[a-z][a-z -]{0,23}: .+)\]$`)
 
 func words(s string) []string { return wordRe.FindAllString(s, -1) }
 

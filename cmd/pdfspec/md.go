@@ -218,6 +218,7 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 // it. A page read by OCR is built of paragraphs with lines (ocr.Page), so every pass
 // considers it as it does an extracted page.
 func inferRoles(d *doc.Document) {
+	layout.Images(d)
 	layout.Furniture(d)
 	layout.Tables(d, layout.DefaultOptions)
 	layout.Headings(d, layout.DefaultOptions)

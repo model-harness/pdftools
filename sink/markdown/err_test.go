@@ -38,3 +38,18 @@ func TestAnUnmappedRunIsOneErr(t *testing.T) {
 		})
 	}
 }
+
+// TestAnImageIsOneLine: "[image]" for an image nothing was read off, "[tag: description]" for
+// one that was, on one line, with no bracket inside to end it early (ADR 0045).
+func TestAnImageIsOneLine(t *testing.T) {
+	for alt, want := range map[string]string{
+		"":                                     "[image]",
+		"photo: a geyser erupting":             "[photo: a geyser erupting]",
+		"diagram: boxes [A] and [B]\njoined":   "[diagram: boxes (A) and (B) joined]",
+		"photo: a *starred* and `coded` thing": `[photo: a \*starred\* and ` + "\\`coded\\`" + ` thing]`,
+	} {
+		if got := strings.TrimSpace(render(t, doc.Block{Role: doc.RoleImage, Alt: alt})); got != want {
+			t.Errorf("Alt %q: got %q, want %q", alt, got, want)
+		}
+	}
+}
