@@ -14,8 +14,9 @@ import (
 // coordinates.
 //
 // box is the page's rectangle in points and img the image's bounds, which span it. A word read
-// below minConf is written doc.Unmapped, which the sink tags [err] (ADR 0042): one for the
-// word, since how many characters an engine could not read is not something it says.
+// below minConf, and not Agreed by a second reader, is written doc.Unmapped, which the sink tags
+// [err] (ADR 0042): one for the word, since how many characters an engine could not read is not
+// something it says.
 //
 // Lines are joined by extract.WrapSpace, the extractor's own rule for a wrapped line, so a word
 // broken at a hyphen reaches layout.Hyphens as the extractor's words do.
@@ -51,7 +52,7 @@ func Page(words []Word, n int, box geom.Rect, img image.Rectangle, minConf float
 			if k > 0 {
 				text += " "
 			}
-			if w.Conf < minConf {
+			if w.Conf < minConf && !w.Agreed {
 				text += doc.Unmapped
 			} else {
 				text += w.Text

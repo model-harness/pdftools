@@ -126,7 +126,8 @@ lines, flag parsing included.
 | `extract`, `sectionize`, `doc` | text runs, clause reconstruction, the document model |
 | `image`, `bits` | image XObjects, sub-byte sample unpacking |
 | `render`, `render/pdfium` | rasterization over a pdfium WASM adapter |
-| `ocr`, `ocr/tesseract` | per-page routing, words to pages, the Tesseract adapter |
+| `ocr`, `ocr/tesseract`, `ocr/gemma` | per-page routing, words to pages, Tesseract, and inferd's vision model |
+| `internal/inferd` | inferd's v2 wire, borrowed from thlibo |
 | `sink/markdown`, `sink/okf` | output formats |
 
 ## OCR
@@ -137,7 +138,11 @@ with [Tesseract](https://github.com/tesseract-ocr/tesseract) when it is installe
 the file gave, and a word Tesseract is less than 30% confident of is written `[err]`
 (ADR 0043). Without Tesseract the page keeps its extracted text, and stderr names it.
 
-`md` does this by default (`-ocr=false` turns it off). `pdfspec ocr` adds the router's knobs:
+When [inferd](https://github.com/3rg0n/inferd) is running with a vision model, a word
+Tesseract is less than 90% confident of is read again by it, and kept only where the two
+agree; the rest are `[err]` (ADR 0044). Without inferd, the 30% threshold decides.
+
+`md` does this by default (`-ocr=false` turns it off, `-inferd off` the second reading). `pdfspec ocr` adds the router's knobs:
 
 ```sh
 pdfspec ocr -dry-run scan.pdf     # which pages need OCR, and why

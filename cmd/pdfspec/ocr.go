@@ -17,6 +17,7 @@ import (
 	"github.com/model-harness/pdftools/geom"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
 	"github.com/model-harness/pdftools/ocr"
+	"github.com/model-harness/pdftools/ocr/gemma"
 	"github.com/model-harness/pdftools/ocr/tesseract"
 	"github.com/model-harness/pdftools/render"
 	"github.com/model-harness/pdftools/sink/markdown"
@@ -102,8 +103,8 @@ func runOCR(args []string) error {
 
 // engineFlags are the Tesseract settings md and ocr share.
 type engineFlags struct {
-	exe, tessdata, lang string
-	dpi, minConf        float64
+	exe, tessdata, lang, inferd string
+	dpi, minConf                float64
 }
 
 func (e *engineFlags) register(fs *flag.FlagSet) {
@@ -111,7 +112,8 @@ func (e *engineFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&e.tessdata, "tessdata", "", "directory of Tesseract language models (default: TESSDATA_PREFIX or the install's)")
 	fs.StringVar(&e.lang, "lang", "eng", "Tesseract language model")
 	fs.Float64Var(&e.dpi, "dpi", ocrDPI, "resolution pages are rasterized at before OCR")
-	fs.Float64Var(&e.minConf, "min-conf", defaultMinConf, "Tesseract confidence (0-100) below which a word is written [err]")
+	fs.Float64Var(&e.minConf, "min-conf", defaultMinConf, "without a second reader, the Tesseract confidence (0-100) below which a word is written [err]")
+	fs.StringVar(&e.inferd, "inferd", "", "inferd's generation endpoint for the second reader, or off (default: PDFSPEC_INFERD, else the platform's)")
 }
 
 func (e *engineFlags) validate() error {
@@ -228,8 +230,34 @@ func readPages(ctx context.Context, d *doc.Document, path string, routed []int, 
 	}
 	defer func() { _ = r.Close() }()
 
-	return readWith(ctx, d, routed, eng, r, render.Options{DPI: eo.dpi, MaxPixels: render.DefaultOptions.MaxPixels}, eo.minConf, force,
-		withArtifacts(path))
+	run := &ocrRun{eng: eng, r: r, ropt: render.Options{DPI: eo.dpi, MaxPixels: render.DefaultOptions.MaxPixels},
+		second: openSecond(ctx, eo), minConf: eo.minConf, force: force, full: withArtifacts(path)}
+	return run.read(ctx, d, routed)
+}
+
+// inferdEnv is "off" to ask no model, which tests set, or names inferd's generation endpoint.
+const inferdEnv = "PDFSPEC_INFERD"
+
+// openSecond is inferd's vision model as the second reader, or nil when there is none: no
+// daemon, a model still loading, or one that sees no images. The run is the same without it,
+// with Tesseract's confidence alone deciding.
+func openSecond(ctx context.Context, eo engineFlags) ocr.Reader {
+	addr := eo.inferd
+	if addr == "" {
+		addr = os.Getenv(inferdEnv)
+	}
+	if addr == "off" {
+		return nil
+	}
+	if addr == "auto" {
+		addr = ""
+	}
+	m, err := gemma.Open(ctx, addr, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  no second reader: %v; words under confidence %g are [err]\n", err, eo.minConf)
+		return nil
+	}
+	return m
 }
 
 // withArtifacts returns the function that extracts page n with its artifacts kept, which is
@@ -253,23 +281,42 @@ func withArtifacts(path string) func(n int) doc.Page {
 	}
 }
 
-// readWith reads the routed pages with eng, rasterized by r. A reading replaces a page only
-// where ocr.Adds says it adds to what the extractor found, or under -force.
-func readWith(ctx context.Context, d *doc.Document, routed []int, eng ocr.Engine, r render.Rasterizer, ropt render.Options, minConf float64, force bool, full func(int) doc.Page) error {
+// ocrRun is one document's OCR: the engine and its rasterizer, the second reader if there is one,
+// and the rules a reading is taken by.
+type ocrRun struct {
+	eng  ocr.Engine
+	r    render.Rasterizer
+	ropt render.Options
+	// second reads again the words eng is unsure of (ocr.Confirm), or is nil.
+	second  ocr.Reader
+	minConf float64
+	force   bool
+	// full is the extractor's page with its artifacts, which a reading must add to.
+	full func(int) doc.Page
+}
+
+// read reads the routed pages and replaces their blocks. A reading replaces a page only where
+// ocr.Adds says it adds to what the extractor found, or under -force.
+func (o *ocrRun) read(ctx context.Context, d *doc.Document, routed []int) error {
 	start := time.Now()
 	var failed, kept []int
 	var unsure []pageErrs
+	var asked ocr.Confirmation
 	for _, n := range routed {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		p, err := readPage(ctx, n, eng, r, ropt, minConf, d.Pages[n-1])
+		p, c, err := o.page(ctx, n, d.Pages[n-1])
+		asked.Asked, asked.Agreed, asked.Refused = asked.Asked+c.Asked, asked.Agreed+c.Agreed, asked.Refused+c.Refused
+		if c.Reader != "" {
+			asked.Reader = c.Reader
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  page %d: %v\n", n, err)
 			failed = append(failed, n)
 			continue
 		}
-		if !force && !ocr.Adds(full(n), p) {
+		if !o.force && !ocr.Adds(o.full(n), p) {
 			kept = append(kept, n)
 			continue
 		}
@@ -279,12 +326,16 @@ func readWith(ctx context.Context, d *doc.Document, routed []int, eng ocr.Engine
 		}
 	}
 	fmt.Fprintf(os.Stderr, "read %d of %d page(s) with %s in %v\n",
-		len(routed)-len(failed), len(routed), eng.Name(), time.Since(start).Round(time.Millisecond))
+		len(routed)-len(failed), len(routed), o.eng.Name(), time.Since(start).Round(time.Millisecond))
+	if asked.Asked > 0 {
+		fmt.Fprintf(os.Stderr, "  %d word(s) under confidence %d read again by %s: %d agreed, %d refused\n",
+			asked.Asked, ocr.SureConf, asked.Reader, asked.Agreed, asked.Refused)
+	}
 	if len(kept) > 0 {
 		fmt.Fprintf(os.Stderr, "  kept the extracted text of %d page(s), which OCR did not add to: %s\n", len(kept), pageList(kept))
 	}
 	if len(unsure) > 0 {
-		fmt.Fprintf(os.Stderr, "  %d word(s) read below confidence %g are written [err]: %s\n", errTotal(unsure), minConf, errPages(unsure))
+		fmt.Fprintf(os.Stderr, "  %d word(s) are written [err]: %s\n", errTotal(unsure), errPages(unsure))
 	}
 	if len(failed) > 0 {
 		return fmt.Errorf("%d of %d page(s) failed OCR and kept their extracted text", len(failed), len(routed))
@@ -292,22 +343,43 @@ func readWith(ctx context.Context, d *doc.Document, routed []int, eng ocr.Engine
 	return nil
 }
 
-// readPage rasterizes one page and builds it from the words Tesseract reads.
-func readPage(ctx context.Context, n int, eng ocr.Engine, r render.Rasterizer, ropt render.Options, minConf float64, orig doc.Page) (doc.Page, error) {
-	ra, err := r.Page(n, ropt)
+// page rasterizes one page and builds it from the words the engine reads.
+//
+// With a second reader, a word under ocr.SureConf is taken only where the reader agrees, and the
+// rest are [err] (ADR 0044). Without one, a word under minConf is [err]. A reader that fails
+// mid-page is dropped for the rest of the run, and the page is read as if there were none.
+func (o *ocrRun) page(ctx context.Context, n int, orig doc.Page) (doc.Page, ocr.Confirmation, error) {
+	var c ocr.Confirmation
+	ra, err := o.r.Page(n, o.ropt)
 	if err != nil {
-		return doc.Page{}, err
+		return doc.Page{}, c, err
 	}
-	words, err := eng.Read(ctx, ra.Image)
+	words, err := o.eng.Read(ctx, ra.Image)
 	if err != nil {
-		return doc.Page{}, err
+		return doc.Page{}, c, err
 	}
 	if !ocr.IsText(words) {
 		// A blank page, or a picture read as noise: nothing read is text, and the page keeps
 		// what the extractor found.
 		words = nil
 	}
-	return ocr.Page(words, n, ocrBox(orig, ra), ra.Image.Bounds(), minConf), nil
+	minConf := o.minConf
+	box := ocrBox(orig, ra)
+	if !o.force && !ocr.Adds(o.full(n), ocr.Page(words, n, box, ra.Image.Bounds(), minConf)) {
+		// A reading read will not take: nothing to ask the second reader about.
+		return ocr.Page(words, n, box, ra.Image.Bounds(), minConf), c, nil
+	}
+	if o.second != nil {
+		confirmed, conf, err := ocr.Confirm(ctx, ra.Image, words, o.second)
+		c = conf
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  page %d: %s failed, and OCR goes on without it: %v\n", n, o.second.Name(), err)
+			o.second = nil
+		} else {
+			words, minConf = confirmed, ocr.SureConf
+		}
+	}
+	return ocr.Page(words, n, box, ra.Image.Bounds(), minConf), c, nil
 }
 
 // ocrBox is the rectangle the image's pixels are resolved against.

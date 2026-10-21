@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	stdimage "image"
 	"os"
 	"path/filepath"
@@ -14,12 +16,14 @@ import (
 	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
 
-// TestMain turns OCR off for every test in the package, so the Tesseract a machine has
-// installed cannot change what the tests measure: md and bench read a routed page with it when
-// it is found (ADR 0043). The tests that want it name it with PDFSPEC_TEST_TESSERACT.
+// TestMain turns OCR and its second reader off for every test in the package, so the Tesseract
+// and the inferd a machine has cannot change what the tests measure: md and bench use them when
+// they are found (ADRs 0043 and 0044). The tests that want them name them.
 func TestMain(m *testing.M) {
-	if err := os.Setenv(tesseractEnv, "off"); err != nil {
-		panic(err)
+	for _, v := range []string{tesseractEnv, inferdEnv} {
+		if err := os.Setenv(v, "off"); err != nil {
+			panic(err)
+		}
 	}
 	os.Exit(m.Run())
 }
@@ -140,16 +144,14 @@ func TestOCRReadsAgainstTheFullPage(t *testing.T) {
 	defer func() { _ = r.Close() }()
 	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
 	watermark := doc.Page{Blocks: []doc.Block{{Spans: []doc.Span{{Text: "Recognized body text."}}}}}
-	if err := readWith(context.Background(), d, []int{1}, &fakeEngine{words: fakeLine()}, r, ropt, 50, false,
-		func(int) doc.Page { return watermark }); err != nil {
+	if err := (&ocrRun{eng: &fakeEngine{words: fakeLine()}, r: r, ropt: ropt, minConf: 50, force: false, full: func(int) doc.Page { return watermark }}).read(context.Background(), d, []int{1}); err != nil {
 		t.Fatal(err)
 	}
 	if d.Pages[0].Rasterized {
 		t.Error("a reading of the stripped watermark replaced the page")
 	}
 	// -force replaces it all the same.
-	if err := readWith(context.Background(), d, []int{1}, &fakeEngine{words: fakeLine()}, r, ropt, 50, true,
-		func(int) doc.Page { return watermark }); err != nil || !d.Pages[0].Rasterized {
+	if err := (&ocrRun{eng: &fakeEngine{words: fakeLine()}, r: r, ropt: ropt, minConf: 50, force: true, full: func(int) doc.Page { return watermark }}).read(context.Background(), d, []int{1}); err != nil || !d.Pages[0].Rasterized {
 		t.Errorf("-force did not replace the page: err %v", err)
 	}
 }
@@ -180,12 +182,11 @@ func TestOCRReportsItsUnsureWords(t *testing.T) {
 	defer func() { _ = r.Close() }()
 	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
 	warned := captureStderr(t, func() {
-		if err := readWith(context.Background(), d, []int{1}, &fakeEngine{words: fakeLine()}, r, ropt, 50, false,
-			func(int) doc.Page { return doc.Page{} }); err != nil {
+		if err := (&ocrRun{eng: &fakeEngine{words: fakeLine()}, r: r, ropt: ropt, minConf: 50, force: false, full: func(int) doc.Page { return doc.Page{} }}).read(context.Background(), d, []int{1}); err != nil {
 			t.Error(err)
 		}
 	})
-	if !strings.Contains(warned, "1 word(s) read below confidence 50 are written [err]: p1 1") {
+	if !strings.Contains(warned, "1 word(s) are written [err]: p1 1") {
 		t.Errorf("stderr = %q", warned)
 	}
 }
@@ -205,7 +206,7 @@ func TestOCRGateIsAtEighty(t *testing.T) {
 	}{{80, true}, {79.9, false}} {
 		d := extractOnly(t, in)
 		eng := &fakeEngine{words: []ocr.Word{{Text: "word", Box: stdimage.Rect(0, 0, 10, 10), Conf: c.conf, Block: 1, Par: 1, Line: 1}}}
-		if err := readWith(context.Background(), d, []int{1}, eng, r, ropt, 30, false, func(int) doc.Page { return doc.Page{} }); err != nil {
+		if err := (&ocrRun{eng: eng, r: r, ropt: ropt, minConf: 30, force: false, full: func(int) doc.Page { return doc.Page{} }}).read(context.Background(), d, []int{1}); err != nil {
 			t.Fatal(err)
 		}
 		if d.Pages[0].Rasterized != c.read {
@@ -247,5 +248,107 @@ func TestOCRDefaultsAreTheMeasuredOnes(t *testing.T) {
 	}
 	if ocrDPI != render.DefaultOptions.DPI {
 		t.Errorf("ocrDPI = %g, want the rasterizer's %g", float64(ocrDPI), render.DefaultOptions.DPI)
+	}
+}
+
+// secondReader answers every crop with one reading, or fails.
+type secondReader struct {
+	answer string
+	err    error
+	calls  int
+}
+
+func (s *secondReader) Read(context.Context, stdimage.Image, int) (string, error) {
+	s.calls++
+	return s.answer, s.err
+}
+
+func (s *secondReader) Name() string { return "second" }
+
+// TestOCRSecondReaderDecides: with a second reader, fakeLine's word at 40, under 90, is kept
+// where the reader agrees and [err] where it does not, and the run says how many it asked. A
+// reader that fails is dropped, and the word falls back to -min-conf.
+func TestOCRSecondReaderDecides(t *testing.T) {
+	in := fixture(t, "pymupdf-utilities/scanned.pdf")
+	r, err := renderpdfium.Open(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
+	for _, c := range []struct {
+		name, want, stderr string
+		second             *secondReader
+	}{
+		{"agrees", "Recognized body text.", "1 word(s) under confidence 90 read again by second: 1 agreed, 0 refused", &secondReader{answer: "body"}},
+		{"disagrees", "Recognized " + doc.Unmapped + " text.", "0 agreed, 0 refused", &secondReader{answer: "bodv"}},
+		{"refuses", "Recognized " + doc.Unmapped + " text.", "0 agreed, 1 refused", &secondReader{err: fmt.Errorf("x: %w", ocr.ErrRefused)}},
+		// Gone: the word at 40 is over -min-conf 30, so it is read as Tesseract read it.
+		{"fails", "Recognized body text.", "second failed, and OCR goes on without it", &secondReader{err: errors.New("inferd: backend not ready")}},
+	} {
+		d := extractOnly(t, in)
+		run := &ocrRun{eng: &fakeEngine{words: fakeLine()}, r: r, ropt: ropt, second: c.second, minConf: 30,
+			full: func(int) doc.Page { return doc.Page{} }}
+		routed := []int{1}
+		if c.name == "fails" {
+			// Read twice: a reader that failed on the first page is not asked on the second.
+			routed = []int{1, 1}
+		}
+		warned := captureStderr(t, func() {
+			if err := run.read(context.Background(), d, routed); err != nil {
+				t.Error(err)
+			}
+		})
+		if got := d.Pages[0].Text(); got != c.want {
+			t.Errorf("%s: page = %q, want %q", c.name, got, c.want)
+		}
+		if !strings.Contains(warned, c.stderr) {
+			t.Errorf("%s: stderr = %q, want %q", c.name, warned, c.stderr)
+		}
+		if c.second.calls != 1 {
+			t.Errorf("%s: the reader was asked %d times, want once for the one word under 90", c.name, c.second.calls)
+		}
+	}
+}
+
+// TestOpenSecondHonoursOff: off asks nothing, and an endpoint with no daemon is no reader.
+func TestOpenSecondHonoursOff(t *testing.T) {
+	for _, c := range []struct {
+		name, env string
+		eo        engineFlags
+	}{
+		{"-inferd off", "", engineFlags{inferd: "off"}},
+		{inferdEnv + "=off", "off", engineFlags{}},
+	} {
+		t.Setenv(inferdEnv, c.env)
+		var got ocr.Reader
+		warned := captureStderr(t, func() { got = openSecond(context.Background(), c.eo) })
+		if got != nil || warned != "" {
+			t.Errorf("%s: reader %v, stderr %q; off asks nothing and says nothing", c.name, got, warned)
+		}
+	}
+}
+
+// TestOCRAsksOnlyWhereTheReadingWillTake: a page whose reading adds nothing keeps its text, so
+// the second reader is not asked about its words.
+func TestOCRAsksOnlyWhereTheReadingWillTake(t *testing.T) {
+	in := fixture(t, "pymupdf-utilities/scanned.pdf")
+	r, err := renderpdfium.Open(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	d := extractOnly(t, in)
+	second := &secondReader{answer: "body"}
+	same := doc.Page{Blocks: []doc.Block{{Spans: []doc.Span{{Text: "Recognized body text."}}}}}
+	run := &ocrRun{eng: &fakeEngine{words: fakeLine()}, r: r, ropt: render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels},
+		second: second, minConf: 30, full: func(int) doc.Page { return same }}
+	_ = captureStderr(t, func() {
+		if err := run.read(context.Background(), d, []int{1}); err != nil {
+			t.Error(err)
+		}
+	})
+	if second.calls != 0 || d.Pages[0].Rasterized {
+		t.Errorf("asked %d times, replaced %v: want neither for a reading that adds nothing", second.calls, d.Pages[0].Rasterized)
 	}
 }

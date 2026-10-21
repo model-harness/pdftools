@@ -5,6 +5,18 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (inferd)
+
+- **Gemma reads again what Tesseract doubts.** ADR 0044, issue #10. With inferd running and a
+  vision model loaded, each word Tesseract reads under confidence 90 is cropped and read again,
+  kept where the two agree and `[err]` where they don't. On seven born-digital pages, wrong words
+  accepted fell from 65 to 24. Without inferd, nothing changes. `-inferd off` or
+  `PDFSPEC_INFERD=off` turns it off.
+- **inferd's wire** is borrowed from thlibo (`internal/inferd`, MIT), with image-first messages
+  and the admin socket's capabilities.
+- **Picture and chart prompts** with guards against loops, cut-off replies, overlong replies and
+  the wrong shape. #11 sends them images.
+
 ### Changed — 2026-10-20 (Tesseract)
 
 - **Scanned pages are read with Tesseract.** ADR 0043, closes issue #9. `md` reads the pages

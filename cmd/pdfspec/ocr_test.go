@@ -148,8 +148,8 @@ func TestOCRVerbReplacesScannedPage(t *testing.T) {
 
 	eng := &fakeEngine{words: fakeLine()}
 	ropt := render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}
-	if err := readWith(context.Background(), d, []int{1}, eng, r, ropt, 50, false, func(int) doc.Page { return d.Pages[0] }); err != nil {
-		t.Fatalf("readWith: %v", err)
+	if err := (&ocrRun{eng: eng, r: r, ropt: ropt, minConf: 50, force: false, full: func(int) doc.Page { return d.Pages[0] }}).read(context.Background(), d, []int{1}); err != nil {
+		t.Fatalf("read: %v", err)
 	}
 
 	if eng.calls != 1 {
@@ -217,8 +217,8 @@ func TestOCRVerbKeepsExtractedTextOnFailure(t *testing.T) {
 		if c.name == "noise" {
 			full = func(int) doc.Page { return doc.Page{} }
 		}
-		if err := readWith(context.Background(), d, []int{1}, c.eng, r, ropt, 50, false, full); (err != nil) != c.fail {
-			t.Errorf("%s: readWith error %v, want failure %v", c.name, err, c.fail)
+		if err := (&ocrRun{eng: c.eng, r: r, ropt: ropt, minConf: 50, force: false, full: full}).read(context.Background(), d, []int{1}); (err != nil) != c.fail {
+			t.Errorf("%s: read error %v, want failure %v", c.name, err, c.fail)
 		}
 		if got := d.Pages[0].Text(); got != before {
 			t.Errorf("a failed page lost its extracted text:\n got  %q\n want %q", got, before)

@@ -413,6 +413,9 @@ ocr/                  Interface: Engine — image → words with confidence. Als
                         Route, the text-coverage rule that decides which pages
                         are read, and Page, words → doc.Page
 ocr/tesseract/          Adapter: the tesseract CLI as a subprocess. No CGO
+ocr/gemma/              inferd's vision model: a second reading, descriptions,
+                        charts, each answer through a guard
+internal/inferd/      inferd's v2 wire, borrowed from thlibo
 sink/markdown/        doc.Document → one .md or per-page .md
 sink/okf/             doc.Section tree → OKF bundle
 cmd/pdfspec/          CLI

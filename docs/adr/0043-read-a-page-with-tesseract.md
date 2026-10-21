@@ -165,6 +165,8 @@ Over the 209 routed pages, every other born-digital page read back at most 1.3 t
 
 Headings is 0.008 short.
 
+**Correction, 2026-10-21 (ADR 0044).** That table was measured at 300 dpi, before this ADR moved OCR to 200. Re-measured at 200, headings is 0.933 and meets its target: scan-unnumbered-headings reads its second heading, 0.333 to 0.667. Every other figure is the same.
+
 **The corpus.** Run three ways on 71 documents, `docs/*.pdf` and `testdata/*/*.pdf`:
 - HEAD;
 - this build with `PDFSPEC_TESSERACT=off`, byte-identical to HEAD on all 71;

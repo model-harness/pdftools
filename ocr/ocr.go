@@ -45,6 +45,10 @@ type Word struct {
 	// Block, Par and Line number the word's block, paragraph and line within the image, as
 	// the engine segmented it. Words sharing all three are one line, in reading order.
 	Block, Par, Line int
+
+	// Agreed reports that a second reader read the word as the engine did (Confirm), which
+	// Page takes as the engine's reading confirmed, whatever its confidence.
+	Agreed bool
 }
 
 // Engine reads the words in one page image.
