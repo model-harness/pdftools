@@ -5,6 +5,17 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (every target enforced, in CI)
+
+- **Every v1 target fails the build**, not only order, tables and style. Over the 25 reference
+  fixtures a clone can read, CER is 0.0003, recall and precision 0.999, order 1.000, blocks
+  0.954, headings 0.967, tables 1.000 and style 0.960. With Tesseract, over all 32, CER is
+  0.0034, recall 0.994, precision 0.998, order 1.000, blocks 0.962, headings 0.975, tables 0.955
+  and style 0.960, and `TestBenchmarkWithTesseract` holds every target there too. Part of
+  issue #13.
+- **CI** (`.github/workflows/ci.yml`) runs gofmt, `go mod tidy`, vet and the tests on Linux and
+  Windows, and vet and the tests again at 32 bits on Linux, with the actions pinned by commit.
+
 ### Changed — 2026-10-21 (what each page needs)
 
 - **`probe` says which engines md would use and what each page needs of them.** `engines`

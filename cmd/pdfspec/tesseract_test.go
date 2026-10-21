@@ -139,39 +139,22 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 	sm := benchMeans(scans)
 	// A dimension no scan exercises, every one scoring its vacuous 1, has no mean to miss: the
 	// four scans have no styled span among them.
-	vacuous := func(of func(r benchRow) float64) bool {
-		for _, r := range scans {
-			if of(r) != 1 {
-				return false
-			}
-		}
-		return true
+	vacuous := map[string]bool{"headings": true, "tables": true, "style": true}
+	for _, r := range scans {
+		vacuous["headings"] = vacuous["headings"] && r.s.Headings == 1
+		vacuous["tables"] = vacuous["tables"] && r.s.Tables == 1
+		vacuous["style"] = vacuous["style"] && r.s.Style == 1
 	}
-	for _, d := range []struct {
-		name        string
-		got, target float64
-		lower, none bool
-	}{
-		{"cer", sm.cer, benchTargets.cer, true, false}, {"recall", sm.recall, benchTargets.recall, false, false},
-		{"precision", sm.precision, benchTargets.precision, false, false}, {"order", sm.order, benchTargets.order, false, false},
-		{"blocks", sm.blocks, benchTargets.blocks, false, false},
-		{"headings", sm.headings, benchTargets.headings, false, vacuous(func(r benchRow) float64 { return r.s.Headings })},
-		{"tables", sm.tables, benchTargets.tables, false, vacuous(func(r benchRow) float64 { return r.s.Tables })},
-		{"style", sm.style, benchTargets.style, false, vacuous(func(r benchRow) float64 { return r.s.Style })},
-	} {
-		if d.none {
-			continue
-		}
-		if (d.lower && d.got > d.target) || (!d.lower && d.got < d.target) {
-			t.Errorf("scans' %s: %.3f misses the v1 target %.2f", d.name, d.got, d.target)
+	for _, miss := range benchMisses(sm, benchTargets) {
+		if !vacuous[miss[:strings.Index(miss, ":")]] {
+			t.Errorf("scans' %s", miss)
 		}
 	}
-	// With an engine for pixels, every fixture counts, and the enforced targets hold over all.
+	// With an engine for pixels, every fixture counts, and every target holds over all.
 	m := benchMeans(on)
-	for name, got := range map[string]float64{"order": m.order, "tables": m.tables, "style": m.style} {
-		if want := map[string]float64{"order": benchTargets.order, "tables": benchTargets.tables, "style": benchTargets.style}[name]; got < want {
-			t.Errorf("%s: %.3f over every fixture with Tesseract, under its target %.2f", name, got, want)
-		}
+	t.Logf("means over every fixture with Tesseract: %+v", m)
+	for _, miss := range benchMisses(m, benchTargets) {
+		t.Errorf("over every fixture with Tesseract, %s", miss)
 	}
 }
 

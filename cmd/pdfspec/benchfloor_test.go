@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,9 +55,8 @@ var benchFloors = map[string]benchFigures{
 	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.800, tables: 1.000, style: 0.800},
 }
 
-// benchTargets is what v1 needs, as means over the reference fixtures (ADR 0029). A
-// dimension's target is enforced from the commit that closes the goal it belongs to, by
-// adding it to benchEnforced. Until then TestBenchmarkTargets reports the gap.
+// benchTargets is what v1 needs, as means over the reference fixtures (ADR 0029). Each was
+// enforced from the commit that closed its goal; since v1.0.0 (#13), every one fails the build.
 var benchTargets = benchFigures{
 	cer: 0.03, recall: 0.97, precision: 0.97, order: 0.98,
 	blocks: 0.90, headings: 0.90, tables: 0.85, style: 0.85,
@@ -66,14 +67,6 @@ var benchTargets = benchFigures{
 var benchNeedsOCR = map[string]bool{
 	"scan-paragraphs": true, "scan-table": true, "scan-two-column": true, "scan-unnumbered-headings": true,
 	"image-kinds": true, "type3-unmapped": true, "type3-words": true,
-}
-
-// benchEnforced names the dimensions whose v1 target now fails the build, each from the
-// goal that closed it.
-var benchEnforced = map[string]bool{
-	"order":  true, // #3, ADR 0030
-	"tables": true, // #5, ADR 0038
-	"style":  true, // #7, ADR 0041
 }
 
 func TestBenchmarkFloors(t *testing.T) {
@@ -138,31 +131,55 @@ func TestBenchmarkTargets(t *testing.T) {
 		}
 	}
 	m := benchMeans(read)
+	t.Logf("means: %+v", m)
+	for _, miss := range benchMisses(m, benchTargets) {
+		t.Error(miss)
+	}
+}
+
+// benchMisses names each dimension of m that misses its target: CER above it, the rest below.
+func benchMisses(m, target benchFigures) []string {
+	var out []string
 	for _, d := range []struct {
 		name           string
 		got, target    float64
 		higherIsBetter bool
 	}{
-		{"cer", m.cer, benchTargets.cer, false},
-		{"recall", m.recall, benchTargets.recall, true},
-		{"precision", m.precision, benchTargets.precision, true},
-		{"order", m.order, benchTargets.order, true},
-		{"blocks", m.blocks, benchTargets.blocks, true},
-		{"headings", m.headings, benchTargets.headings, true},
-		{"tables", m.tables, benchTargets.tables, true},
-		{"style", m.style, benchTargets.style, true},
+		{"cer", m.cer, target.cer, false},
+		{"recall", m.recall, target.recall, true},
+		{"precision", m.precision, target.precision, true},
+		{"order", m.order, target.order, true},
+		{"blocks", m.blocks, target.blocks, true},
+		{"headings", m.headings, target.headings, true},
+		{"tables", m.tables, target.tables, true},
+		{"style", m.style, target.style, true},
 	} {
 		met := d.got <= d.target
 		if d.higherIsBetter {
 			met = d.got >= d.target
 		}
-		switch {
-		case met:
-			t.Logf("%s: %.3f meets its v1 target %.2f", d.name, d.got, d.target)
-		case benchEnforced[d.name]:
-			t.Errorf("%s: %.3f misses its v1 target %.2f", d.name, d.got, d.target)
-		default:
-			t.Logf("%s: %.3f, v1 target %.2f, not yet enforced", d.name, d.got, d.target)
+		if !met {
+			out = append(out, fmt.Sprintf("%s: %.3f misses its v1 target %.2f", d.name, d.got, d.target))
+		}
+	}
+	return out
+}
+
+// TestBenchMissesNamesEachDimension: every dimension is compared with its own target, in its
+// own direction, and one exactly at its target meets it.
+func TestBenchMissesNamesEachDimension(t *testing.T) {
+	at := benchFigures{cer: 0.03, recall: 0.97, precision: 0.97, order: 0.98, blocks: 0.9, headings: 0.9, tables: 0.85, style: 0.85}
+	if got := benchMisses(at, at); len(got) != 0 {
+		t.Errorf("at the targets: %q", got)
+	}
+	worse := benchFigures{cer: 0.04, recall: 0.96, precision: 0.96, order: 0.97, blocks: 0.8, headings: 0.8, tables: 0.8, style: 0.8}
+	got := benchMisses(worse, at)
+	if len(got) != 8 {
+		t.Fatalf("%d misses, want all 8: %q", len(got), got)
+	}
+	for i, name := range []string{"cer", "recall", "precision", "order", "blocks", "headings", "tables", "style"} {
+		if !strings.HasPrefix(got[i], name+":") {
+			t.Errorf("miss %d is %q, want %s", i, got[i], name)
 		}
 	}
 }

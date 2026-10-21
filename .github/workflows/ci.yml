@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go mod tidy
+        if: runner.os == 'Linux'
+        run: go mod tidy -diff
+      - name: vet
+        run: go vet ./...
+      - name: vet, 32-bit
+        if: runner.os == 'Linux'
+        run: GOARCH=386 go vet ./...
+      # The tests include the benchmark: every reference fixture's floor, and every v1 target as a
+      # mean over the fixtures a clone can read (ADR 0029).
+      - name: test
+        run: go test ./...
+      - name: test, 32-bit
+        if: runner.os == 'Linux'
+        run: GOARCH=386 go test ./...
