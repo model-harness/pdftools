@@ -244,10 +244,12 @@ func writeMarkdown(w io.Writer, s objects.Store, d *doc.Document, flat bool, opt
 			return err
 		}
 		if o != nil {
+			warnIfBareImages(os.Stderr, bareImages(d, imageLines(d, o)))
 			return markdown.WriteOutline(w, o, opt)
 		}
 		inferRoles(d)
 	}
+	warnIfBareImages(os.Stderr, bareImages(d, imageLines(d, nil)))
 	return markdown.Write(w, d, opt)
 }
 

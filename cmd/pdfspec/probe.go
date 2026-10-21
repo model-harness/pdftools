@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,6 +64,11 @@ type report struct {
 	// font's mapping is decided glyph by glyph: a /ToUnicode can cover all but one code.
 	Unmapped      int        `json:"unmapped"`
 	UnmappedPages []pageErrs `json:"unmapped_pages,omitempty"`
+
+	// Engines are the readers md would use here, and Needs what it would ask them to read, page
+	// by page. A page that needs a reader there is none for keeps what the extractor found.
+	Engines engines    `json:"engines"`
+	Needs   []pageNeed `json:"needs,omitempty"`
 }
 
 type tagSummary struct {
@@ -89,8 +95,11 @@ type pageInfo struct {
 
 func probe(files []string, asJSON, wantPages bool) error {
 	reports := make([]report, 0, len(files))
+	eng := findEngines(context.Background())
 	for _, f := range files {
-		reports = append(reports, probeOne(f, wantPages))
+		r := probeOne(f, wantPages)
+		r.Engines = eng
+		reports = append(reports, r)
 	}
 
 	if asJSON {
@@ -179,6 +188,7 @@ func probeOne(path string, wantPages bool) report {
 	if d, err := extract.New(s, extract.DefaultOptions).Document(); err == nil {
 		r.UnmappedPages = unmapped(d)
 		r.Unmapped = errTotal(r.UnmappedPages)
+		r.Needs = pageNeeds(d, describedImages(s, d))
 	}
 
 	switch {
@@ -438,6 +448,8 @@ func printReports(rs []report) {
 		if r.Unmapped > 0 {
 			fmt.Printf("  unmapped    %d glyph(s) with no Unicode value, written [err]: %s\n", r.Unmapped, errPages(r.UnmappedPages))
 		}
+		fmt.Printf("  engines     %s\n", r.Engines)
+		fmt.Printf("  needs       %s\n", needsLine(r.Needs))
 		fmt.Printf("  probed in   %d ms\n", r.ProbeMS)
 
 		if len(r.PageDetail) > 0 {

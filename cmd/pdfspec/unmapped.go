@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/model-harness/pdftools/doc"
@@ -42,11 +41,11 @@ func errTotal(pages []pageErrs) int {
 
 // errPages lists the pages as "p3 12, p7 4".
 func errPages(pages []pageErrs) string {
-	parts := make([]string, len(pages))
+	pcs := make([]pageCount, len(pages))
 	for i, p := range pages {
-		parts[i] = "p" + strconv.Itoa(p.Page) + " " + strconv.Itoa(p.Glyphs)
+		pcs[i] = pageCount{p.Page, p.Glyphs}
 	}
-	return strings.Join(parts, ", ")
+	return perPage(pcs)
 }
 
 // warnIfUnmapped reports the glyphs written [err] and the pages they are on. The output reads as

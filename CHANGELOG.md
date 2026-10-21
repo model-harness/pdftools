@@ -5,6 +5,16 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (what each page needs)
+
+- **`probe` says which engines md would use and what each page needs of them.** `engines`
+  names Tesseract and inferd's model, or why each is absent. `needs` lists the pages read
+  whole, the images to read and the glyphs with no value, page by page, by md's own rules. Both
+  are in `-json` too. Part of issue #13.
+- **`md` reports its `[image]` per page on stderr**, as it does its `[err]`: "note: 4 image(s) on
+  1 page(s) are written [image], with nothing read off them". Over the corpus without engines,
+  the count matches the lines written in every document: 38 in all.
+
 ### Changed — 2026-10-21 (glyphs with no value)
 
 - **A glyph with no value is read where its line places it.** ADR 0048, closes issue #8. On a
