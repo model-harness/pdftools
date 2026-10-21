@@ -1,25 +1,28 @@
 # pdftools
 
-PDF extraction for Go — text, structure, images, raster, OCR — under MIT, as a library and
-a CLI.
+Most PDFs already contain their own text. The trouble is getting it out in a form you can
+use. A PDF stores where each glyph is drawn, not words or paragraphs or tables, so all of that
+has to be rebuilt from the page's geometry. The tools that do this well are mostly in Python,
+which is slow, or under AGPL or commercial licences. The permissive ones in Go each handle a
+slice of the job and stop. The fashionable alternative is to hand the page to a vision model.
+That costs far more, takes far longer, and when the model can't read something it guesses.
 
-```
+`pdfspec` takes the other route. It turns a PDF into Markdown that a person, or a model you
+hand it to later, can read. To do that it reads the text the file already contains, and it
+rebuilds the structure from the page: headings, paragraphs, columns, tables, lists, footnotes
+and links. It only looks at pixels when the file gives it nothing else to go on. When it can't
+read something, it says so with `[err]` or `[image]` instead of making something up.
+
+```sh
 go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
 pdfspec md paper.pdf > paper.md
 ```
 
-**Status: v1.0.0.** The converter is built: `pdfspec md` reads the file's text and structure,
-reads with Tesseract and a vision model what is only in pixels where they are installed, and
-writes `[err]` and `[image]` for what nothing could read. The gold set's targets are enforced in
-CI. Everything documented below works today.
+It's written in Go, released under MIT, and comes as a CLI and as a library.
 
-## Why
+## Why another PDF tool
 
-The permissive PDF options in Go each solve a slice and stop. `pdfcpu` has an excellent
-object layer and no rasterizer. `ledongthuc/pdf` extracts text with 0.01% spaces and a
-longest "word" of 4,069 characters. Outside Go, the quality is in Python — which is slow —
-or behind AGPL and commercial licences. Measured against the alternatives on the same
-17-page paper:
+On a 17-page paper, here is how `pdfspec` compares with two of the usual choices:
 
 | | non-space chars | words | words >25 ch | longest |
 |---|---|---|---|---|
@@ -27,31 +30,39 @@ or behind AGPL and commercial licences. Measured against the alternatives on the
 | pdftotext (Poppler) | 39,035 | — | — | — |
 | pdfplumber 0.11.9 | 39,089 | 2,392 | 377 (15.8%) | 110 |
 
-The three agree on the characters to within 0.14%, which rules out missing text. Where they
-disagree is how those characters divide into words: pdfplumber finds 2,392 where this finds
-6,343 from the same glyphs, and 15.8% of its words run past 25 characters. That is the
-signature of dropped inter-word spaces — a PDF stores glyph positions, not spaces, so the
-spaces have to be recovered from font metrics. `TestExtractionQualityOnArXiv` pins those
-figures.
+All three find the same characters, to within 0.14%, so none of them is missing text. They
+differ in how they divide those characters into words. pdfplumber finds 2,392 words where
+`pdfspec` finds 6,343, and 15.8% of its "words" run past 25 characters. That is what dropped
+spaces look like. A PDF stores no spaces between words, so a reader has to work them out from
+the fonts' metrics, and most get it wrong. `TestExtractionQualityOnArXiv` keeps those figures
+honest.
 
-**Deterministic first.** Tokens are the most expensive way to read a PDF that already
-contains its own text, so the file's text comes first. Tesseract reads what is only in pixels:
-a scanned page, an image of text or of a table, a glyph the file gives no value to. A vision
-model is asked only what neither can answer: a word Tesseract doubts, a chart, a picture. A
-glyph nothing reads is written `[err]`, never guessed.
+In Go the picture is worse. `pdfcpu` has an excellent object layer but can't draw a page, and
+`ledongthuc/pdf` finds spaces in 0.01% of its text, with a longest "word" of 4,069
+characters.
 
-## CLI
+## How it reads a PDF
 
-```
-pdfspec md      convert a PDF to Markdown
-pdfspec okf     convert to an Open Knowledge Format bundle, one file per clause
-pdfspec images  extract embedded images, original codec preserved where possible
-pdfspec render  rasterize pages to PNG or JPEG
-pdfspec ocr     convert to Markdown, recognizing pages that carry no text
-pdfspec probe   report what a PDF contains and which extraction path it will take
-```
+`pdfspec` trusts its sources in a fixed order, because each one is cheaper and more reliable
+than the next.
 
-Start with `probe` — it tells you which path a file will take before you spend anything:
+1. **The file itself comes first.** Most of the time the text and its structure are all there.
+   A tagged PDF declares its own headings and reading order. An untagged one gets them rebuilt
+   from the page's geometry.
+2. **Tesseract reads what exists only as pixels**, when it's installed. That covers a scanned
+   page, an image of text or of a table, and a glyph whose font never says which character it
+   is.
+3. **A vision model answers only what Tesseract can't.** It is asked to re-read a word Tesseract
+   wasn't sure of, to describe a chart or a picture, and to read the values off a chart.
+
+Anything left unread is marked rather than guessed. A glyph nobody could read becomes `[err]`,
+and an image nobody could read becomes `[image]`. Every run reports, page by page, how many of
+each it wrote, so you know where to look.
+
+## Using the CLI
+
+Start with `probe`. It tells you what a file holds and how it will be read, before you spend
+anything converting it:
 
 ```
 $ pdfspec probe spec.pdf
@@ -73,13 +84,15 @@ spec.pdf
   probed in   1294 ms
 ```
 
-`path` is the answer to look at. `tagged` means the document declares its own heading
-hierarchy and reading order, so no heuristics are needed. `layout` means geometry analysis.
-`ocr` means there is no text to extract, and reading the pixels is the only option. `probe`
-takes several files at once and has `-json` for scripting; run `pdfspec <command> -h` for flags.
+The line to read is `path`:
 
-`engines` and `needs` say what OCR will do before it runs, for a file whose pixels hold some of
-its content:
+- `tagged` means the document declares its own headings and reading order, so nothing has to
+  be inferred.
+- `layout` means the structure will be rebuilt from geometry.
+- `ocr` means there is no text to extract, and the pixels are the only option.
+
+For a file that keeps some of its content in pixels, `probe` also says which engines it found,
+and what each page will need from them:
 
 ```
 $ pdfspec probe testdata/adobe-samples/autotagPDFInput.pdf
@@ -90,18 +103,76 @@ $ pdfspec probe testdata/adobe-samples/autotagPDFInput.pdf
   needs       images: p2 2, p3 4, p4 2; glyphs with no value: p1 30, p2 24, p3 1, p4 3
 ```
 
+`probe` accepts several files at once and has `-json` for scripts.
+
+`md` is the conversion itself. The other verbs cover the jobs around it:
+
 ```sh
+pdfspec md paper.pdf > paper.md             # the whole pipeline
 pdfspec md -split -o pages/ report.pdf      # one .md per page
-pdfspec okf -o bundle/ spec.pdf             # clause-per-file, stitched across pages
-pdfspec images -list scan.pdf               # what is in there, writing nothing
-pdfspec render -o png/ -dpi 200 form.pdf    # rasterize
-pdfspec ocr scan.pdf                        # text where there is text, Tesseract where there is not
+pdfspec okf -o bundle/ spec.pdf             # one file per clause, stitched across pages
+pdfspec images -list scan.pdf               # what images are in there, writing nothing
+pdfspec render -o png/ -dpi 200 form.pdf    # rasterize pages to PNG or JPEG
+pdfspec ocr scan.pdf                        # md, with the OCR router's knobs exposed
 ```
 
-## Library
+Run `pdfspec <command> -h` for each verb's flags.
 
-Every verb is a thin shell over a package you can call directly. Interfaces are declared by
-the package that consumes them; the borrowed parser is confined to one adapter.
+## When the pixels matter
+
+Born-digital documents rarely need more than the file, but scans, screenshots and odd fonts do.
+That is where Tesseract comes in, and `md` uses it by default whenever it's installed:
+
+- **A page with almost no text**, under 5% of its area, is read whole. It is levelled first if
+  the scan was placed crooked. Its type sizes and weights are read from the letters, and its
+  ruled tables come out as tables (ADRs 0043, 0047). The reading replaces the page only if it
+  adds something the file didn't already give.
+- **An image** is read as what it holds. Text becomes paragraphs and a ruled table becomes a
+  table. With a vision model, a chart gets a description and a table of its values, and a photo
+  becomes `[photo: …]` (ADR 0046).
+- **A glyph the file never names**, such as the "ti" ligature in "crea[err]ng", is read off the
+  page. It is filled in only where the words around it on that line pin down what it must be
+  (ADR 0048).
+
+Tesseract reports how confident it is about each word, and that decides what is kept. A word
+it rates under 30% is written `[err]`. If [inferd](https://github.com/3rg0n/inferd) is running
+with a vision model, the bar rises: a word under 90% is read a second time by the model and kept
+only when the two readings agree (ADR 0044).
+
+To turn this off, pass `-ocr=false`; `-inferd off` keeps Tesseract but skips the second reading.
+The `ocr` verb exposes the router itself:
+
+```sh
+pdfspec ocr -dry-run scan.pdf     # which pages need OCR, and why
+pdfspec ocr -force scan.pdf       # read every page, whatever text it has
+```
+
+### Installing the engines
+
+Both engines are optional. Without them, `md` still writes everything the file holds, with
+`[err]` and `[image]` marking what it couldn't read. Run `pdfspec probe` to see which ones it
+finds.
+
+**Tesseract 5**, with the `eng` model. The figures in `docs/adr/` were measured with 5.5.3 and
+`tessdata_fast`. To install it:
+
+- Debian and Ubuntu: `apt install tesseract-ocr`
+- macOS: `brew install tesseract`
+- Windows: the UB Mannheim installer
+
+`pdfspec` looks for it on `PATH`. To point it elsewhere, use `-tesseract` or
+`PDFSPEC_TESSERACT`, and for the models, `-tessdata` or `TESSDATA_PREFIX`.
+`PDFSPEC_TESSERACT=off` disables it.
+
+**inferd**, with a vision model. The figures were measured with `gemma-4-e4b` and its projector,
+with `"mmproj_image_max_tokens": 1120` in inferd's config. That is the largest of the image
+budgets Google's vision guide lists. `pdfspec` finds inferd at the platform's default address.
+To point it elsewhere, use `-inferd` or `PDFSPEC_INFERD`, and set it to `off` to disable it.
+
+## Using it as a library
+
+Every verb is a thin shell over packages you can call yourself. This is the shortest path from
+a file to Markdown:
 
 ```go
 import (
@@ -125,125 +196,99 @@ if err != nil {
 err = markdown.Write(os.Stdout, d, markdown.DefaultOptions)
 ```
 
-That is the page-ordered path. For a tagged document, `tag.Read` plus
-`sectionize.Tagged` reconstructs the clause hierarchy first — `markdown.WriteOutline`
-then emits it with real heading levels. `cmd/pdfspec/md.go` shows both paths, flag parsing
-included, and `cmd/pdfspec/ocr.go` the engines after them.
+That writes the page-ordered text. For a tagged document, `tag.Read` and `sectionize.Tagged`
+rebuild the clause hierarchy first, and `markdown.WriteOutline` writes it with real heading
+levels. `cmd/pdfspec/md.go` shows both paths, flag parsing included, and `cmd/pdfspec/ocr.go`
+shows how the engines run after them.
+
+Each package declares the interfaces it consumes, and the borrowed parser is confined to a
+single adapter:
 
 | package | what it owns |
 |---|---|
-| `objects` | the PDF object model and the `Store` interface every layer reads through |
-| `objects/pdfcpu` | the borrowed-parser adapter — all pdfcpu types stop here |
+| `objects` | the PDF object model, and the `Store` interface every layer reads through |
+| `objects/pdfcpu` | the adapter for the borrowed parser; no pdfcpu type leaves it |
 | `filter` | Flate, LZW, ASCIIHex, ASCII85, RunLength, PNG/TIFF predictors |
-| `content` | content-stream lexer, scanner, and the graphics/text state machine |
+| `content` | the content-stream lexer and scanner, and the graphics and text state machine |
 | `font`, `font/cmap`, `font/encoding` | metrics, CMaps, Annex D encodings, glyph lists |
-| `tag` | structure-tree reader — the tagged path |
+| `tag` | the structure-tree reader, which is the tagged path |
 | `extract`, `sectionize`, `doc` | text runs, clause reconstruction, the document model |
 | `layout` | roles read from geometry: columns, headings, tables, lists, notes, images |
-| `image`, `bits` | image XObjects, sub-byte sample unpacking |
-| `render`, `render/pdfium`, `render/native` | rasterization: pdfium over WASM by default, and the native rasterizer |
-| `ocr`, `ocr/tesseract`, `ocr/gemma` | routing, words to pages, tables and glyphs read off pixels, Tesseract, and inferd's vision model |
-| `bench` | the gold set's scorer |
-| `internal/inferd` | inferd's v2 wire, borrowed from thlibo |
-| `sink/markdown`, `sink/okf` | output formats |
+| `image`, `bits` | image XObjects, and unpacking samples narrower than a byte |
+| `render`, `render/pdfium`, `render/native` | rasterization, by pdfium over WASM by default, or by the native rasterizer |
+| `ocr`, `ocr/tesseract`, `ocr/gemma` | routing pages to the engines, and turning what they read into pages, tables and glyphs |
+| `bench` | the scorer for the gold set |
+| `internal/inferd` | inferd's v2 wire protocol, borrowed from thlibo |
+| `sink/markdown`, `sink/okf` | the output formats |
 
-## OCR
-
-Text comes from the file first. Where it holds none, or no value for a glyph, the pixels are
-read with [Tesseract](https://github.com/tesseract-ocr/tesseract):
-
-- **A page** whose readable text covers under 5% of it is read whole. It is levelled first, its
-  type sizes and weights are read from its letters, and its ruled tables become tables
-  (ADRs 0043, 0047). The reading replaces the page only where it adds to what the file gave.
-- **An image** is read as what it holds: text as paragraphs, a ruled table as a table. With a
-  vision model, a chart becomes a description and a table of its values, and a picture
-  `[photo: …]` (ADR 0046). An image nothing reads is written `[image]`.
-- **A glyph with no value** is read off the page where its line's own text places it, as "ti"
-  in "crea[err]ng" (ADR 0048).
-
-A word Tesseract is less than 30% confident of is written `[err]`. When
-[inferd](https://github.com/3rg0n/inferd) is running with a vision model, a word Tesseract is
-less than 90% confident of is read again by it and kept only where the two agree; the rest are
-`[err]` (ADR 0044). stderr says, per page, what was read and what is written `[err]` or
-`[image]`.
-
-`md` does this by default (`-ocr=false` turns it off, `-inferd off` the second reading). `pdfspec ocr` adds the router's knobs:
-
-```sh
-pdfspec ocr -dry-run scan.pdf     # which pages need OCR, and why
-pdfspec ocr -force scan.pdf       # read every page, whatever its text
-```
-
-### Installing the engines
-
-Both are optional. Without them, `md` writes what the file holds, `[err]` for a glyph it gives
-no value to, and `[image]` for an image. `pdfspec probe` says which engines it finds.
-
-- **Tesseract 5** with its `eng` model. The figures in `docs/adr/` were measured with 5.5.3 and
-  `tessdata_fast`. Install it with `apt install tesseract-ocr` on Debian and Ubuntu,
-  `brew install tesseract` on macOS, or the UB Mannheim installer on Windows. It is found on
-  `PATH`, or named with `-tesseract` or `PDFSPEC_TESSERACT`, and its models with `-tessdata` or
-  `TESSDATA_PREFIX`. `PDFSPEC_TESSERACT=off` runs none.
-- **inferd** with a vision model; the figures were measured with `gemma-4-e4b` and its
-  projector. It is found at the platform's default address, or named with `-inferd` or
-  `PDFSPEC_INFERD`, and `off` asks none. The figures were measured with
-  `"mmproj_image_max_tokens": 1120` in inferd's config, the largest of the image budgets
-  Google's vision guide lists.
-
-## Building and testing
+## How we know it works
 
 ```sh
 go build ./...
 go test ./...      # passes with no PDFs on disk at all
 ```
 
-The test suite draws on three populations, and the split is deliberate:
+The tests measure the converter against three sets of documents. Each set covers what the
+others can't.
 
-- **`testdata/reference/`** — the gold set: single-concern PDFs built from the `.tex` and
-  `.html` sources committed beside them, each with a hand-written `.gold.md` of what it should
-  convert to. `pdfspec bench testdata/reference` scores them, and the v1 targets are means over
-  them that fail the build: CER at most 0.03, word recall and precision 0.97, reading order
-  0.98, blocks and headings 0.90, tables and style 0.85 (ADR 0029). A fixture whose content is
-  only in pixels leaves those means where no Tesseract is installed.
-- **`testdata/`** — 30 fixtures from PyMuPDF and Adobe, committed with a
-  pinned upstream commit SHA and a SHA-256 per file (`testdata/manifest.json`). A test never
-  skips for these. Each one covers something the corpus cannot.
-- **`docs/`** — eleven ISO 32000 and PDF Association specifications, where the aggregate
-  baselines were measured. **Not in this repository:** they are sponsored copies of paid ISO
-  documents and not redistributable. Every test that uses them skips when they are absent,
-  which is why a fresh clone passes with no PDFs at all. Drop your own copies in `docs/` to
-  run them.
+**The gold set**, in `testdata/reference/`, sets the bar. Each of its PDFs tests one thing, is
+built from a `.tex` or `.html` source committed beside it, and comes with a hand-written
+`.gold.md` of what it should convert to. `pdfspec bench testdata/reference` scores the
+converter against them. The v1 targets are averages over the set, and missing any of them fails
+the build (ADR 0029):
 
-That last population is a good regression baseline and a bad witness — all eleven files
-are tagged standards prose from one family of producers, so a threshold tuned on them cannot
-be shown to generalize by running them again. `docs/test.docs.md` records which gap each
-committed fixture fills.
+- character error rate at most 0.03
+- word recall and word precision at least 0.97
+- reading order at least 0.98
+- blocks and headings at least 0.90
+- tables and style at least 0.85
 
-The engines' tests are opt-in: `PDFSPEC_TEST_TESSERACT=<tesseract>` runs those that need
-Tesseract, among them the gold set with OCR, and `PDFSPEC_TEST_INFERD=1` those that need inferd.
+CI checks all of them on Linux and Windows. A few fixtures hold their content only in pixels.
+Those count toward the averages only where Tesseract is installed.
+
+**Thirty fixtures from PyMuPDF and Adobe**, in `testdata/`, cover cases the other sets don't.
+Each is pinned to the upstream commit it came from and to a SHA-256 in
+`testdata/manifest.json`, and no test ever skips them.
+
+**Eleven ISO 32000 and PDF Association specifications**, in `docs/`, are where the larger
+baselines were measured. They are sponsored copies of paid ISO documents, so they can't be
+redistributed and aren't in this repository. The tests that use them skip when the files are
+absent, which is why a fresh clone passes with no PDFs at all. To run those tests, drop your own
+copies in `docs/`.
+
+The specifications make a good regression baseline but a poor witness. All eleven are tagged
+standards prose from one family of producers, so a threshold tuned on them proves nothing about
+other documents. That is why the other two sets exist. `docs/test.docs.md` records which gap
+each committed fixture fills.
+
+The tests that need an engine are opt-in. Set `PDFSPEC_TEST_TESSERACT=<path to tesseract>` to
+run the Tesseract tests, which include the gold set with OCR, and set `PDFSPEC_TEST_INFERD=1` to
+run the inferd tests.
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE).
+MIT; see [`LICENSE`](LICENSE).
 
-22 of the 70 files in `testdata/` are AGPL-3.0 upstream, PyMuPDF's; the other 48 are MIT,
-Adobe's samples and the gold set generated here. The AGPL files are data in a marked directory
-with attribution, not linked code, which does not relicense this project's source. No PyMuPDF or MuPDF code is used, read for copying, or translated;
-where their approach informed a decision it is cited in `docs/DESIGN.md` as methodology.
+Of the 70 files in `testdata/`, 48 are MIT: Adobe's samples, and the gold set generated here.
+The other 22 come from PyMuPDF and are AGPL-3.0 upstream. They are kept as data, in a marked
+directory with attribution, and are not linked as code, so they don't change this project's
+licence. No PyMuPDF or MuPDF code is used, read in order to copy it, or translated. Where their
+approach informed a decision, `docs/DESIGN.md` cites it as methodology.
 
-The ISO specifications are not redistributed here in any form, and never were — see
+The ISO specifications are not redistributed here in any form, and never have been; see
 `docs/test.docs.md`.
 
-## Design
+## Design and history
 
-- [`docs/DESIGN.md`](docs/DESIGN.md) — why the repo exists, the architecture, the
-  borrow-then-replace dependency policy, and the phase roadmap.
-- [`docs/adr/`](docs/adr/) — the decisions that were costly to reverse, with the
-  measurements that drove them. Accepted ADRs are annotated, never edited.
-- [`docs/test.docs.md`](docs/test.docs.md) — the two test populations and what each fixture
+- [`docs/DESIGN.md`](docs/DESIGN.md) explains why the project exists, its architecture, how it
+  manages dependencies, and the roadmap.
+- [`docs/adr/`](docs/adr/) records the decisions that were costly to reverse, with the
+  measurements behind them. Accepted ADRs are annotated, never edited.
+- [`docs/test.docs.md`](docs/test.docs.md) describes the test populations and what each fixture
   is for.
-- [`CHANGELOG.md`](CHANGELOG.md).
+- [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release.
 
-Dependencies are borrowed to start and replaced over time, each behind an interface this
-project owns so the swap is local. `pdfcpu` supplies the object layer today; pdfium (WASM,
-via wazero — no cgo) supplies rasterization. See ADR 0001.
+Dependencies are borrowed at first and replaced over time, each behind an interface this
+project owns, so swapping one out stays a local change. Today `pdfcpu` supplies the object
+layer, and pdfium supplies rasterization, compiled to WASM and run on wazero, so no cgo is
+needed. See ADR 0001.
