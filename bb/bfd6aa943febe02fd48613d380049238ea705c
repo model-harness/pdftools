@@ -1,0 +1,86 @@
+cmd/pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_697835cf9cab79 126-133,144-146,148,155,159-162
+  s_5cd1b28ed520c1::t_5735b85aa0ae32 134-143,147,149-154,156-158
+ocr/ocr.go
+  s_5cd1b28ed520c1::t_1a8ca176fd6931 29,54,59-60,65,67,71,73,78,82
+  s_5cd1b28ed520c1::t_5713694aba907c 30,55-58,61-64,66,68-70,72,74-77,79-81,83-84
+cmd/pdfspec/imgread_test.go
+  s_5cd1b28ed520c1::t_2ee8ffc9033720 229-230
+  s_5cd1b28ed520c1::t_1352666f4f6b82 9,305-342,345-352,354-362,364-366,372,376-380
+  s_5cd1b28ed520c1::t_4f91abf298d934 343-344,353,363,367-371,373-375
+ocr/page_test.go
+  s_5cd1b28ed520c1::t_d3f4783ee946cc 185,196-198
+  s_5cd1b28ed520c1::t_3933c87647217d 54-55,57,62-63,65
+  s_5cd1b28ed520c1::t_75f9c1d5e600a8 173-184,186-195,199-205
+ocr/scan_test.go
+  s_5cd1b28ed520c1::t_af8117f958f2e6 1-68,92-101,108-116,119-123,126,143-144,168-198,205,220-223,225-228
+  s_5cd1b28ed520c1::t_0b74d3c0a4ec09 201,206,208-210,224
+  s_5cd1b28ed520c1::t_f039fb097e66b1 202,207
+  s_5cd1b28ed520c1::t_9a7d5fc5788cf1 69-91
+  s_5cd1b28ed520c1::t_e728e8685785fc 117-118,124-125,127-142,145-167
+  s_5cd1b28ed520c1::t_8fb8f9490deb9c 199-200,203-204,211-219
+  s_5cd1b28ed520c1::t_9d45281519c7d5 102-107
+docs/adr/0047-a-scanned-page-reads-as-a-page.md
+  s_5cd1b28ed520c1::t_b96b7fc6b278ec 83-95
+  s_5cd1b28ed520c1::t_8a13b4b1479d36 69
+  s_5cd1b28ed520c1::t_c2ec4707609fff 71-79
+  s_5cd1b28ed520c1::t_d8c088892bc4c9 1-68,70,80-82,96-101
+ocr/tesseract/tesseract_test.go
+  s_5cd1b28ed520c1::t_a17359325556a4 149,154-156,161-163
+  s_5cd1b28ed520c1::t_fedf5c3928777f 164
+cmd/pdfspec/imgread.go
+  s_5cd1b28ed520c1::t_30497d0c333cc0 50-52,79
+  s_5cd1b28ed520c1::t_2ee8ffc9033720 106
+ocr/deskew.go
+  s_5cd1b28ed520c1::t_973049e74e27f4 61-64
+  s_5cd1b28ed520c1::t_9e0169ff361718 20
+  s_5cd1b28ed520c1::t_98e9c13d34f496 67-70,73-86,88-90,93-95,97
+  s_5cd1b28ed520c1::t_852835ffec7d55 25-26,29
+  s_5cd1b28ed520c1::t_b5c7379d66c3e6 1-15,17-19,21-24,27-28,30-60,65-66,71-72,87,91-92,98-101
+  s_5cd1b28ed520c1::t_53335b7f919354 16,96
+ocr/tesseract/tesseract.go
+  s_5cd1b28ed520c1::t_5713694aba907c 131
+  s_5cd1b28ed520c1::t_1a8ca176fd6931 129-130,132-133
+ocr/deskew_test.go
+  s_5cd1b28ed520c1::t_bf02eee80f2a7e 17-19,41,43
+  s_5cd1b28ed520c1::t_165ecf8afaf565 46-53
+  s_5cd1b28ed520c1::t_312508ae094c08 1-16,20-40,42,44-45,54
+  s_5cd1b28ed520c1::t_1352666f4f6b82 55-81
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_9e0169ff361718 438-439,441
+  s_5cd1b28ed520c1::t_872954b19f29bd 491
+  s_5cd1b28ed520c1::t_5b8332f95575b9 374-376,467-490,492-512
+  s_5cd1b28ed520c1::t_48d74b9053d6bd 440
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_fac9c4073ae4a3 8-17,19
+  s_5cd1b28ed520c1::t_438bdf84ba69ff 18
+ocr/page.go
+  s_5cd1b28ed520c1::t_3c846c5f06f042 206
+  s_5cd1b28ed520c1::t_1a8ca176fd6931 7-8,38,40,71-74,77,183,200-205,207-216,219-240,244-245,253-257,260-261,264-271
+  s_5cd1b28ed520c1::t_9b99c1e6be8a15 5,217-218,241-243
+  s_5cd1b28ed520c1::t_e9c5c3db25e4f7 123
+  s_5cd1b28ed520c1::t_bdeb39e7938716 82,86-122,124-129,131-139
+  s_5cd1b28ed520c1::t_5713694aba907c 37,39,75,246-251,258-259,262-263
+  s_5cd1b28ed520c1::t_91cff614c9eac9 81,140-160,165-182
+  s_5cd1b28ed520c1::t_ddb6bd9133ec4f 161-164
+  s_5cd1b28ed520c1::t_e090a40f96af88 130,184,252
+ocr/tables.go
+  s_5cd1b28ed520c1::t_5e1a7005ae82f0 51-53
+  s_5cd1b28ed520c1::t_4d2d995195aca9 1-50,54-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbbfd6aa943febe02fd48613d380049238ea705c",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
