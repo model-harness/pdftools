@@ -118,3 +118,24 @@ func TestSameReadsLettersAndDigits(t *testing.T) {
 		}
 	}
 }
+
+// TestSameGlyphIsTheCharacter: a glyph read alone agrees only as the same character, a symbol
+// as much as a letter, and nothing read is no agreement.
+func TestSameGlyphIsTheCharacter(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"$", "$", true},
+		{"$", " $ ", true},
+		{"ﬁ", "fi", true},
+		{"e", "•", false},
+		{"1", "l", false},
+		{"", "", false},
+		{"—", "—", true},
+	} {
+		if got := SameGlyph(c.a, c.b); got != c.want {
+			t.Errorf("SameGlyph(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}

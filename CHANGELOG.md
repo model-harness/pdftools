@@ -5,6 +5,20 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Changed — 2026-10-21 (glyphs with no value)
+
+- **A glyph with no value is read where its line places it.** ADR 0048, closes issue #8. On a
+  page that keeps its text, each `[err]` is read off the page at 300 dpi, and taken where the
+  line's mapped words single out its word and Tesseract is sure of it, or Gemma agrees. Over the
+  corpus, 1,600 of 3,225 such glyphs with Tesseract, 1,762 with Gemma too.
+- **A glyph set alone** (a bullet, a `$`) is taken only with Gemma's agreement, character for
+  character: Tesseract reads a bullet as "e" as surely as a `$` as `$`.
+- **Each glyph read is recorded** in `Page.Recovered` with its engine and confidence, and stderr
+  reports them per page.
+- **New fixture** `type3-words`: words and parts of words in an unmapped Type 3 font among
+  mapped text. With Tesseract, 41 of its 42 such glyphs are read, and CER goes from 0.057 to 0.001.
+- Gemma's reading of a word with one `$` in it is no longer refused as LaTeX.
+
 ### Changed — 2026-10-21 (scanned pages)
 
 - **A scanned page reads as a page.** ADR 0047, closes issue #12. With Tesseract and no model,

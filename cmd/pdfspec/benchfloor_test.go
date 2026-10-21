@@ -48,6 +48,7 @@ var benchFloors = map[string]benchFigures{
 	"two-column-ragged":        {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"two-column":               {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"type3-unmapped":           {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"type3-words":              {cer: 0.057, recall: 0.949, precision: 0.984, order: 1.000, blocks: 0.667, headings: 1.000, tables: 1.000, style: 1.000},
 	"unnumbered-headings":      {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"xelatex-article":          {cer: 0.008, recall: 0.979, precision: 0.979, order: 1.000, blocks: 0.857, headings: 0.800, tables: 1.000, style: 0.800},
 }
@@ -61,10 +62,10 @@ var benchTargets = benchFigures{
 }
 
 // benchNeedsOCR names the fixtures whose content is only in pixels: the scans, the page of
-// images, and the page of bitmap glyphs with no Unicode value.
+// images, and the pages of bitmap glyphs with no Unicode value.
 var benchNeedsOCR = map[string]bool{
 	"scan-paragraphs": true, "scan-table": true, "scan-two-column": true, "scan-unnumbered-headings": true,
-	"image-kinds": true, "type3-unmapped": true,
+	"image-kinds": true, "type3-unmapped": true, "type3-words": true,
 }
 
 // benchEnforced names the dimensions whose v1 target now fails the build, each from the

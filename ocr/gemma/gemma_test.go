@@ -62,6 +62,8 @@ func TestGuardRead(t *testing.T) {
 		{"bold", "**Association**", 30, false},
 		{"code", "`linkDest`", 30, false},
 		{"LaTeX", "$\\mathcal{O}$", 30, false},
+		{"a price", "$215.00", 30, true},
+		{"a dollar sign", "$", 10, true},
 		{"a loop", strings.Repeat("ab ", 9), 40, false},
 	} {
 		err := GuardRead(c.in, c.max)

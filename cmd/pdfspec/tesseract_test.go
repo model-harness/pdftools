@@ -107,6 +107,12 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 			if r.s.CER > 0.01 || r.s.Errs != 0 {
 				t.Errorf("type3-unmapped: CER %.3f with %d [err], want it read", r.s.CER, r.s.Errs)
 			}
+		case r.name == "type3-words":
+			// The page keeps its text and its 42 glyphs with no value are read where the text
+			// places them, 41 of them; the dollar set alone waits for a second reader (ADR 0048).
+			if r.s.CER > 0.002 || r.s.Errs != 1 || off[i].s.Errs != 11 {
+				t.Errorf("type3-words: CER %.3f with %d [err], from %d; want 1 left of 11", r.s.CER, r.s.Errs, off[i].s.Errs)
+			}
 		case r.name == "image-kinds":
 			// The text and the table are read off their images; the chart is a model's to read,
 			// and without one stays [image] (TestImageKindsAreRead).

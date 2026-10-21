@@ -144,7 +144,8 @@ func GuardRead(s string, maxRunes int) error {
 		return fmt.Errorf("%w: %d characters where the crop holds at most %d", ErrRefused, utf8.RuneCountInString(s), maxRunes)
 	case strings.Contains(s, "\n"):
 		return fmt.Errorf("%w: more than one line", ErrRefused)
-	case strings.Contains(s, "**") || strings.Contains(s, "`") || strings.Contains(s, "$"):
+	// LaTeX's math is between two dollars; one is a price, or a shell's prompt (ADR 0048).
+	case strings.Contains(s, "**") || strings.Contains(s, "`") || strings.Count(s, "$") >= 2:
 		return fmt.Errorf("%w: markup in a transcription", ErrRefused)
 	case Loops(s):
 		return fmt.Errorf("%w: a repetition loop", ErrRefused)

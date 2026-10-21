@@ -1,0 +1,29 @@
+% type3-words — a page of text with a Unicode mapping, and some of its words and parts of words
+% in a font with none.
+%
+% The body is lmodern, whose fonts carry a /ToUnicode. The words in \nomap are drawn from the
+% EC fonts, which under [T1] pdfTeX takes from METAFONT bitmaps and embeds as Type 3 with no
+% mapping, as in type3-unmapped.tex. The extractor writes each of their glyphs [err], and the
+% text around them places them, which is what glyph recovery reads them by (ADR 0048). The gold
+% file holds what the source says.
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\pagestyle{empty}
+\newcommand{\nomap}[1]{{\fontfamily{cmr}\selectfont #1}}
+\begin{document}
+Most of this page is set in a font that says what each of its glyphs is. A few
+\nomap{words} are not, and neither are some \nomap{parts} of words, such as the
+middle of recov\nomap{er}y or the end of glyph\nomap{s}. The \nomap{reader} has
+to place each of them by the text around it.
+
+A line can hold \nomap{two such words}, and a \nomap{number} like \nomap{1234} too.
+A sign set alone, as in \nomap{\$} 5, is one glyph that nothing around it names.
+
+The rest of the page is ordinary text, so that the page reads as one with text on it and not as
+one to read whole. A page set in a font with no values throughout is read as a scan is, and its
+text replaced; a page like this one keeps its text, and only the glyphs it cannot name are read
+off the page. That is the case this page is for: a document whose fonts mostly say what they
+draw, with a few words that do not, which is how most such documents come. The words around each
+one are what place it, and the reading is taken only where they agree with it.
+\end{document}

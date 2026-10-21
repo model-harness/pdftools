@@ -182,12 +182,18 @@ func plan(w io.Writer, d *doc.Document, want, routed []int, threshold float64) e
 // is the file's, and OCR only adds to it.
 func autoOCR(d *doc.Document, s objects.Store, path string, eo engineFlags, backend string) {
 	routed := route(d, allPages(len(d.Pages)), ocr.DefaultThreshold, false)
-	if len(routed) == 0 && !hasImages(d) {
+	if !wantsOCR(d, routed) {
 		return
 	}
 	if err := readPages(context.Background(), d, path, routed, eo, backend, false, describedImages(s, d)); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
+}
+
+// wantsOCR reports whether the document has anything for an engine to read: a routed page, an
+// image, or a glyph with no value (ADR 0048).
+func wantsOCR(d *doc.Document, routed []int) bool {
+	return len(routed) > 0 || hasImages(d) || len(unmapped(d)) > 0
 }
 
 // hasImages reports whether any page paints an image worth reading.
@@ -310,7 +316,14 @@ func readPages(ctx context.Context, d *doc.Document, path string, routed []int, 
 		fmt.Fprintf(os.Stderr, "read %d image(s): %d text, %d table, %d chart, %d picture, %d unread\n",
 			n.text+n.table+n.chart+n.picture+n.unread, n.text, n.table, n.chart, n.picture, n.unread)
 	}
-	return nil
+	total, read, err := run.glyphs(ctx, d)
+	if total > 0 {
+		fmt.Fprintf(os.Stderr, "read %d of %d glyph(s) with no value off the page\n", read, total)
+		if by := recoveredPages(d); len(by) > 0 {
+			fmt.Fprintf(os.Stderr, "  %s\n", strings.Join(by, ", "))
+		}
+	}
+	return err
 }
 
 // inferdEnv is "off" to ask no model, which tests set, or names inferd's generation endpoint.

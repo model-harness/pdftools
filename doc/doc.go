@@ -167,6 +167,27 @@ type Page struct {
 	// images, inside forms too. Recorded where they stand, so that what an image holds can
 	// be read off the rendered page (ADR 0045); the samples themselves are the image path's.
 	Images []Image
+
+	// Recovered are the runs of glyphs with no value in the file that were read off the
+	// rendered page, each with the engine that read it and its confidence (ADR 0048). The
+	// text the run was written as, doc.Unmapped, is replaced in its span.
+	Recovered []Recovery
+}
+
+// Recovery is one run of glyphs with no value, read off the page's image.
+type Recovery struct {
+	// Box is the line the run is in, in page coordinates.
+	Box geom.Rect
+
+	// Glyphs is how many glyphs the run is, and Text what they were read as.
+	Glyphs int
+	Text   string
+
+	// Engine names what read it, "tesseract 5.5.3 eng", or the second reader that agreed
+	// with a reading Tesseract was unsure of. Conf is Tesseract's confidence, 0 to 100,
+	// the lowest of the words it was read from.
+	Engine string
+	Conf   float64
 }
 
 // Image is one painted image: where it stands on the page and what it is.

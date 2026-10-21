@@ -158,6 +158,7 @@ work.
 | `hyphenation.tex` | Words hyphenated at line ends, beside hyphenated compounds | no |
 | `strikethrough.tex` | A phrase struck through by a drawn rule | no |
 | `type3-unmapped.tex` | Bitmap Type 3 fonts with no Unicode mapping at all | no |
+| `type3-words.tex` | Words and parts of words in those fonts, among text that has a mapping | no |
 | `xelatex-article.tex` | A short article from XeTeX, with Identity-H CID fonts | no |
 | `chrome-article.html` | The same article printed by Chrome | yes |
 | `scan-*.tex` | Four of the above as degraded 200 dpi scans, with no text | no |

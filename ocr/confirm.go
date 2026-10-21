@@ -5,6 +5,7 @@ import (
 	"errors"
 	"image"
 	"regexp"
+	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
@@ -48,7 +49,7 @@ func Confirm(ctx context.Context, img image.Image, words []Word, r Reader) ([]Wo
 			continue
 		}
 		c.Asked++
-		got, err := r.Read(ctx, crop(img, w.Box), maxRunes(w.Text))
+		got, err := ReadAgain(ctx, img, *w, r)
 		if err != nil {
 			if !errors.Is(err, ErrRefused) {
 				return out, c, err
@@ -67,6 +68,11 @@ func Confirm(ctx context.Context, img image.Image, words []Word, r Reader) ([]Wo
 // ErrRefused is a reader's refusal of one answer, its guard's verdict: a disagreement, where any
 // other error is the reader failing.
 var ErrRefused = errors.New("the reader refused its answer")
+
+// ReadAgain is r's reading of the word w in img, cropped as Confirm crops it.
+func ReadAgain(ctx context.Context, img image.Image, w Word, r Reader) (string, error) {
+	return r.Read(ctx, crop(img, w.Box), maxRunes(w.Text))
+}
 
 // crop is the word's box padded by a third of its height, as the spike cropped it, within img.
 func crop(img image.Image, box image.Rectangle) image.Image {
@@ -100,4 +106,12 @@ func Same(a, b string) bool {
 		}
 	}
 	return true
+}
+
+// SameGlyph reports whether two readings of one glyph read alone are the same character, in
+// NFKC. Not Same: a glyph alone is as often a symbol as a letter, "$" or "•", and Same compares
+// letters and digits only (ADR 0048).
+func SameGlyph(a, b string) bool {
+	x, y := strings.TrimSpace(norm.NFKC.String(a)), strings.TrimSpace(norm.NFKC.String(b))
+	return x != "" && x == y
 }
