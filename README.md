@@ -1,190 +1,149 @@
 # pdftools
 
-`pdfspec` converts a PDF into Markdown. It reads the text the file already holds, and it marks
-what it cannot read with `[err]` or `[image]` instead of guessing.
+`pdfspec` turns PDFs into clean Markdown, from Go, without sending your documents to an AI
+model.
 
 ```sh
 go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
-pdfspec md paper.pdf > paper.md
+pdfspec md report.pdf > report.md
 ```
 
-The project is written in Go and released under the MIT licence. You can use it as a command
-or as a library.
+If you've ever tried this with an ordinary PDF library, you probably got back text with words
+run together, two columns shuffled into one, and a page number stuck in the middle of a
+sentence. That isn't the library being careless. It comes from what a PDF actually is.
 
-## Why it exists
+## A PDF is a drawing of a page
 
-Most PDFs already hold their own text. A PDF records only where each letter sits on the page,
-though. It has no words, paragraphs or tables, so a converter has to rebuild them from the
-layout.
+PDF was designed in the era of print, to make a page look exactly the same on every screen
+and every printer. It does that by describing the page as a drawing. A PDF is essentially a
+list of vector instructions: draw the shape of the letter "T" here, in this font, at this size;
+draw an "h" just to its right; draw a line under the heading; place this photo in that box.
 
-Existing tools today are mostly built in Python, which is slow, or they use licences that
-restrict reuse, such as AGPL or a commercial licence. The permissive Go libraries each handle
-part of the job. Many people now send each page to a vision model instead. `docs/DESIGN.md`
-puts reading the file's own text at two orders of magnitude cheaper than a call to a language
-model, and a model guesses when it cannot read something.
+That's perfect for printing, and awkward for everything else, because the drawing is all
+there is. Nothing in the file says "this is a word", "this is a paragraph", or "these lines are
+a table". A few details make that worse:
 
-`pdfspec` reads the file first and rebuilds the structure: headings, paragraphs, columns,
-tables, lists, footnotes and links. It reads pixels only where the file holds no text.
+- Spaces usually aren't there. The gap between two words is just a bit of extra distance
+  between two letter shapes. Whatever reads the file has to notice the gap and decide it's a
+  space.
+- Reading order isn't there. A two-column page is just shapes on the left and shapes on the
+  right. The file doesn't say to finish the left column first.
+- Tables are just lines and text. A table is some letters lined up, with or without ruled
+  lines drawn around them.
+- Headers, footers and page numbers sit right next to the content, with nothing marking
+  them as different.
+- Some fonts never say which letter a shape is. Sometimes the PDF draws a shape for "ti" or
+  "fi" as one piece, with no record of the letters it stands for.
+- A scanned page holds no text at all. It's a photograph of paper.
 
-We ran `pdfspec` and two common tools on the same 17-page paper:
+Some PDFs carry extra notes, called tags, that describe their own headings and reading order.
+Most don't, so the structure has to be worked out from where things sit on the page.
 
-| | non-space chars | words | words >25 ch | longest |
+## Why most tools get it wrong
+
+Most converters read the letters in the order they were drawn and stop there. The letters come
+out right but the document doesn't. We ran `pdfspec` against two other common tools using the
+same 17-page research paper, and found the following:
+
+| | characters found | words found | words over 25 characters | longest word |
 |---|---|---|---|---|
 | pdftools | 39,049 | 6,343 | 19 (0.30%) | 71 |
 | pdftotext (Poppler) | 39,035 | — | — | — |
 | pdfplumber 0.11.9 | 39,089 | 2,392 | 377 (15.8%) | 110 |
 
-The three tools find the same characters, within 0.14% of each other, so none of them loses
-text. They split those characters into words differently. pdfplumber finds 2,392 words where
-`pdfspec` finds 6,343, and 15.8% of pdfplumber's words run past 25 characters. Missing spaces
-cause this. A PDF stores no spaces between words, so a converter has to infer them from the
-font measurements. `TestExtractionQualityOnArXiv` checks these figures on every test run.
+All three found the same characters, to within a fraction of a percent. The difference is in
+the spaces. pdfplumber found just over a third as many words, and one in six of its "words"
+ran past 25 characters, because it missed the gaps between them. Go libraries fare worse still: one we
+tested found a space in only 0.01% of its text, and produced a single "word" 4,069 letters long.
 
-Two Go libraries show the gap. `pdfcpu` reads a PDF's objects well but cannot draw a page.
-`ledongthuc/pdf` finds spaces in 0.01% of its text, and its longest "word" runs to 4,069
-characters.
+The fashionable fix is to skip all this and show each page to an AI vision model. That works,
+but it costs far more and takes far longer than reading text the file already contains. Worse,
+when a model can't make something out, it tends to guess, and a confident guess looks exactly
+like the real thing.
 
-## How it reads a PDF
+## How pdfspec does it
 
-`pdfspec` uses three sources in a fixed order. Each source is cheaper and more reliable than
-the next one.
+`pdfspec` treats the file as the best witness to its own content, and only looks further when
+the file runs out.
 
-1. It reads the file first. A tagged PDF declares its own headings and reading order. For an
-   untagged PDF, `pdfspec` infers them from the layout.
-2. Tesseract, an open-source text recognizer, reads what exists only as pixels, if it is
-   installed. That covers a scanned page, a picture of text or of a table, and a letter whose
-   font never says which character it is.
-3. A vision model answers what Tesseract cannot. It checks a word Tesseract doubted, describes
-   a chart or a photo, and reads the values off a chart.
+First it reads what the file holds, and rebuilds the document from it. It works out the words
+from the gaps between letters, the reading order from the columns, the headings from size and
+weight, the tables from their lines or their alignment, and it sets aside the page furniture
+such as running headers and page numbers. If the PDF carries tags, it follows them.
 
-`pdfspec` marks whatever is left unread. A letter it could not read becomes `[err]`, and an
-image it could not read becomes `[image]`. Each run reports both counts for every page, so you
-know where to look.
+Where the file holds only pictures, such as a scanned page, a screenshot of a table, or a letter
+whose font never said what it was, `pdfspec` can use Tesseract, a free text recognition
+program, to read the image. Where even that isn't enough, it can ask an AI vision model for a
+second opinion on a doubtful word, or for a description of a chart or a photo. Both are optional
+and run on your own machine.
 
-## Using the command
+What it can't read, it doesn't guess. A letter nobody could read comes out as `[err]`, and an
+image nobody could describe comes out as `[image]`. Each run also tells you which pages they
+were on, so you know exactly where to look.
 
-Run `probe` first. It reports what a file holds and how `pdfspec` will read it, without
-converting anything:
+## Getting started
 
-```
-$ pdfspec probe spec.pdf
-spec.pdf
-  size        18.31 MB
-  version     PDF 1.7
-  pages       1023
-  encrypted   false
-  structure   StructTreeRoot + Marked
-  tags        78469 elements, depth 13, 44955 MCIDs
-              981 headings, 29400 paras, 745 tables, 195 figures, 531 lists
-  roles       P=29400 Span=14911 TD=11036 Link=6047 TH=5432 TR=4324
-  lang        en
-  streams     ObjStm, XRefStm
-  fonts       TrueType, Type0, Type1
-  filters     DCTDecode, FlateDecode
-  images      224
-  path        tagged
-  probed in   1294 ms
+Convert a file:
+
+```sh
+pdfspec md report.pdf > report.md
 ```
 
-The `path` line gives the answer:
-
-- `tagged` means the document declares its own headings and reading order.
-- `layout` means `pdfspec` will rebuild the structure from the layout.
-- `ocr` means the file holds no text, so only its pixels can be read.
-
-For a file that keeps some content in pixels, `probe` also names the engines it found. It lists
-what each page will ask of them:
+If you're not sure what's inside a PDF, ask `probe` first. It describes the file without
+converting it, including how `pdfspec` plans to read it and what it would need help with:
 
 ```
-$ pdfspec probe testdata/adobe-samples/autotagPDFInput.pdf
+$ pdfspec probe autotagPDFInput.pdf
+  pages       4
+  ...
+  structure   untagged
   ...
   path        layout
-  unmapped    58 glyph(s) with no Unicode value, written [err]: p1 30, p2 24, p3 1, p4 3
   engines     tesseract 5.5.3 eng; gemma-4-e4b via inferd
   needs       images: p2 2, p3 4, p4 2; glyphs with no value: p1 30, p2 24, p3 1, p4 3
 ```
 
-`probe` accepts several files at once, and `-json` gives output for scripts.
+Here `needs` says that pages 2 to 4 have pictures worth reading, and that every page has some
+letters whose font never said what they were.
 
-`md` runs the conversion. The other commands cover related jobs:
+There are a few other commands for related jobs: `md -split` writes one file per page, `okf`
+writes one file per section of a long specification, `images` pulls out the embedded pictures,
+`render` turns pages into PNG or JPEG files, and `ocr` gives you more control over reading
+scanned pages. Run `pdfspec <command> -h` for the options.
 
-```sh
-pdfspec md paper.pdf > paper.md             # the whole pipeline
-pdfspec md -split -o pages/ report.pdf      # one .md per page
-pdfspec okf -o bundle/ spec.pdf             # one file per clause, stitched across pages
-pdfspec images -list scan.pdf               # what images are in there, writing nothing
-pdfspec render -o png/ -dpi 200 form.pdf    # rasterize pages to PNG or JPEG
-pdfspec ocr scan.pdf                        # md, with the page router's settings exposed
-```
+## Reading scans and pictures
 
-`okf` writes the Open Knowledge Format, one file per clause. `pdfspec <command> -h` lists each
-command's flags.
+Most documents made on a computer convert fine with nothing else installed. Scans and pictures
+of text need Tesseract, and charts and photos need a vision model. `pdfspec` uses whichever it
+finds, and `probe` tells you which ones those are.
 
-## Reading pixels
+- Tesseract (version 5, with English): `apt install tesseract-ocr` on Debian and Ubuntu,
+  `brew install tesseract` on macOS, or the UB Mannheim installer on Windows.
+- A vision model, through [inferd](https://github.com/3rg0n/inferd). We tested with Gemma 4
+  (`gemma-4-e4b`).
 
-`md` runs Tesseract by default whenever it is installed. Tesseract reads three kinds of
-content:
+Without either, `pdfspec` still converts everything the file itself holds, and marks the rest.
+If you've installed them somewhere unusual, `pdfspec md -h` shows how to point at them.
 
-- A page whose text covers under 5% of its area is read whole. `pdfspec` straightens a crooked
-  scan first. It reads type sizes and weights from the letters, and it turns ruled tables into
-  tables (ADRs 0043 and 0047). The new reading replaces the page only where it adds text the
-  file lacked.
-- An image is read as what it holds. Text becomes paragraphs, and a ruled table becomes a
-  table. With a vision model, a chart gets a description and a table of its values, and a
-  photo becomes `[photo: …]` (ADR 0046).
-- A letter the file never names is read off the page, such as the "ti" ligature in
-  "crea[err]ng". `pdfspec` fills it in only where the words around it on that line fix what it
-  must be (ADR 0048).
+## How we know it's good
 
-Tesseract rates its confidence in each word, and the rating decides what `pdfspec` keeps. A
-word rated under 30% becomes `[err]`. When [inferd](https://github.com/3rg0n/inferd) runs a
-vision model, the bar rises to 90%. The model re-reads each word under 90%, and `pdfspec` keeps
-the word only when both readings agree (ADR 0044).
-
-`-ocr=false` turns this off. `-inferd off` keeps Tesseract and skips the second reading. The
-`ocr` command exposes the page router:
+We keep a set of reference PDFs, each one built to test a single thing, such as two columns, a
+table, a footnote, or a scanned page. For each one we wrote down by hand exactly what the
+Markdown should be. Every change to `pdfspec` is scored against that set, and the build fails
+if accuracy drops below the targets we set for this release: at most 3 wrong characters in a
+hundred, and at least 97% of words found correctly, among others. Every one of those targets
+passes today, on Linux and on Windows.
 
 ```sh
-pdfspec ocr -dry-run scan.pdf     # which pages need OCR, and why
-pdfspec ocr -force scan.pdf       # read every page, whatever text it has
+go test ./...      # runs the whole suite, with nothing else installed
 ```
 
-### Installing the engines
+## Using it from your own code
 
-Both engines are optional. Without them, `md` still writes everything the file holds, and it
-marks what it could not read with `[err]` and `[image]`. `pdfspec probe` shows which engines it
-finds.
-
-Tesseract 5 needs its `eng` model. The figures in `docs/adr/` came from version 5.5.3 with
-`tessdata_fast`. Install it with one of these:
-
-- Debian and Ubuntu: `apt install tesseract-ocr`
-- macOS: `brew install tesseract`
-- Windows: the UB Mannheim installer
-
-`pdfspec` looks for Tesseract on `PATH`. `-tesseract` or `PDFSPEC_TESSERACT` names another
-location, and `-tessdata` or `TESSDATA_PREFIX` names its models. `PDFSPEC_TESSERACT=off`
-disables it.
-
-inferd needs a vision model. The figures came from `gemma-4-e4b` and its projector, with
-`"mmproj_image_max_tokens": 1120` in inferd's config. Google's vision guide lists 1120 as the
-largest image budget. `pdfspec` looks for inferd at the platform's default address. `-inferd`
-or `PDFSPEC_INFERD` names another address, and `off` disables it.
-
-## Using it as a library
-
-Each command calls packages you can call yourself. This code converts a file to Markdown:
+Everything the command does is available as a Go library:
 
 ```go
-import (
-    "os"
-
-    "github.com/model-harness/pdftools/extract"
-    pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
-    "github.com/model-harness/pdftools/sink/markdown"
-)
-
-s, err := pcstore.Open("spec.pdf")
+s, err := pcstore.Open("report.pdf")
 if err != nil {
     return err
 }
@@ -197,95 +156,17 @@ if err != nil {
 err = markdown.Write(os.Stdout, d, markdown.DefaultOptions)
 ```
 
-That code writes the text in page order. For a tagged document, `tag.Read` and
-`sectionize.Tagged` rebuild the clause hierarchy, and `markdown.WriteOutline` writes it with
-real heading levels. `cmd/pdfspec/md.go` shows both paths with their flags.
-`cmd/pdfspec/ocr.go` shows how the engines run after them.
+The imports are `github.com/model-harness/pdftools/extract`,
+`github.com/model-harness/pdftools/objects/pdfcpu` (as `pcstore`) and
+`github.com/model-harness/pdftools/sink/markdown`. `cmd/pdfspec` shows the full pipeline,
+including tagged documents and text recognition.
 
-Each package declares the interfaces it consumes. One adapter holds all the code for the
-borrowed parser:
+## Licence and further reading
 
-| package | what it owns |
-|---|---|
-| `objects` | the PDF object model, and the `Store` interface every layer reads through |
-| `objects/pdfcpu` | the adapter for the borrowed parser; no pdfcpu type leaves it |
-| `filter` | Flate, LZW, ASCIIHex, ASCII85, RunLength, PNG/TIFF predictors |
-| `content` | the content-stream lexer and scanner, and the graphics and text state machine |
-| `font`, `font/cmap`, `font/encoding` | metrics, CMaps, Annex D encodings, glyph lists |
-| `tag` | the structure-tree reader, which is the tagged path |
-| `extract`, `sectionize`, `doc` | text runs, clause reconstruction, the document model |
-| `layout` | roles read from the layout: columns, headings, tables, lists, notes, images |
-| `image`, `bits` | image XObjects, and unpacking samples narrower than a byte |
-| `render`, `render/pdfium`, `render/native` | drawing pages: pdfium over WebAssembly by default, or the native rasterizer |
-| `ocr`, `ocr/tesseract`, `ocr/gemma` | routing pages to the engines, and turning what they read into pages, tables and letters |
-| `bench` | the scorer for the gold set |
-| `internal/inferd` | inferd's v2 wire protocol, borrowed from thlibo |
-| `sink/markdown`, `sink/okf` | the output formats |
+`pdfspec` is MIT-licensed; see [`LICENSE`](LICENSE). Some of the test PDFs come from other
+projects under their own licences, and [`docs/test.docs.md`](docs/test.docs.md) explains where
+each one came from.
 
-## How we test it
-
-```sh
-go build ./...
-go test ./...      # passes with no PDFs on disk at all
-```
-
-The tests use three sets of documents, and each set covers cases the others miss.
-
-The gold set in `testdata/reference/` sets the bar. Each PDF there tests one thing. We built
-each one from a `.tex` or `.html` source committed beside it, and wrote a `.gold.md` by hand
-with the expected output. `pdfspec bench testdata/reference` scores the converter against
-them. A build fails if the averages over the set miss any of these targets (ADR 0029):
-
-- character error rate (CER) at most 0.03
-- word recall and word precision at least 0.97
-- reading order at least 0.98
-- blocks and headings at least 0.90
-- tables and style at least 0.85
-
-Continuous integration (CI) checks every target on Linux and Windows. A few fixtures hold their
-content only in pixels, and they count toward the averages only where Tesseract is installed.
-
-Thirty fixtures in `testdata/` come from PyMuPDF and Adobe. Each one is pinned to its upstream
-commit and to a SHA-256 hash in `testdata/manifest.json`. No test skips them.
-
-Eleven ISO 32000 and PDF Association specifications in `docs/` hold the larger baselines.
-Because they are sponsored copies of paid ISO documents that we cannot redistribute, this
-repository leaves them out. The tests that use them skip when the files are absent, which is why
-a fresh clone passes with no PDFs at all. To run those tests, copy your own files into `docs/`.
-
-The specifications make a good regression baseline but a weak test of anything new. All eleven
-are tagged standards documents from one family of producers. A threshold tuned on them proves
-nothing about other documents, so the other two sets exist. `docs/test.docs.md` records which
-gap each committed fixture fills.
-
-The tests that need an engine are opt-in. `PDFSPEC_TEST_TESSERACT=<path to tesseract>` runs the
-Tesseract tests, including the gold set with text recognition. `PDFSPEC_TEST_INFERD=1` runs the
-inferd tests.
-
-## Licence
-
-The code is MIT-licensed; see [`LICENSE`](LICENSE).
-
-Of the 70 files in `testdata/`, 48 are MIT: Adobe's samples, and the gold set generated here.
-The other 22 come from PyMuPDF and are AGPL-3.0 upstream. They sit in a marked directory with
-attribution, as data rather than linked code, so they leave this project's licence unchanged.
-No PyMuPDF or MuPDF code is used here, whether copied, read in order to copy, or translated.
-Where their approach informed a decision, `docs/DESIGN.md` cites it as methodology.
-
-This repository has never redistributed the ISO specifications in any form; see
-`docs/test.docs.md`.
-
-## Design and history
-
-- [`docs/DESIGN.md`](docs/DESIGN.md) explains why the project exists, its architecture, how it
-  manages dependencies, and the roadmap.
-- [`docs/adr/`](docs/adr/) records each decision that was costly to reverse, with the
-  measurements behind it. We annotate accepted records and never edit them.
-- [`docs/test.docs.md`](docs/test.docs.md) describes the test sets and what each fixture is
-  for.
-- [`CHANGELOG.md`](CHANGELOG.md) lists the changes in each release.
-
-The project borrows each dependency at first and replaces it later. Each one sits behind an
-interface this project owns, so a swap stays a local change. Today `pdfcpu` supplies the object
-layer. pdfium supplies page drawing, compiled to WebAssembly and run on wazero, so the build
-needs no C toolchain. See ADR 0001.
+If you want to know how it works inside, [`docs/DESIGN.md`](docs/DESIGN.md) explains the
+architecture, [`docs/adr/`](docs/adr/) records each significant decision with the measurements
+behind it, and [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release.
