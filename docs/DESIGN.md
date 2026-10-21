@@ -868,6 +868,22 @@ output — the 500-unit normalized `<loc_>` grid, and the top-down Y that the pa
 confidence, so an unsure word is `[err]` rather than a fluent guess. inferd (#10) is the model
 step after it. The router stays; what it routes to changed.
 
+**As built at v1.0.0,** the chain reads more than routed pages, in the order the converter
+trusts its sources: the file's text, then Tesseract, then a vision model.
+
+- inferd's Gemma reads again a word Tesseract is unsure of, and the word is kept only where the
+  two agree (ADR 0044).
+- Every painted image is placed where it stands (ADR 0045) and read as what it holds: text and
+  ruled tables by Tesseract, charts and pictures by Gemma, and `[image]` where nothing reads it
+  (ADR 0046).
+- A routed page is levelled and read with its sizes, weights, ruled tables and column breaks
+  (ADR 0047).
+- A glyph the file gives no value to is read off the page where its line's mapped text places
+  it (ADR 0048).
+
+`probe` says which engines are present and what each page will need of them, and every run
+reports its `[err]` and `[image]` per page.
+
 **Phase 5 — untagged layout.** `layout` heuristics so untagged born-digital PDFs get
 sections without paying for inference. **Landed.** Heading *rank* came first (ADR 0008);
 block segmentation in `extract` followed, so a heading no longer fuses into the paragraph
@@ -892,9 +908,12 @@ curve is flattened, because that is where pdfium places a curve's anti-aliasing.
 yardstick rather than a second opinion, because borrow-then-replace makes the borrowed engine the
 definition of what the native one has to reproduce.
 
-**It refuses any page it cannot draw in full, and today that is all of them.** 0 of 1,251
-corpus pages and 0 of 12 reference fixtures, which is stated rather than softened: this
-increment buys a proven core and a measured worklist, not a working backend. A rasterizer that
+**It refuses any page it cannot draw in full.** When it landed that was every page: 0 of 1,251
+corpus pages and 0 of 12 reference fixtures, which was stated rather than softened, since that
+increment bought a proven core and a measured worklist, not a working backend. **At v1.0.0 it
+draws all 1,251 corpus pages and 30 of the 32 reference fixtures.** It refuses type3-unmapped
+and type3-words, whose Type 3 glyphs it has no drawing for, and pdfium stays the default until
+#16 retires it. A rasterizer that
 skipped what it does not implement would return a page with its text missing and nothing to say
 so — the same failure as the dropped cover page above, and worse, because a plausible image
 invites less scrutiny than an empty one.

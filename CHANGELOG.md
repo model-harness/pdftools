@@ -5,6 +5,17 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-21
+
+The converter issue #1 describes, with the gold set's targets met and enforced in CI. Closes
+issue #13.
+
+### Changed — 2026-10-21 (release)
+
+- **README and `docs/DESIGN.md` describe the pipeline as built**, with install notes for the
+  optional engines. DESIGN.md's Phase 6 sentence is corrected: the native rasterizer draws all
+  1,251 corpus pages and 30 of the 32 reference fixtures, refusing the Type 3 bitmap glyphs.
+
 ### Changed — 2026-10-21 (every target enforced, in CI)
 
 - **Every v1 target fails the build**, not only order, tables and style. Over the 25 reference
@@ -4049,6 +4060,7 @@ tag rather than `@latest` — the API is not stable before 1.0.
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
 
-[Unreleased]: https://github.com/model-harness/pdftools/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/model-harness/pdftools/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/model-harness/pdftools/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/model-harness/pdftools/releases/tag/v0.1.0
