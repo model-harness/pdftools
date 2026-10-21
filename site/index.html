@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pdftools: read a PDF back into Markdown</title>
+<meta name="description" content="pdfspec turns PDFs into clean Markdown, from Go, by reading the text the file already holds and marking what it cannot read.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:ital,wght@0,300..800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F5F7F8;
+    --ink: #14213D;
+    --ink-soft: #4A5568;
+    --cyan: #009FE3;
+    --magenta: #E6007E;
+    --rule: #C8D0D5;
+    --sheet: #FFFFFF;
+    --measure: 66ch;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Libre Franklin", "Franklin Gothic Medium", Arial, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    font-feature-settings: "tnum" 0;
+  }
+  a { color: var(--ink); text-decoration-color: var(--cyan); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  a:hover { color: var(--cyan); }
+  :focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; border-radius: 2px; }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
+
+  .wrap { max-width: 72rem; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Masthead */
+  .top { display: flex; justify-content: space-between; align-items: baseline; padding: 1.5rem 0; }
+  .top .name { font-weight: 800; font-size: 1.125rem; letter-spacing: -0.01em; text-decoration: none; }
+  .top nav a { margin-left: 1.5rem; font-size: 0.95rem; }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 3.5rem; align-items: center; padding: 3rem 0 5rem; }
+  .hero h1 { font-weight: 800; font-size: clamp(2.4rem, 5vw, 4.1rem); line-height: 1.02; letter-spacing: -0.02em; margin: 0 0 1.5rem; }
+  .hero p { font-size: 1.2rem; color: var(--ink-soft); max-width: 34ch; margin: 0 0 2rem; }
+  .install { background: var(--ink); color: #fff; border-radius: 6px; padding: 1rem 1.25rem; margin: 0 0 1rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; }
+  .install code { color: #fff; }
+  .hero .links a { margin-right: 1.25rem; font-weight: 600; }
+
+  /* The proof sheet */
+  .proof { position: relative; }
+  .trim { position: relative; }
+  .sheet {
+    position: relative;
+    background: var(--sheet);
+    aspect-ratio: 4 / 2.6;
+    box-shadow: 0 1px 0 var(--rule), 0 24px 48px -32px rgba(20, 33, 61, 0.35);
+    overflow: hidden;
+  }
+  /* crop marks sit outside the trim, as on a press proof */
+  .crop { position: absolute; width: 22px; height: 22px; pointer-events: none; }
+  .crop::before, .crop::after { content: ""; position: absolute; background: var(--ink); }
+  .crop::before { width: 22px; height: 1px; }
+  .crop::after { width: 1px; height: 22px; }
+  .crop.tl { top: -30px; left: -30px; } .crop.tl::before { top: 29px; left: 0; } .crop.tl::after { left: 29px; top: 0; }
+  .crop.tr { top: -30px; right: -30px; } .crop.tr::before { top: 29px; right: 0; } .crop.tr::after { right: 29px; top: 0; }
+  .crop.bl { bottom: -30px; left: -30px; } .crop.bl::before { bottom: 29px; left: 0; } .crop.bl::after { left: 29px; bottom: 0; }
+  .crop.br { bottom: -30px; right: -30px; } .crop.br::before { bottom: 29px; right: 0; } .crop.br::after { right: 29px; bottom: 0; }
+
+  .layout { position: absolute; inset: 0; padding: 9% 8%; visibility: hidden; }
+  .layout.drawn { font-size: clamp(0.85rem, 1.75vw, 1.3rem); line-height: 1.5; }
+  .layout.drawn .title { font-weight: 800; font-size: 1.9em; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 1em; }
+  .layout.drawn .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 9%; }
+  .layout.read { font-size: clamp(0.85rem, 1.75vw, 1.3rem); line-height: 1.6; white-space: pre-wrap; }
+
+  .live { position: absolute; left: 0; top: 0; white-space: pre; line-height: 1; transform-origin: 0 0; will-change: transform; }
+  .live.glyph { color: var(--ink); }
+  .live.extra { color: var(--cyan); opacity: 0; }
+  .live.err { color: var(--magenta); font-weight: 700; opacity: 0; }
+  .dot { position: absolute; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--cyan); opacity: 0.85; }
+
+  .animate .live, .animate .dot { transition: transform 1.1s cubic-bezier(.6,0,.2,1), opacity .6s ease, color .6s ease; }
+  .animate .live.extra, .animate .live.err { transition-delay: 0s, .7s, 0s; }
+
+  .proof-caption { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2.6rem; }
+  .proof-caption p { margin: 0; font-size: 0.95rem; color: var(--ink-soft); max-width: 44ch; }
+  .read-btn {
+    font: inherit; font-weight: 700; font-size: 1rem;
+    background: var(--cyan); color: #fff; border: 0; border-radius: 999px;
+    padding: 0.7rem 1.4rem; cursor: pointer; white-space: nowrap;
+  }
+  .read-btn:hover { background: #0089C4; }
+
+  /* Sections */
+  section { padding: 4.5rem 0; border-top: 1px solid var(--rule); }
+  section h2 { font-weight: 800; font-size: clamp(1.7rem, 3vw, 2.3rem); letter-spacing: -0.025em; line-height: 1.15; margin: 0 0 1.25rem; max-width: 24ch; }
+  section .lead { max-width: var(--measure); font-size: 1.15rem; color: var(--ink-soft); margin: 0 0 2.5rem; }
+  .prose p { max-width: var(--measure); }
+
+  /* What the drawing leaves out: proofreader's marks stand in the margin, only where one exists */
+  .losses { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 4rem; row-gap: 2rem; max-width: 64rem; }
+  .losses li { position: relative; padding-left: 3.25rem; }
+  .losses h3 { font-size: 1.1rem; font-weight: 700; margin: 0 0 0.35rem; }
+  .losses p { margin: 0; color: var(--ink-soft); }
+  .mark { position: absolute; left: 0; top: -0.15rem; width: 2.25rem; text-align: center; color: var(--magenta); font-weight: 700; font-size: 1.35rem; line-height: 1.3; font-style: italic; }
+  .marks-note { margin-top: 2.5rem; font-size: 0.95rem; color: var(--ink-soft); max-width: var(--measure); }
+
+  /* Comparison */
+  .compare { width: 100%; max-width: 52rem; border-collapse: collapse; font-feature-settings: "tnum" 1; margin: 0 0 2rem; }
+  .compare th, .compare td { text-align: right; padding: 0.75rem 1rem; border-bottom: 1px solid var(--rule); }
+  .compare th:first-child, .compare td:first-child { text-align: left; padding-left: 0; }
+  .compare thead th { font-weight: 600; font-size: 0.92rem; color: var(--ink-soft); vertical-align: bottom; }
+  .compare tbody tr:first-child td { font-weight: 700; }
+  .compare .bad { color: var(--magenta); font-weight: 700; }
+  .table-scroll { overflow-x: auto; }
+
+  /* The three sources: a real order, so numbered */
+  .sources { counter-reset: src; list-style: none; padding: 0; margin: 0 0 2.5rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.5rem; max-width: 66rem; }
+  .sources li { counter-increment: src; border-top: 3px solid var(--ink); padding-top: 1rem; }
+  .sources li::before { content: counter(src); display: block; font-weight: 800; font-size: 2.2rem; line-height: 1; margin-bottom: 0.6rem; color: var(--cyan); }
+  .sources h3 { margin: 0 0 0.4rem; font-size: 1.15rem; }
+  .sources p { margin: 0; color: var(--ink-soft); }
+  .honest { max-width: var(--measure); }
+  .honest code { color: var(--magenta); font-weight: 600; }
+
+  /* Try it */
+  pre.block { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem 1.25rem; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 48rem; line-height: 1.55; }
+  pre.block .c { color: var(--ink-soft); }
+  .try { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; }
+  .try h3 { margin: 0 0 0.6rem; font-size: 1.1rem; }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 4rem; color: var(--ink-soft); font-size: 0.95rem; }
+  footer nav a { margin-right: 1.5rem; }
+
+  @media (max-width: 52rem) {
+    .hero { grid-template-columns: minmax(0, 1fr); gap: 3rem; padding-top: 1.5rem; }
+    .losses, .sources, .try { grid-template-columns: minmax(0, 1fr); }
+    .proof { margin: 0 1.5rem; }
+    .proof-caption { flex-direction: column; align-items: flex-start; }
+    .top nav a { margin-left: 1rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate .live, .animate .dot { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="name" href="#">pdftools</a>
+    <nav aria-label="Project">
+      <a href="https://github.com/model-harness/pdftools">GitHub</a>
+      <a href="https://github.com/model-harness/pdftools/releases/tag/v1.0.0">v1.0.0</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1>A PDF is a drawing of a page.</h1>
+        <p>pdfspec reads it back into Markdown, with the words, columns, headings and tables put together again, for people and for language models.</p>
+        <pre class="install"><code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
+pdfspec md report.pdf &gt; report.md</code></pre>
+        <div class="links">
+          <a href="https://github.com/model-harness/pdftools">Read the source</a>
+          <a href="https://github.com/model-harness/pdftools#readme">Read the README</a>
+        </div>
+      </div>
+
+      <figure class="proof" style="margin:0">
+        <div class="trim">
+          <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
+          <div class="sheet" id="sheet" role="img" aria-label="A small page drawn as letter shapes at positions, which pdfspec reads back into Markdown.">
+            <div class="layout drawn" id="drawn" aria-hidden="true"></div>
+            <div class="layout read" id="read" aria-hidden="true"></div>
+          </div>
+        </div>
+        <figcaption class="proof-caption">
+          <p id="caption">This is what the file holds: letter shapes, each placed at a point. No words, no spaces, no order.</p>
+          <button class="read-btn" id="read-btn" type="button" aria-controls="sheet">Read the page</button>
+        </figcaption>
+      </figure>
+    </div>
+
+    <section aria-labelledby="leaves-out">
+      <h2 id="leaves-out">What the drawing leaves out</h2>
+      <p class="lead">PDF was made in the era of print, to make a page look the same on every screen and every printer. It does that by describing the page as vector shapes: draw a “T” here in this font, an “h” just to its right, a line under the heading. That’s perfect on paper. Everything else has to be worked out again.</p>
+      <ul class="losses">
+        <li><span class="mark" aria-hidden="true">#</span><h3>The spaces</h3><p>The gap between two words is only a little extra distance between two shapes. Something has to notice it and decide it’s a space.</p></li>
+        <li><span class="mark" aria-hidden="true">tr</span><h3>The reading order</h3><p>Two columns are just shapes on the left and shapes on the right. Nothing says to finish the left one first.</p></li>
+        <li><span class="mark" aria-hidden="true">¶</span><h3>Paragraphs and headings</h3><p>A heading is only bigger, bolder shapes. A paragraph ends where the shapes happen to stop.</p></li>
+        <li><h3>Tables</h3><p>A table is letters lined up in rows, sometimes with ruled lines drawn around them and sometimes with nothing at all.</p></li>
+        <li><h3>Page furniture</h3><p>Running headers, footers and page numbers are drawn right beside the content, with nothing marking them as different.</p></li>
+        <li><h3>Letters with no name</h3><p>Some fonts draw “fi” or “ti” as one shape and never say which letters it stands for. A scanned page has no letters at all, only a photograph.</p></li>
+      </ul>
+      <p class="marks-note">The marks in the margin are a proofreader’s: insert a space, transpose, start a new paragraph. They’re the corrections every PDF reader has to make without being told where.</p>
+    </section>
+
+    <section aria-labelledby="most-tools">
+      <h2 id="most-tools">Most tools stop at the letters</h2>
+      <p class="lead">We ran pdfspec against two other common tools using the same 17-page research paper, and found the following.</p>
+      <div class="table-scroll">
+        <table class="compare">
+          <thead>
+            <tr><th scope="col">Tool</th><th scope="col">Characters found</th><th scope="col">Words found</th><th scope="col">Words over 25 characters</th><th scope="col">Longest word</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>pdfspec</td><td>39,049</td><td>6,343</td><td>19 (0.30%)</td><td>71</td></tr>
+            <tr><td>pdftotext (Poppler)</td><td>39,035</td><td>not counted</td><td>not counted</td><td>not counted</td></tr>
+            <tr><td>pdfplumber 0.11.9</td><td>39,089</td><td class="bad">2,392</td><td class="bad">377 (15.8%)</td><td>110</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>All three found the same characters, to within a fraction of a percent. The difference is the spaces. pdfplumber found just over a third as many words, and one in six of its “words” ran past 25 characters, because it missed the gaps between them. One of the Go libraries we tried found a space in only 0.01% of its text.</p>
+        <p>The other fashionable answer is to show every page to an AI vision model. It works, but it costs far more and takes far longer than reading text the file already contains, and a model that can’t make something out tends to guess.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="how">
+      <h2 id="how">How pdfspec reads a document</h2>
+      <p class="lead">It treats the file as the best witness to its own content, and only looks further when the file runs out.</p>
+      <ol class="sources">
+        <li><h3>The file itself</h3><p>Words from the gaps between letters, reading order from the columns, headings from size and weight, tables from their lines or their alignment. Running headers and page numbers are set aside.</p></li>
+        <li><h3>Text recognition</h3><p>Where the file holds only a picture, such as a scan, a screenshot of a table, or a letter with no name, Tesseract reads it, if you’ve installed it.</p></li>
+        <li><h3>A second opinion</h3><p>Where even that isn’t sure, a vision model you run yourself checks the doubtful word, or describes a chart or a photo.</p></li>
+      </ol>
+      <p class="honest">What nothing could read, pdfspec doesn’t guess. It writes <code>[err]</code> for a letter and <code>[image]</code> for a picture, and tells you which pages they’re on.</p>
+    </section>
+
+    <section aria-labelledby="try">
+      <h2 id="try">Try it on your own files</h2>
+      <div class="try">
+        <div>
+          <h3>Convert a file</h3>
+<pre class="block"><code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0
+pdfspec md report.pdf &gt; report.md</code></pre>
+          <p>Everything a computer-made PDF holds converts with nothing else installed. For scans and pictures, add Tesseract: <code>apt install tesseract-ocr</code>, <code>brew install tesseract</code>, or the UB Mannheim installer on Windows.</p>
+        </div>
+        <div>
+          <h3>Look before you convert</h3>
+<pre class="block"><code>pdfspec probe report.pdf</code></pre>
+          <p><code>probe</code> describes a file without converting it: how pdfspec will read it, which helpers it found, and which pages would need them.</p>
+          <p>It’s also a Go library. Everything the command does is a package you can call yourself.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <nav aria-label="Documentation">
+      <a href="https://github.com/model-harness/pdftools#readme">README</a>
+      <a href="https://github.com/model-harness/pdftools/blob/main/docs/DESIGN.md">Design</a>
+      <a href="https://github.com/model-harness/pdftools/tree/main/docs/adr">Decision records</a>
+      <a href="https://github.com/model-harness/pdftools/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/model-harness/pdftools/blob/main/LICENSE">MIT licence</a>
+    </nav>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // The page as it is drawn: a title and two columns. "ﬁ" is one shape for "fi" that the
+  // font never names, which is what a reader has to mark [err].
+  var title = "Annual report";
+  var col1 = "Sales rose in the north and the west.";
+  var col2 = "Costs fell by a third after the ﬁrst quarter.";
+  var unnamed = "ﬁ";
+
+  var sheet = document.getElementById("sheet");
+  var drawn = document.getElementById("drawn");
+  var read = document.getElementById("read");
+  var btn = document.getElementById("read-btn");
+  var caption = document.getElementById("caption");
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  // Drawn layout: one span per shape. Spaces are only distance, so they are text, not shapes.
+  function shapes(parent, text, cls) {
+    var el = document.createElement("div");
+    if (cls) el.className = cls;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (ch === " ") { el.appendChild(document.createTextNode(" ")); continue; }
+      var s = document.createElement("span");
+      s.textContent = ch;
+      s.setAttribute("data-g", "");
+      el.appendChild(s);
+    }
+    parent.appendChild(el);
+  }
+  shapes(drawn, title, "title");
+  var cols = document.createElement("div");
+  cols.className = "cols";
+  drawn.appendChild(cols);
+  shapes(cols, col1);
+  shapes(cols, col2);
+
+  // Read layout: Markdown. Every shape comes back as a letter, in order; what the drawing never
+  // held (spaces, the heading mark, blank lines) is extra, and the unnamed shape is [err].
+  function md(parent, text, prefix) {
+    if (prefix) extra(parent, prefix);
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (ch === " ") { extra(parent, " "); continue; }
+      var s = document.createElement("span");
+      s.textContent = ch === unnamed ? "[err]" : ch;
+      // Measured bold, as it is drawn, so the letters after it leave it room.
+      if (ch === unnamed) s.style.fontWeight = 700;
+      s.setAttribute("data-g", "");
+      parent.appendChild(s);
+    }
+  }
+  function extra(parent, text) {
+    var s = document.createElement("span");
+    s.textContent = text;
+    s.setAttribute("data-x", "");
+    parent.appendChild(s);
+  }
+  md(read, title, "# ");
+  read.appendChild(document.createTextNode("\n\n"));
+  md(read, col1);
+  read.appendChild(document.createTextNode("\n\n"));
+  md(read, col2);
+
+  var from = drawn.querySelectorAll("[data-g]");
+  var to = read.querySelectorAll("[data-g]");
+  var extras = read.querySelectorAll("[data-x]");
+  var live = [], dots = [], liveExtras = [];
+  var isRead = false;
+
+  function box(el) {
+    var r = el.getBoundingClientRect(), s = sheet.getBoundingClientRect();
+    return { x: r.left - s.left, y: r.top - s.top, h: r.height, size: parseFloat(getComputedStyle(el).fontSize), weight: getComputedStyle(el).fontWeight };
+  }
+
+  function build() {
+    live.forEach(function (n) { n.remove(); });
+    dots.forEach(function (n) { n.remove(); });
+    liveExtras.forEach(function (n) { n.remove(); });
+    live = []; dots = []; liveExtras = [];
+    for (var i = 0; i < from.length; i++) {
+      var a = box(from[i]);
+      var g = document.createElement("span");
+      g.className = "live glyph";
+      g.textContent = from[i].textContent;
+      g.style.fontSize = a.size + "px";
+      g.style.fontWeight = a.weight;
+      g.style.lineHeight = a.h + "px";
+      sheet.appendChild(g);
+      live.push(g);
+      var d = document.createElement("span");
+      d.className = "dot";
+      sheet.appendChild(d);
+      dots.push(d);
+    }
+    for (var j = 0; j < extras.length; j++) {
+      var e = document.createElement("span");
+      e.className = "live extra";
+      e.textContent = extras[j].textContent;
+      sheet.appendChild(e);
+      liveExtras.push(e);
+    }
+    place(false);
+  }
+
+  function place(asRead) {
+    for (var i = 0; i < live.length; i++) {
+      var a = box(from[i]), b = box(to[i]);
+      var g = live[i], k = b.size / a.size;
+      var unnamedShape = from[i].textContent === unnamed;
+      if (asRead) {
+        g.style.transform = "translate(" + b.x + "px," + b.y + "px) scale(" + k + ")";
+        if (unnamedShape) { g.textContent = "[err]"; g.className = "live err"; g.style.opacity = 1; g.style.fontWeight = 700; }
+        else { g.style.fontWeight = getComputedStyle(to[i]).fontWeight; }
+        dots[i].style.opacity = 0;
+      } else {
+        g.style.transform = "translate(" + a.x + "px," + a.y + "px)";
+        if (unnamedShape) { g.textContent = unnamed; g.className = "live glyph"; g.style.opacity = 1; }
+        g.style.fontWeight = getComputedStyle(from[i]).fontWeight;
+        dots[i].style.transform = "translate(" + a.x + "px," + (a.y + a.h * 0.8) + "px)";
+        dots[i].style.opacity = 0.85;
+      }
+    }
+    for (var j = 0; j < liveExtras.length; j++) {
+      var x = box(extras[j]);
+      liveExtras[j].style.fontSize = x.size + "px";
+      liveExtras[j].style.lineHeight = x.h + "px";
+      liveExtras[j].style.transform = "translate(" + x.x + "px," + x.y + "px)";
+      liveExtras[j].style.opacity = asRead ? 1 : 0;
+    }
+  }
+
+  function show(asRead, animate) {
+    isRead = asRead;
+    sheet.classList.toggle("animate", animate && !reduce.matches);
+    place(isRead);
+    btn.textContent = isRead ? "Show the drawing" : "Read the page";
+    caption.textContent = isRead
+      ? "What pdfspec gives back: the words in order, the heading marked, and [err] where a shape never said which letters it was."
+      : "This is what the file holds: letter shapes, each placed at a point. No words, no spaces, no order.";
+  }
+  btn.addEventListener("click", function () { show(!isRead, true); });
+
+  var t;
+  window.addEventListener("resize", function () {
+    clearTimeout(t);
+    t = setTimeout(function () { sheet.classList.remove("animate"); build(); place(isRead); }, 120);
+  });
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () {
+    build();
+    // A link to #read opens the page already read.
+    if (location.hash === "#read") show(true, false);
+  });
+})();
+</script>
+</body>
+</html>
