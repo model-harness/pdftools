@@ -1,0 +1,143 @@
+cmd/pdfspec/md.go
+  s_5cd1b28ed520c1::t_303b9a76a51366 5,13,25,49,51-55,59-61,67,70,72,78,102,106-107,109-112,114
+pdfspec/needs_test.go
+  s_5cd1b28ed520c1::t_9ef187c5e3738d 1-2,15-70,72-74,76-77,79-87,89-90,92-94,96-97,101-105,151
+  s_5cd1b28ed520c1::t_724b1692e0fd9a 3-5,7-14,71,75,78,95,98-100
+  s_5cd1b28ed520c1::t_8f0a3dd983ec76 88,91
+  s_5cd1b28ed520c1::t_e4e67ca89c2145 6,106-150
+cmd/pdfspec/lines_test.go
+  s_5cd1b28ed520c1::t_e4e67ca89c2145 12
+  s_5cd1b28ed520c1::t_546f1f9376305e 74
+docs/adr/0051-the-converter-is-a-library.md
+  s_5cd1b28ed520c1::t_fef61f04906ad1 1-71,74-77,79
+  s_5cd1b28ed520c1::t_85a2537a3d3aa0 73
+  s_5cd1b28ed520c1::t_df3b1f70427469 78
+  s_5cd1b28ed520c1::t_c358df80cbec1b 72
+pdfspec/pdfspec.go
+  s_5cd1b28ed520c1::t_597db7c5bec6b8 99-101,124-125,138-140,144,146,148,151,155-156,163,179
+  s_5cd1b28ed520c1::t_0ccc50b09e5f0f 23
+  s_5cd1b28ed520c1::t_337b79b6fc64ae 1-22,24-98,102-123,126-137,141-143,145,147,149-150,152-154,157-162,164-178,180-206
+pdfspec/recover.go
+  s_5cd1b28ed520c1::t_fab3a6e909e57e 1-37,39-190,192-286,288,290,293-299
+  s_5cd1b28ed520c1::t_193821e9c62ce4 287,289,291-292
+  s_5cd1b28ed520c1::t_168bcec53bfc14 38,191
+cmd/pdfspec/unmapped_test.go
+  s_5cd1b28ed520c1::t_9346794afcd4e1 8,24
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_844c0fbaa16615 13,31,57-64,68,70,74,77,83-84,87-88,90,103-104,117-121,123-132,134-141,143-146
+pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_9ef187c5e3738d 1-2,19-47,49-54,56-89,91-122,217
+  s_5cd1b28ed520c1::t_724b1692e0fd9a 3-4,7,9-18
+  s_5cd1b28ed520c1::t_1b9fd1bb604414 8,48,55,90
+  s_5cd1b28ed520c1::t_92fa52a00d6c3f 5-6,124-213,216
+  s_5cd1b28ed520c1::t_10f91669a9c815 123,214-215
+README.md
+  s_5cd1b28ed520c1::t_7788d5d3f94908 153-154,157,160-168
+cmd/pdfspec/probe.go
+  s_5cd1b28ed520c1::t_fd9f0ba8dca24d 17,67-68,72-73,192-194,455
+  s_5cd1b28ed520c1::t_0417d5ea5c1f0b 14,100-101,231,452
+pdfspec/helpers_test.go
+  s_5cd1b28ed520c1::t_1fd2df8d728dda 1-3,5-6,8-49,57
+  s_5cd1b28ed520c1::t_0eed5aeab8fa57 4,7,50-56
+pdfspec/ocr_test.go
+  s_5cd1b28ed520c1::t_9ef187c5e3738d 1-2,18-52,54-56,58-69,71-75,77-85,87-109,111-178,180-209
+  s_5cd1b28ed520c1::t_d98db8b5f5ff35 210-223
+  s_5cd1b28ed520c1::t_724b1692e0fd9a 3-6,8-17,53,57,70,76,86
+  s_5cd1b28ed520c1::t_1b9fd1bb604414 7,110,179
+pdfspec/needs.go
+  s_5cd1b28ed520c1::t_193821e9c62ce4 98,100,109,111,113,160-161,168,183
+  s_5cd1b28ed520c1::t_fab3a6e909e57e 1-97,99,101-108,110,112,114-127,129,131-159,162-167,169-178,185-197,199-210
+  s_5cd1b28ed520c1::t_517bcbd1aba55a 179-182,184
+  s_5cd1b28ed520c1::t_0ccc50b09e5f0f 128,130
+  s_5cd1b28ed520c1::t_9225b6c5fe8b08 198
+doc/marker_test.go
+  s_5cd1b28ed520c1::t_22873e769bb29e 138
+docs/DESIGN.md
+  s_5cd1b28ed520c1::t_22873e769bb29e 1651,1715,2449,2796
+sectionize/marker_test.go
+  s_5cd1b28ed520c1::t_22873e769bb29e 179
+pdfspec/unmapped.go
+  s_5cd1b28ed520c1::t_0417d5ea5c1f0b 42-43,60
+  s_5cd1b28ed520c1::t_fab3a6e909e57e 1-10,13-16,18-19,22-26,28-32,35-41,44-53,55-58,61
+  s_5cd1b28ed520c1::t_193821e9c62ce4 11-12,17,20-21,27,33-34,54,59
+pdfspec/imgread_test.go
+  s_5cd1b28ed520c1::t_1fd2df8d728dda 1-8,10-291,293,305,309,312-389
+  s_5cd1b28ed520c1::t_c46f0623282e27 9,292,294-304,306-308,310-311
+cmd/pdfspec/ocr_test.go
+  s_5cd1b28ed520c1::t_92e1b976a7c268 16-17,86-90
+  s_5cd1b28ed520c1::t_d98db8b5f5ff35 13,35
+  s_5cd1b28ed520c1::t_8f0a3dd983ec76 110-114
+layout/ordered_test.go
+  s_5cd1b28ed520c1::t_22873e769bb29e 168
+layout/hyphens_test.go
+  s_5cd1b28ed520c1::t_22873e769bb29e 128
+layout/layout.go
+  s_5cd1b28ed520c1::t_22873e769bb29e 606,629,697
+pdfspec/markdown.go
+  s_5cd1b28ed520c1::t_ca4df6ad5cb4ce 3-10,12-18
+  s_5cd1b28ed520c1::t_fff78290e35ff4 19,35,39-40,44,53,61,146,156,161
+  s_5cd1b28ed520c1::t_4e31409ec993f0 33-34
+  s_5cd1b28ed520c1::t_0417d5ea5c1f0b 11,63
+  s_5cd1b28ed520c1::t_79341612a66307 1-2,20-32,36-38,41-43,45-51,54-60,62,64-89,91-128,130-145,147,149-155,157-158,160,162-176
+  s_5cd1b28ed520c1::t_1f8588deecfac9 52
+  s_5cd1b28ed520c1::t_22873e769bb29e 148
+  s_5cd1b28ed520c1::t_193821e9c62ce4 90,129,159
+cmd/pdfspec/okf.go
+  s_5cd1b28ed520c1::t_5b8ab705f28593 10,39-43,47-48,51,56,61
+internal/oneline/oneline.go
+  s_5cd1b28ed520c1::t_0417d5ea5c1f0b 1-22
+pdfspec/backend.go
+  s_5cd1b28ed520c1::t_fab3a6e909e57e 1-13,16,18-27,29-50,52-120
+  s_5cd1b28ed520c1::t_193821e9c62ce4 14-15,17,28,51
+pdfspec/imgread.go
+  s_5cd1b28ed520c1::t_168bcec53bfc14 64,75
+  s_5cd1b28ed520c1::t_fab3a6e909e57e 1-63,65-74,76-190
+cmd/pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_92fa52a00d6c3f 5,12,167-169,171-173,177-179,181,236-242,244-245,247-249,251-252
+cmd/pdfspec/render.go
+  s_5cd1b28ed520c1::t_fd9f0ba8dca24d 17,31,59,146
+cmd/pdfspec/needs_test.go
+  s_5cd1b28ed520c1::t_e4e67ca89c2145 9
+  s_5cd1b28ed520c1::t_546f1f9376305e 36
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_db609869f8d081 8-23
+pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_815f240d6d6a8f 1-2,25-32,35-53,55-123,126-129,131,134-135,137-138,140-146,148-152,155-157,159-166,168-171,173,175-181,185-189,191-231,235-241,243-253,255-263,265-266,268-269,271-273,275-276,278-318,320-403
+  s_5cd1b28ed520c1::t_9952cd04f10f9b 124-125,130,132-133,136,139,147,153-154,158,167,172,174,182-184,190,232-234
+  s_5cd1b28ed520c1::t_ae2498292e0df2 277
+  s_5cd1b28ed520c1::t_168bcec53bfc14 254,267,270,274,319
+  s_5cd1b28ed520c1::t_ca4df6ad5cb4ce 3-24
+  s_5cd1b28ed520c1::t_193821e9c62ce4 33-34,54,242,264
+pdfspec/backend_test.go
+  s_5cd1b28ed520c1::t_f43fc3d41a0191 112,135
+  s_5cd1b28ed520c1::t_1fd2df8d728dda 1-111,113-134,136-178
+pdfspec/recover_test.go
+  s_5cd1b28ed520c1::t_c46f0623282e27 7,194-196
+  s_5cd1b28ed520c1::t_1fd2df8d728dda 1-6,8-193,197-217
+pdfspec/empty_test.go
+  s_5cd1b28ed520c1::t_0eed5aeab8fa57 1-119
+pdfspec/unmapped_test.go
+  s_5cd1b28ed520c1::t_9ef187c5e3738d 1-2,10-21,23-28,30-33
+  s_5cd1b28ed520c1::t_724b1692e0fd9a 3-9,22,29
+cmd/pdfspec/sectionize_test.go
+  s_5cd1b28ed520c1::t_e4e67ca89c2145 16
+  s_5cd1b28ed520c1::t_546f1f9376305e 953
+sectionize/sectionize.go
+  s_5cd1b28ed520c1::t_22873e769bb29e 1224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "da01257fa96f8ffd07d1c7b4d1af55f4bec8d8e0",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
