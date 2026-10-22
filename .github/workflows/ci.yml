@@ -40,3 +40,44 @@ jobs:
       - name: test, 32-bit
         if: runner.os == 'Linux'
         run: GOARCH=386 go test ./...
+
+  # Tesseract built from native/tesseract, as anyone building it from this repository would, and
+  # the tests that run it: the benchmark's every target over all 32 fixtures, scans included. The
+  # install is cached on the scripts and their pins, so a bump in versions.txt rebuilds it.
+  tesseract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: build root
+        shell: bash
+        run: echo "TESS_BUILD_ROOT=$RUNNER_TEMP/tess" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/tess/install
+          key: tesseract-${{ runner.os }}-${{ hashFiles('native/tesseract/**') }}
+      - name: build tesseract
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
+        run: sh native/tesseract/build.sh
+      - name: build tesseract
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: native/tesseract/build.ps1 -Root $env:TESS_BUILD_ROOT
+      - name: test with tesseract
+        shell: bash
+        run: |
+          install="$TESS_BUILD_ROOT/install"
+          exe="$install/bin/tesseract"
+          [ "$RUNNER_OS" = Windows ] && exe="$exe.exe"
+          export PDFSPEC_TEST_TESSERACT="$exe" TESSDATA_PREFIX="$install/share/tessdata"
+          "$exe" --version
+          go test ./ocr/tesseract ./cmd/pdfspec

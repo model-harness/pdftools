@@ -124,7 +124,11 @@ of text need Tesseract, and charts and photos need a vision model. `pdfspec` use
 finds, and `probe` tells you which ones those are.
 
 - Tesseract (version 5, with English): `apt install tesseract-ocr` on Debian and Ubuntu,
-  `brew install tesseract` on macOS, or the UB Mannheim installer on Windows.
+  `brew install tesseract` on macOS, or the UB Mannheim installer on Windows. You can also
+  build it from this repository with `native/tesseract/build.sh` on Linux and macOS, or
+  `native/tesseract/build.ps1` on Windows. That builds the version CI tests against, from
+  checked downloads, with the network and archive libraries left out, and prints the two
+  settings that point `pdfspec` at it.
 - A vision model, through [inferd](https://github.com/3rg0n/inferd). We tested with Gemma 4
   (`gemma-4-e4b`).
 

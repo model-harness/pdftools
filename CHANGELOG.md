@@ -5,6 +5,15 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-10-22 (Tesseract built here)
+
+- **`native/tesseract/` builds Tesseract 5.5.3 from source**, moved from print2, with
+  `build.ps1` for Windows and `build.sh` for Linux and macOS. The engine has no curl, no
+  libarchive and no legacy engine, and every archive and the English model are pinned by SHA-256
+  in `versions.txt`. libpng moves to 1.6.59. ADR 0050.
+- **CI builds it on Linux, Windows and macOS and runs the Tesseract tests**, so the benchmark's
+  every target is held over all 33 fixtures, scans included, on every push.
+
 ## [1.0.1] — 2026-10-22
 
 Fixes for web pages printed to PDF, and the first release with prebuilt binaries.

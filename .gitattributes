@@ -33,3 +33,5 @@ go.sum text eol=lf
 *.gz binary
 # A shell script with CRLF endings fails under sh with a carriage-return error, so the installer stays LF.
 *.sh text eol=lf
+# build.sh reads versions.txt with awk, where a carriage return would end up in the last URL.
+native/tesseract/versions.txt text eol=lf
