@@ -80,4 +80,11 @@ jobs:
           [ "$RUNNER_OS" = Windows ] && exe="$exe.exe"
           export PDFSPEC_TEST_TESSERACT="$exe" TESSDATA_PREFIX="$install/share/tessdata"
           "$exe" --version
-          go test ./ocr/tesseract ./cmd/pdfspec
+          # A test that cannot find the engine skips, and a skip passes, so one that names it
+          # fails the job here instead.
+          go test -v ./ocr/tesseract ./cmd/pdfspec > test.log 2>&1 || { tail -50 test.log; exit 1; }
+          grep -E -- '^(--- |ok|FAIL)' test.log | grep -v -- '--- PASS' || true
+          if grep -q 'names no tesseract' test.log; then
+            echo "a test did not find tesseract"; exit 1
+          fi
+          grep -- '--- PASS: TestBenchmarkWithTesseract' test.log
