@@ -142,13 +142,26 @@ func ImageBlocks(im *doc.Image) []doc.Block {
 // block below the image's top that shares its columns, or after the last block above it that
 // does, or last.
 func placeImage(p *doc.Page, box geom.Rect, blocks []doc.Block) {
-	b := doc.Block{Box: box}
+	at := ImageSlot(p.Blocks, box)
+	p.Blocks = append(p.Blocks[:at], append(append([]doc.Block(nil), blocks...), p.Blocks[at:]...)...)
+}
+
+// PlaceImage places im's blocks among p's blocks, as Images places each image it keeps.
+func PlaceImage(p *doc.Page, im *doc.Image) {
+	placeImage(p, im.Box, ImageBlocks(im))
+}
+
+// ImageSlot is where an image at box goes among one page's blocks, in their reading order: the
+// index of the first block below the image's top that shares its columns, or the one after the
+// last block above it that does, or the end. The tagged path asks it too, for an image no
+// structure element claims, so that both paths put one image in one place.
+func ImageSlot(blocks []doc.Block, box geom.Rect) int {
 	at, after := -1, -1
-	for i, o := range p.Blocks {
-		if o.Box.X1 <= b.Box.X0 || o.Box.X0 >= b.Box.X1 {
+	for i, o := range blocks {
+		if o.Box.X1 <= box.X0 || o.Box.X0 >= box.X1 {
 			continue
 		}
-		if o.Box.Y1 <= b.Box.Y1 {
+		if o.Box.Y1 <= box.Y1 {
 			if at < 0 {
 				at = i
 			}
@@ -158,12 +171,11 @@ func placeImage(p *doc.Page, box geom.Rect, blocks []doc.Block) {
 	}
 	switch {
 	case at >= 0 && at > after:
+		return at
 	case after >= 0:
-		at = after + 1
-	default:
-		at = len(p.Blocks)
+		return after + 1
 	}
-	p.Blocks = append(p.Blocks[:at], append(append([]doc.Block(nil), blocks...), p.Blocks[at:]...)...)
+	return len(blocks)
 }
 
 // hiddenOver is the area of p's invisible text inside box, the text layer an OCR'd PDF lays

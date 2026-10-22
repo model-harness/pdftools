@@ -1634,3 +1634,69 @@ func fragBox(fr *frag) geom.Rect {
 		return geom.NewRect(r.X0-fr.height, r.Y0-fr.height, r.X1+fr.height, r.Y1+fr.height)
 	}
 }
+
+// ligatures are the Latin presentation-form ligatures, U+FB00 to U+FB06, and the letters each
+// one joins: its compatibility decomposition, and only these seven, since NFKC over the whole text
+// would also make a superscript two a two and a fraction three characters.
+var ligatures = map[rune]string{
+	'\uFB00': "ff",
+	'\uFB01': "fi",
+	'\uFB02': "fl",
+	'\uFB03': "ffi",
+	'\uFB04': "ffl",
+	'\uFB05': "st",
+	'\uFB06': "st",
+}
+
+// spellLigatures spells out each ligature in s that a letter touches. A font that draws "fi" as
+// one glyph often names it by the ligature's own code point, and written that way "deﬁnitions" is
+// a word no search for "definitions" finds and a character a model reads as one letter (#24).
+// Inside a word a ligature is typesetting; standing alone it is the character itself, as in ISO
+// 32000-2's table of glyph names, which sets "ﬀ" beside "ff" and says nothing if both read "ff".
+// Every ligature encodes as three bytes beginning 0xEF, so text without that byte is returned as
+// it is.
+func spellLigatures(s string) string {
+	out, _ := spell(s)
+	return out
+}
+
+// spell is spellLigatures, with where each byte of s went: at[i] is the offset in the result
+// of the rune that began at byte i of s, and at[len(s)] is the result's length.
+func spell(s string) (string, []int) {
+	if strings.IndexByte(s, 0xEF) < 0 {
+		return s, nil
+	}
+	at := make([]int, len(s)+1)
+	var b strings.Builder
+	prev := rune(-1)
+	for i, r := range s {
+		at[i] = b.Len()
+		next, _ := utf8.DecodeRuneInString(s[i+utf8.RuneLen(r):])
+		if l, ok := ligatures[r]; ok && (unicode.IsLetter(prev) || i+utf8.RuneLen(r) < len(s) && unicode.IsLetter(next)) {
+			b.WriteString(l)
+		} else {
+			b.WriteRune(r)
+		}
+		prev = r
+	}
+	at[len(s)] = b.Len()
+	return b.String(), at
+}
+
+// spellBlock spells out the ligatures in b's spans, and moves each line's start, a byte offset
+// into the span it begins in, to where that byte went: a ligature's three bytes become two or
+// three letters, and a line after it in the same span would otherwise start a byte off.
+func spellBlock(b *doc.Block) {
+	for si := range b.Spans {
+		text, at := spell(b.Spans[si].Text)
+		if at == nil {
+			continue
+		}
+		b.Spans[si].Text = text
+		for li := range b.Lines {
+			if l := &b.Lines[li]; l.Span == si && l.Offset < len(at) {
+				l.Offset = at[l.Offset]
+			}
+		}
+	}
+}

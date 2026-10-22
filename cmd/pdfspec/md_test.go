@@ -357,6 +357,10 @@ func TestMDOutlineConservesText(t *testing.T) {
 					subst += alnumLen(b.Replacement)
 				case b.Alt != "" && strings.TrimSpace(b.Text()) == "":
 					subst += alnumLen(b.Alt)
+				case b.Role == doc.RoleImage && strings.TrimSpace(b.Text()) == "":
+					// "[image]", the sink's word for an image nothing describes: markup,
+					// which the flat conversion, placing no images, does not write.
+					subst += alnumLen("image")
 				}
 			})
 			if gained != subst+ids {

@@ -191,6 +191,9 @@ func (e *Extractor) Page(n int) (doc.Page, error) {
 	run.walk(data, res, geom.Identity, 0)
 
 	p.Blocks = run.blocks(e.opt)
+	for bi := range p.Blocks {
+		spellBlock(&p.Blocks[bi])
+	}
 	p.Rules = run.rules
 	p.Gutters = run.gutters
 	p.Images = run.images

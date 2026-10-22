@@ -510,10 +510,11 @@ func TestListingIndentsReachTheirListing(t *testing.T) {
 			}
 		}
 		// Every recovered run reaches a block, so no listing is left flush-left and no
-		// whitespace-only block appears in unplaced text.
+		// whitespace-only block appears in unplaced text. An image line has no text by design:
+		// a page the tree built nothing for gives its images to Unplaced (#23).
 		for i := range out.Unplaced {
 			for _, b := range out.Unplaced[i].Blocks {
-				if strings.TrimSpace(b.Text()) == "" {
+				if b.Role != doc.RoleImage && strings.TrimSpace(b.Text()) == "" {
 					t.Errorf("%s: unplaced whitespace-only block %q", name, b.Text())
 				}
 			}

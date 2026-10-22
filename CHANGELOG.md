@@ -5,6 +5,19 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-22 (web pages printed to PDF)
+
+- **Inline code stays in its sentence and its table cell** on the tagged path, where it was
+  fenced after the block and left "( )" behind (#21).
+- **A label that wraps onto another line keeps its space**: "installs (MAU)", where Chrome's
+  wide leading made the extractor read the two lines as two blocks (#22).
+- **An image no structure element claims is placed where it is painted**, as the untagged path
+  places it: a chart Chrome draws as an SVG image, and four figures in ISO 32000-2 (#23).
+- **A ligature inside a word is spelled as its letters**: "definitions", "traffic". One standing
+  alone, as in a table of glyph names, is kept (#24).
+- ADR 0049. New fixture `chrome-report`, scoring 1.000 on every dimension; xelatex-article's CER
+  goes from 0.008 to 0.000.
+
 ## [1.0.0] — 2026-10-21
 
 The converter issue #1 describes, with the gold set's targets met and enforced in CI. Closes

@@ -161,6 +161,7 @@ work.
 | `type3-words.tex` | Words and parts of words in those fonts, among text that has a mapping | no |
 | `xelatex-article.tex` | A short article from XeTeX, with Identity-H CID fonts | no |
 | `chrome-article.html` | The same article printed by Chrome | yes |
+| `chrome-report.html` | A web report printed by Chrome: inline code, wrapped labels, an unmarked image, ligatures | yes |
 | `scan-*.tex` | Four of the above as degraded 200 dpi scans, with no text | no |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
@@ -177,6 +178,7 @@ lualatex -interaction=nonstopmode tagged-lists.tex
 lualatex -interaction=nonstopmode tagged-table.tex
 xelatex  -interaction=nonstopmode xelatex-article.tex
 chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-article.pdf chrome-article.html
+chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-report.pdf chrome-report.html
 ```
 
 `table-across-pages.tex` needs two `pdflatex` runs, as every `longtable` does.

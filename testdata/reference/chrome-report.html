@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<!--
+  chrome-report: a dashboard-style report printed by Chrome, the shape of a web analytics report.
+
+  It holds what a report printed from a web page holds and a book does not: inline code inside
+  a sentence and inside a table cell, short labels in narrow cards that wrap onto a second line,
+  an image that is no figure, and words a font sets with ligatures. Rebuild with:
+
+    chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-report.pdf chrome-report.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ferry Usage Report</title>
+<style>
+  @page { size: 6in 6in; margin: 0.5in; }
+  body { font-family: "Segoe UI", "DejaVu Sans", sans-serif; font-size: 11pt; }
+  .cards { display: flex; gap: 12px; }
+  .card { width: 0.95in; border: 1px solid #ccc; padding: 6px; }
+  .label { font-size: 9pt; line-height: 1.9; }
+  .value { font-size: 18pt; font-weight: bold; }
+  code { font-family: Consolas, monospace; }
+  table { border-collapse: collapse; }
+  td { border: 1px solid black; padding: 2px 6px; }
+  .heat { width: 2.2in; height: 0.7in; background-image: url("image-kinds-chart.png"); background-size: cover; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+</style>
+</head>
+<body>
+<h1>Ferry Usage Report</h1>
+<p>Each sailing is counted once, by its <code>sailing_id</code>, and the office files the
+deﬁnitions with the traﬃc figures.</p>
+<div class="cards">
+<div class="card"><div class="label">Monthly passengers on the north route</div><div class="value">612</div></div>
+<div class="card"><div class="label">Sailings that left on time</div><div class="value">85%</div></div>
+</div>
+<h2>Terms</h2>
+<table>
+<tr><td>Sailing</td><td>One departure (<code>sailing_id</code>), counted once.</td></tr>
+<tr><td>Excluded</td><td>Test runs and the rows in <code>EXCLUDED</code>.</td></tr>
+</table>
+<svg width="220" height="70" xmlns="http://www.w3.org/2000/svg"><image href="image-kinds-chart.png" x="0" y="0" width="220" height="70" preserveAspectRatio="none"/></svg>
+<p>The figures are final.</p>
+</body>
+</html>

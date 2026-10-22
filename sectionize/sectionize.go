@@ -31,6 +31,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/geom"
 	"github.com/model-harness/pdftools/layout"
 	"github.com/model-harness/pdftools/tag"
@@ -116,6 +117,7 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 	out.Sections = b.roots
 	out.Preamble = b.preamble
 	out.Unplaced = b.index.unplaced(d)
+	placeUnclaimed(out, d, b.index)
 
 	return out, b.stats(out)
 }
@@ -454,6 +456,30 @@ func breakAtBaselines(blk *doc.Block) {
 	blk.Spans = out
 }
 
+// wrapJoin reports whether cur begins on a line below the one prev ends on, on the same page: a
+// join the extractor did not make, between two lines it read as two blocks. Measured from the top
+// of cur to the bottom of prev and not between their baselines, because a span is one box over
+// all its lines: ", and the office files the" running on to "definitions" has its bottom on the
+// second line and its top on the first, and it continues prev's line rather than wrapping from
+// it. A fifth of the type size is the slack for line boxes that touch.
+//
+// Not across a page, which TestNoSpaceIsInferredAcrossAPageBoundary settles for both rules here:
+// all 7 of the corpus's cross-page joins carry the extractor's space already. And only between
+// two spans the extractor positioned, since a span with no box has no line to be below.
+func wrapJoin(prev, cur *doc.Span) bool {
+	if prev.MCID < 0 || cur.MCID < 0 || prev.Page <= 0 || prev.Page != cur.Page || prev.Box.IsZero() || cur.Box.IsZero() {
+		return false
+	}
+	// A slash joins what follows it: extract's stacked-fraction rule writes one after a numerator
+	// (fraction.go), whose denominator sits under it like a line, and a path or URL wraps after
+	// one. ISO 32000-2's "(𝑥0 + 𝑥1)/2" came out "/ 2" without this.
+	if strings.HasSuffix(prev.Text, "/") {
+		return false
+	}
+	size := math.Max(prev.Style.Size, cur.Style.Size)
+	return cur.Box.Y1 <= prev.Box.Y0+0.2*size && cur.Box.X0 <= prev.Box.X0+0.1*size
+}
+
 // spaceAtGaps restores the space at a join the tagged path closed by dropping the span that
 // carried it.
 //
@@ -488,11 +514,27 @@ func breakAtBaselines(blk *doc.Block) {
 // advance (block.go:267) and widening the type every sink reads to serve one rule is the wrong
 // trade. See spaceAdvance for the estimate and for the 4× error the first version of this rule
 // made by skipping it.
-func spaceAtGaps(blk *doc.Block) {
+//
+// A join across a line is a wrap, and gets the space extract.WrapSpace gives a wrap, unless the
+// block's lines are its content (lines, a code listing, whose line ends breakAtBaselines writes as
+// newlines). The extractor closes a wrap with a space when it joins the two lines itself, but a
+// label set in narrow cards with wide leading reaches it as two blocks, and the element that
+// holds both lines is all that joins them: Chrome's "Monthly engaged installs" and "(MAU)" came
+// out "installs(MAU)" (#22). WrapSpace is the extractor's own answer, so a hyphenated word, a
+// script set without spaces and a line already ending in one are all left as the extractor
+// would leave them.
+//
+// held[i] says that span i and the one before it are from one of the extractor's blocks, a join it
+// already made, line end and all, so the space it decided on is in the text or rightly absent.
+// ISO/TS 32005's "exposi-" and "tion" are one block, and the hyphen between them, its own marked
+// content, is gone by this join (layout.Hyphens removes it); a wrap's space would split the word.
+// The card labels this rule is for reached the extractor as two blocks, which no one had joined.
+func spaceAtGaps(blk *doc.Block, lines bool, held []bool) {
 	out := make([]doc.Span, 0, len(blk.Spans))
 	for i := range blk.Spans {
 		sp := &blk.Spans[i]
-		if n := len(out); n > 0 && gapSpace(&out[n-1], sp) {
+		wrap := !lines && !(i < len(held) && held[i])
+		if n := len(out); n > 0 && (gapSpace(&out[n-1], sp) || wrap && wrapJoin(&out[n-1], sp) && extract.WrapSpace(out, sp.Text)) {
 			out = append(out, doc.Span{Text: " ", MCID: -1})
 		}
 		out = append(out, *sp)
@@ -991,7 +1033,7 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 	pg.add(e.Page)
 	inOrder(e,
 		func(refs []tag.MCRef) {
-			*spans = append(*spans, substituted(e, b.index.take(refs))...)
+			*spans = append(*spans, b.index.substitute(e, b.index.take(refs))...)
 			for _, r := range refs {
 				pg.add(r.Page)
 			}
@@ -1003,7 +1045,7 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 				*nested = append(*nested, k)
 				return
 			}
-			if r, ok := blockRole(k.Role); ok && !(wraps && r == doc.RoleParagraph) {
+			if r, ok := blockRole(k.Role); ok && !(wraps && r == doc.RoleParagraph) && !inlineCode(e, k) {
 				*nested = append(*nested, k)
 				return
 			}
@@ -1030,6 +1072,16 @@ func (b *builder) gather(e *tag.Elem, spans *[]*doc.Span, nested *[]*tag.Elem, p
 			}
 			b.gather(k, spans, nested, pg, wraps, lines)
 		})
+}
+
+// inlineCode reports whether k, a kid of e, is code inside e's text rather than a listing of its
+// own: a Code that shares its parent with anything else, the parent's own content or another
+// kid. ISO 32000 counts Code among the inline-level elements, and Chrome tags an HTML <code>
+// that way, a Code between the runs of the sentence or cell it sits in. Detached as a block, it
+// left "( )" in the cell and its text fenced after the table (#21). A Code that is its parent's
+// only content is a listing the parent wraps, and is still a block.
+func inlineCode(e, k *tag.Elem) bool {
+	return k.Role == tag.RoleCode && (len(e.Content) > 0 || len(e.Kids) > 1)
 }
 
 // span is an inclusive page range being accumulated. Zero is "no page", so it is
@@ -1112,7 +1164,13 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 	// entries. The spans the two calls below insert carry -1 and so cannot change the set,
 	// which is why this reads correctly here rather than after them.
 	blk.SetMCIDs()
-	spaceAtGaps(&blk)
+	held := make([]bool, len(spans))
+	for i := 1; i < len(spans); i++ {
+		a, okA := b.index.block[spans[i-1]]
+		c, okC := b.index.block[spans[i]]
+		held[i] = okA && okC && a == c
+	}
+	spaceAtGaps(&blk, linesText(role), held)
 	if linesText(role) {
 		breakAtBaselines(&blk)
 	}
@@ -1407,6 +1465,10 @@ type index struct {
 	images map[key][]*doc.Image
 	used   map[*doc.Image]bool
 	page   map[*doc.Image]int
+
+	// block numbers the extractor's blocks across the document, by span: two spans with one
+	// number are text the extractor already joined, line ends and all (spaceAtGaps).
+	block map[*doc.Span]int
 }
 
 func newIndex(d *doc.Document) *index {
@@ -1416,7 +1478,9 @@ func newIndex(d *doc.Document) *index {
 		images:   map[key][]*doc.Image{},
 		used:     map[*doc.Image]bool{},
 		page:     map[*doc.Image]int{},
+		block:    map[*doc.Span]int{},
 	}
+	blocks := 0
 	for pi := range d.Pages {
 		p := &d.Pages[pi]
 		for ii := range p.Images {
@@ -1428,8 +1492,10 @@ func newIndex(d *doc.Document) *index {
 		}
 		for bi := range p.Blocks {
 			blk := &p.Blocks[bi]
+			blocks++
 			for si := range blk.Spans {
 				sp := &blk.Spans[si]
+				ix.block[sp] = blocks
 				if sp.MCID < 0 {
 					// Drawn outside any marked-content sequence, so no element can name
 					// it and no key would ever be looked up. Indexed anyway when it is a
@@ -1773,5 +1839,18 @@ func (ix *index) spansOf(e *tag.Elem) []*doc.Span {
 			}
 		},
 		func(k *tag.Elem) { out = append(out, ix.spansOf(k)...) })
+	return out
+}
+
+// substitute is substituted, with the span it builds numbered in the block of the first span it
+// stands for, since it is that text: ISO/TS 32005 declares the hyphen of "exposi-" a soft hyphen,
+// and the copy standing for it has to join "exposi" and "tion" as the extractor did (spaceAtGaps).
+func (ix *index) substitute(e *tag.Elem, spans []*doc.Span) []*doc.Span {
+	out := substituted(e, spans)
+	if len(out) == 1 && len(spans) > 0 && out[0] != spans[0] {
+		if blk, ok := ix.block[spans[0]]; ok {
+			ix.block[out[0]] = blk
+		}
+	}
 	return out
 }
