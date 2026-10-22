@@ -1,0 +1,46 @@
+README.md
+  s_5cd1b28ed520c1::t_a93c1a60659fc2 127-131
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_71be7e9e8d1e15 8-16
+.gitignore
+  s_5cd1b28ed520c1::t_767226ef7e46a6 134-136
+  s_5cd1b28ed520c1::t_68cfe536574c57 133
+.github/workflows/ci.yml
+  s_5cd1b28ed520c1::t_e7b987037fb4d5 54-56,76
+  s_5cd1b28ed520c1::t_f30287d5e78f6f 43-53,57-75,77-83
+native/tesseract/build.ps1
+  s_5cd1b28ed520c1::t_5f663e22b6848f 137-140
+  s_5cd1b28ed520c1::t_7222872bac5bd5 165
+  s_5cd1b28ed520c1::t_e056254a0dda12 235-237,239-241
+  s_5cd1b28ed520c1::t_d6793d80214119 246-247,249-250
+  s_5cd1b28ed520c1::t_ecc4ccf2ccba98 1-104,107-111,114-136,141-164,166-234,238,242-245,248,251-258
+  s_5cd1b28ed520c1::t_923e7c0f822244 112-113
+  s_5cd1b28ed520c1::t_fc0c3d3046aa2b 105-106
+.gitattributes
+  s_5cd1b28ed520c1::t_767226ef7e46a6 36-37
+native/tesseract/versions.txt
+  s_5cd1b28ed520c1::t_a0bc85e9af0e3c 1-10
+docs/adr/0050-tesseract-is-built-here.md
+  s_5cd1b28ed520c1::t_e407dd07156864 1-34,37-44
+  s_5cd1b28ed520c1::t_338a537bcd2669 35-36
+native/tesseract/build.sh
+  s_5cd1b28ed520c1::t_bdd34f948f0fd6 1-31,34-45,48-138,141-149,157-164
+  s_5cd1b28ed520c1::t_1d0b4de98e4237 150-156
+  s_5cd1b28ed520c1::t_db4f73ce3f9b34 32-33,46-47,139-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "b27e7e3d04187fdd78c23ec397f448389bfd3734",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
