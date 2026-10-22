@@ -769,7 +769,29 @@ func TestManySegmentsIsNotQuadratic(t *testing.T) {
 	}
 	b.WriteString("f")
 
-	path := onePagePDF(t, b.String(), 612, 792)
+	// Timed against a page of one full-page fill on the same raster, the fastest of three each,
+	// so that a shared CI runner slowed by its neighbours slows both: an absolute 100ms failed at
+	// 102ms on one. The fill is the same per-row scan with one edge pair, so it is the cost a
+	// rescan multiplies and bucketing does not.
+	zigzag := fastest(t, onePagePDF(t, b.String(), 612, 792))
+	plain := fastest(t, onePagePDF(t, "0 g 0 0 612 792 re f", 612, 792))
+	ratio := float64(zigzag) / float64(plain)
+	if ratio > ratioBound {
+		t.Errorf("10,000 segments took %v, %.1f times a full-page fill's %v, want under %v times", zigzag, ratio, plain, ratioBound)
+	} else {
+		t.Logf("10,000 segments in %v, %.1f times a full-page fill's %v", zigzag, ratio, plain)
+	}
+}
+
+// fastest renders path's one page three times and returns the quickest.
+// ratioBound is how many times a full-page fill's time 10,000 segments may take. Measured, the
+// zig-zag is 7.1 to 8.7 times the fill on amd64 and 12.3 to 12.6 on 386, where the edges rescanned
+// per sample took 154ms for the fill alone against a 2.5ms page, over 61 times. 40 is three times
+// the slowest measured and two thirds of the way to the defect.
+const ratioBound = 40
+
+func fastest(t *testing.T, path string) time.Duration {
+	t.Helper()
 	s, err := pcstore.Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -777,20 +799,13 @@ func TestManySegmentsIsNotQuadratic(t *testing.T) {
 	defer func() { _ = s.Close() }()
 	o := render.DefaultOptions
 	o.DPI = 72
-
-	start := time.Now()
-	if _, err := New(s).Page(1, o); err != nil {
-		t.Fatalf("Page: %v", err)
+	best := time.Duration(math.MaxInt64)
+	for range 3 {
+		start := time.Now()
+		if _, err := New(s).Page(1, o); err != nil {
+			t.Fatalf("Page: %v", err)
+		}
+		best = min(best, time.Since(start))
 	}
-	// 100 ms, from both measurements rather than from taste: as shipped this is 20 ms and with
-	// the edges rescanned per sample the fill alone is 154 ms, so the bound sits 5× above the one
-	// and 1.5× below the other. A loaded machine has room; a rescan does not. Of the 20, the fill
-	// is 8; the rest is the hairlines pdfium strokes where the zig-zag folds back along itself,
-	// on the rows where its integer y repeats, which go through the same scan (zeroArea).
-	if d := time.Since(start); d > 100*time.Millisecond {
-		t.Errorf("10,000 segments took %v, want under 100ms — 20ms is the measured figure and"+
-			" 154ms is what rescanning every edge per sample costs the fill alone", d)
-	} else {
-		t.Logf("10,000 segments in %v", d)
-	}
+	return best
 }
