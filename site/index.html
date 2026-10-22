@@ -227,8 +227,8 @@ pdfspec md report.pdf &gt; report.md</code></pre>
       <p class="lead">It treats the file as the best witness to its own content, and only looks further when the file runs out.</p>
       <ol class="sources">
         <li><h3>The file itself</h3><p>Words from the gaps between letters, reading order from the columns, headings from size and weight, tables from their lines or their alignment. Running headers and page numbers are set aside.</p></li>
-        <li><h3>Text recognition</h3><p>Where the file holds only a picture, such as a scan, a screenshot of a table, or a letter with no name, Tesseract reads it, if you’ve installed it.</p></li>
-        <li><h3>A second opinion</h3><p>Where even that isn’t sure, a vision model you run yourself checks the doubtful word, or describes a chart or a photo.</p></li>
+        <li><h3>Text recognition</h3><p>Where the file holds only a picture, such as a scan, a screenshot of a table, or a letter with no name, Tesseract, which comes with pdfspec, reads it.</p></li>
+        <li><h3>A second opinion</h3><p>Where even that isn’t sure, a vision model you run yourself, through <a href="https://inferd.io">inferd</a>, checks the doubtful word, or describes a chart or a photo.</p></li>
       </ol>
       <p class="honest">What nothing could read, pdfspec doesn’t guess. It writes <code>[err]</code> for a letter and <code>[image]</code> for a picture, and tells you which pages they’re on.</p>
     </section>
@@ -241,7 +241,7 @@ pdfspec md report.pdf &gt; report.md</code></pre>
 <pre class="block"><code>curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | sh
 pdfspec md report.pdf &gt; report.md</code></pre>
           <p>On Windows, run <code>irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex</code> in PowerShell. Either installer checks the download against the release&rsquo;s checksums first. With Go, <code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.1</code> works too.</p>
-          <p>Everything a computer-made PDF holds converts with nothing else installed. For scans and pictures, add Tesseract: <code>apt install tesseract-ocr</code>, <code>brew install tesseract</code>, or the UB Mannheim installer on Windows.</p>
+          <p>That is the whole tool. It comes with its own copy of Tesseract, so scanned pages are read without anything else to install. To have pictures and charts described too, add <code>PDFSPEC_WITH_INFERD=1</code> to the install, which sets up <a href="https://inferd.io">inferd</a>, a vision model that runs on your own machine. Its model is a 6&nbsp;GB download the first time it starts.</p>
         </div>
         <div>
           <h3>Look before you convert</h3>

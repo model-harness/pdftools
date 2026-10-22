@@ -11,8 +11,10 @@ pdfspec md report.pdf > report.md
 On Windows, install it from PowerShell with
 `irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex`. Both
 installers download the build for your machine from the latest release and check it against the
-release's checksums before installing it. If you have Go, you can also run
-`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.1`.
+release's checksums before installing it, along with the copy of Tesseract it uses to read
+scans. If you have Go, you can also run
+`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.1`, which builds `pdfspec` alone
+and reads scans with a Tesseract on your PATH.
 
 If you've ever tried this with an ordinary PDF library, you probably got back text with words
 run together, two columns shuffled into one, and a page number stuck in the middle of a
@@ -119,21 +121,31 @@ scanned pages. Run `pdfspec <command> -h` for the options.
 
 ## Reading scans and pictures
 
-Most documents made on a computer convert fine with nothing else installed. Scans and pictures
-of text need Tesseract, and charts and photos need a vision model. `pdfspec` uses whichever it
-finds, and `probe` tells you which ones those are.
+Everything you need to read scans comes in the box. Each release of `pdfspec` ships with its own
+copy of Tesseract, the open-source text recognizer, built from this repository with the English
+model. The installers put it beside `pdfspec`, so a scanned page, a screenshot of a table, or a
+letter whose font never said what it was gets read without anything else to install.
 
-- Tesseract (version 5, with English): `apt install tesseract-ocr` on Debian and Ubuntu,
-  `brew install tesseract` on macOS, or the UB Mannheim installer on Windows. You can also
-  build it from this repository with `native/tesseract/build.sh` on Linux and macOS, or
-  `native/tesseract/build.ps1` on Windows. That builds the version CI tests against, from
-  checked downloads, with the network and archive libraries left out, and prints the two
-  settings that point `pdfspec` at it.
-- A vision model, through [inferd](https://github.com/3rg0n/inferd). We tested with Gemma 4
-  (`gemma-4-e4b`).
+Describing pictures and charts is the one thing that needs more. For that, `pdfspec` asks a
+vision model you run on your own machine, through [inferd](https://inferd.io). The model also
+gives a second opinion on any word Tesseract isn't sure of. To install inferd along with
+`pdfspec`, set `PDFSPEC_WITH_INFERD=1`:
 
-Without either, `pdfspec` still converts everything the file itself holds, and marks the rest.
-If you've installed them somewhere unusual, `pdfspec md -h` shows how to point at them.
+```sh
+curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | PDFSPEC_WITH_INFERD=1 sh
+```
+
+On Windows, run `$env:PDFSPEC_WITH_INFERD = '1'` before the PowerShell command above. inferd runs
+as your own background service and works on an ordinary CPU, no graphics card needed. The first
+time it starts, it downloads its model, Gemma 4 (`gemma-4-e4b`), which is about 6 GB. You can also
+install it yourself by following [inferd.io](https://inferd.io).
+
+Without inferd, `pdfspec` reads everything else and writes `[image]` where a picture would have
+been described. `pdfspec probe` tells you which engines it found.
+
+If you'd rather use your own Tesseract, `pdfspec md -h` shows how to point at it. You can also
+build the one `pdfspec` ships yourself, with `native/tesseract/build.sh --portable` or
+`native/tesseract/build.ps1 -Portable`.
 
 ## How we know it's good
 

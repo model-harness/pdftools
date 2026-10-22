@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/ocr"
@@ -97,8 +99,8 @@ type engineFlags struct {
 }
 
 func (e *engineFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&e.exe, "tesseract", "", "tesseract executable (default: look on PATH)")
-	fs.StringVar(&e.tessdata, "tessdata", "", "directory of Tesseract language models (default: TESSDATA_PREFIX or the install's)")
+	fs.StringVar(&e.exe, "tesseract", "", "tesseract executable, or off (default: PDFSPEC_TESSERACT, else the one pdfspec ships, else PATH)")
+	fs.StringVar(&e.tessdata, "tessdata", "", "directory of Tesseract language models (default: the shipped Tesseract's own, else TESSDATA_PREFIX or the install's)")
 	fs.StringVar(&e.lang, "lang", "eng", "Tesseract language model")
 	fs.Float64Var(&e.dpi, "dpi", pdfspec.DefaultOptions.DPI, "resolution pages are rasterized at before OCR")
 	fs.Float64Var(&e.minConf, "min-conf", pdfspec.DefaultOptions.MinConf, "without a second reader, the Tesseract confidence (0-100) below which a word is written [err]")
@@ -127,8 +129,54 @@ func (e engineFlags) options() pdfspec.Options {
 	o := pdfspec.DefaultOptions
 	o.Tesseract, o.Inferd = envEngines(e.exe, e.inferd)
 	o.TessData, o.Lang, o.DPI, o.MinConf = e.tessdata, e.lang, e.dpi, e.minConf
+	// With neither a flag nor the environment naming one, the Tesseract a release ships comes
+	// before any on PATH: it is the build the gold set is measured with. Its model is its own,
+	// whatever TESSDATA_PREFIX says, since that names the model of some other install.
+	if o.Tesseract == "" {
+		if exe, data := bundledTesseract(selfDir()); exe != "" {
+			o.Tesseract = exe
+			if o.TessData == "" {
+				o.TessData = data
+			}
+		}
+	}
 	o.Log = os.Stderr
 	return o
+}
+
+// bundledTesseract is the Tesseract a release ships with the command in dir, and its model
+// directory, or "" for both when there is none. The archive unpacks it to dir/tesseract, and
+// install.sh puts it in dir/../share/pdfspec/tesseract, beside ~/.local/bin rather than in it.
+func bundledTesseract(dir string) (exe, tessdata string) {
+	if dir == "" {
+		return "", ""
+	}
+	name := "tesseract"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	for _, root := range []string{
+		filepath.Join(dir, "tesseract"),
+		filepath.Join(dir, "..", "share", "pdfspec", "tesseract"),
+	} {
+		root = filepath.Clean(root)
+		if fi, err := os.Stat(filepath.Join(root, name)); err == nil && fi.Mode().IsRegular() {
+			return filepath.Join(root, name), filepath.Join(root, "tessdata")
+		}
+	}
+	return "", ""
+}
+
+// selfDir is the directory the running command is in, through any symlink to it, or "".
+func selfDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	return filepath.Dir(exe)
 }
 
 // envEngines are the tesseract executable and inferd endpoint the flags exe and addr name, or

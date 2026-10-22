@@ -6,6 +6,7 @@ import (
 	"image/jpeg"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -161,5 +162,47 @@ func TestReadsAPage(t *testing.T) {
 	// Every word is weighed, for bold (ADR 0047).
 	if stroked != len(ws) {
 		t.Errorf("%d of %d words have a stroke", stroked, len(ws))
+	}
+}
+
+// TestReadsWithAModelDirectoryAlone: a tessdata directory holding the language model and nothing
+// else, as pdfspec ships one and as a clone of tessdata_fast is, still reads as TSV. The output
+// format is asked for by setting, not by the configs/tsv file such a directory does not have.
+func TestReadsWithAModelDirectoryAlone(t *testing.T) {
+	exe := os.Getenv("PDFSPEC_TEST_TESSERACT")
+	if exe == "" {
+		t.Skip("PDFSPEC_TEST_TESSERACT names no tesseract")
+	}
+	from := os.Getenv("TESSDATA_PREFIX")
+	if from == "" {
+		t.Skip("TESSDATA_PREFIX names no model directory to take eng.traineddata from")
+	}
+	model, err := os.ReadFile(filepath.Join(from, "eng.traineddata")) // #nosec G304 -- the test's own setting
+	if err != nil {
+		t.Fatal(err)
+	}
+	alone := t.TempDir()
+	if err := os.WriteFile(filepath.Join(alone, "eng.traineddata"), model, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(context.Background(), Options{Exe: exe, TessData: alone, DPI: 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open("../../testdata/reference/scan-paragraphs.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	img, err := jpeg.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := e.Read(context.Background(), img)
+	if err != nil {
+		t.Fatalf("with only the model: %v", err)
+	}
+	if len(ws) < 50 {
+		t.Errorf("read %d words with only the model, want the page's", len(ws))
 	}
 }

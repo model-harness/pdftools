@@ -97,8 +97,10 @@ type pageInfo struct {
 
 func probe(files []string, asJSON, wantPages bool) error {
 	reports := make([]report, 0, len(files))
-	exe, addr := envEngines("", "")
-	eng := pdfspec.FindEngines(context.Background(), exe, addr)
+	// The engines md would use, found as md finds them: flags' defaults, the environment, then
+	// what the release ships.
+	o := defaultEngines().options()
+	eng := pdfspec.FindEngines(context.Background(), o.Tesseract, o.Inferd)
 	for _, f := range files {
 		r := probeOne(f, wantPages)
 		r.Engines = eng

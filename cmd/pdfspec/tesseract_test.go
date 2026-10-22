@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -250,5 +251,43 @@ func TestEngineFlagsFallBackToTheEnvironment(t *testing.T) {
 	}
 	if o := (engineFlags{inferd: "off"}).options(); o.Inferd != "off" || o.Log != os.Stderr {
 		t.Errorf("options: inferd %q, log %v", o.Inferd, o.Log)
+	}
+}
+
+// TestBundledTesseractIsFoundBesideTheCommand: a release's Tesseract is found where its archive
+// unpacks it, beside pdfspec, and where install.sh puts it, ../share/pdfspec from the command's
+// directory, with its own model; a directory with neither has none.
+func TestBundledTesseractIsFoundBesideTheCommand(t *testing.T) {
+	name := "tesseract"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	place := func(t *testing.T, dir string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, "tessdata"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unpacked := t.TempDir()
+	place(t, filepath.Join(unpacked, "tesseract"))
+	installed := t.TempDir()
+	place(t, filepath.Join(installed, "share", "pdfspec", "tesseract"))
+	for _, c := range []struct {
+		name, dir, want string
+	}{
+		{"unpacked", unpacked, filepath.Join(unpacked, "tesseract")},
+		{"installed", filepath.Join(installed, "bin"), filepath.Join(installed, "share", "pdfspec", "tesseract")},
+		{"none", t.TempDir(), ""},
+	} {
+		exe, data := bundledTesseract(c.dir)
+		switch {
+		case c.want == "" && (exe != "" || data != ""):
+			t.Errorf("%s: %q %q, want none", c.name, exe, data)
+		case c.want != "" && (exe != filepath.Join(c.want, name) || data != filepath.Join(c.want, "tessdata")):
+			t.Errorf("%s: %q %q, want the one in %s", c.name, exe, data, c.want)
+		}
 	}
 }

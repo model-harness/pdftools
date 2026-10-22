@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds Tesseract and its minimal dependency chain from source on Windows, x64 MSVC, no curl.
+  Builds Tesseract and its minimal dependency chain from source on Windows, MSVC, no curl.
 
 .DESCRIPTION
   Built from source rather than taken from vcpkg or a prebuilt installer, because the vcpkg port
@@ -22,26 +22,42 @@
     libpng     <- the input format
     zlib       <- libpng's compressor
 
-  Every archive, and the English model, is pinned by version and SHA-256 in versions.txt, beside
-  this script and shared with build.sh, so both build the same engine and a bump is one reviewable
-  change.
+  Every archive, the English model and its licence are pinned by version and SHA-256 in
+  versions.txt, beside this script and shared with build.sh, so both build the same engine and a
+  bump is one reviewable change.
 
-  The result is <Root>\install: bin\tesseract.exe and its DLLs, include\ and lib\ for linking
-  against libtesseract, and share\tessdata\eng.traineddata.
+  It builds for the machine it runs on, x64 or arm64.
+
+  By default the result is <Root>\install: bin\tesseract.exe and its DLLs, include\ and lib\ for
+  linking against libtesseract with the dynamic CRT, and share\tessdata\eng.traineddata. That is
+  the build a program links libtesseract from.
+
+  With -Portable it is the Tesseract pdfspec ships instead, <Root>\portable\tesseract: one
+  tesseract.exe with the C runtime, zlib and libpng linked in, so it runs on a machine with
+  nothing installed, beside tessdata\eng.traineddata and licenses\.
 
 .PARAMETER Clean
   Delete the source and build trees first. Otherwise the build is incremental.
 
+.PARAMETER Portable
+  Build the self-contained tesseract.exe pdfspec ships, rather than the libraries to link.
+
 .PARAMETER Root
-  Where the sources, build trees and install go. Default: build\native at the repository root.
+  Where the sources, build trees and results go. Default: build\native, or build\portable with
+  -Portable, at the repository root.
 #>
 [CmdletBinding()]
 param(
     [switch]$Clean,
-    [string]$Root = (Join-Path (Split-Path (Split-Path $PSScriptRoot)) 'build\native')
+    [switch]$Portable,
+    [string]$Root
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $Root) {
+    $Root = Join-Path (Split-Path (Split-Path $PSScriptRoot)) $(if ($Portable) { 'build\portable' } else { 'build\native' })
+}
 
 # versions.txt is the one place a version or hash is written: "name version sha256 url", with
 # {v} in the URL standing for the version.
@@ -66,20 +82,26 @@ if ($Clean -and (Test-Path $Root)) {
 New-Item -ItemType Directory -Force $Src, $Build, $Install | Out-Null
 
 # ---------------------------------------------------------------- toolchain
-# A C++ source build needs the whole toolchain, cl.exe, INCLUDE and LIB, so vcvars64 is imported
-# here. It is found with vswhere rather than at a fixed path, because the Build Tools and the full
-# Visual Studio install in different places.
-Step 'Importing the MSVC environment'
+# A C++ source build needs the whole toolchain, cl.exe, INCLUDE and LIB, so vcvars is imported
+# here, for the machine's own architecture. It is found with vswhere rather than at a fixed path,
+# because the Build Tools and the full Visual Studio install in different places.
+$arm64 = $env:PROCESSOR_ARCHITECTURE -eq 'ARM64'
+$component, $vcvarsName, $platform = if ($arm64) {
+    'Microsoft.VisualStudio.Component.VC.Tools.ARM64', 'vcvarsarm64.bat', 'ARM64'
+} else {
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', 'vcvars64.bat', 'x64'
+}
+
+Step "Importing the MSVC environment for $platform"
 $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path $vswhere)) { throw 'vswhere not found; Visual Studio or the Build Tools are required' }
 
-$vsPath = & $vswhere -latest -products * `
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (-not $vsPath) { throw 'no MSVC x64 toolset found' }
+$vsPath = & $vswhere -latest -products * -requires $component -property installationPath
+if (-not $vsPath) { throw "no MSVC $platform toolset found" }
 Note "visual studio: $vsPath"
 
-$vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
-if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
+$vcvars = Join-Path $vsPath "VC\Auxiliary\Build\$vcvarsName"
+if (-not (Test-Path $vcvars)) { throw "$vcvarsName not found at $vcvars" }
 
 # vcvars is a batch file, so its exports are read back out of a cmd session and applied to this
 # one. Only the variables that matter are copied, to avoid clobbering the session wholesale.
@@ -90,7 +112,7 @@ if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
 }
 
 $cl = (Get-Command cl.exe -ErrorAction SilentlyContinue)?.Source
-if (-not $cl) { throw 'cl.exe still not on PATH after importing vcvars64' }
+if (-not $cl) { throw "cl.exe still not on PATH after importing $vcvarsName" }
 Note "compiler: $cl"
 
 $cmake = (Get-Command cmake.exe -ErrorAction SilentlyContinue)?.Source
@@ -109,8 +131,19 @@ if (-not $ninja) {
     $candidate = Join-Path $vsPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
     if (Test-Path $candidate) { $ninja = $candidate }
 }
-$generator = if ($ninja) { @('-G', 'Ninja', "-DCMAKE_MAKE_PROGRAM=$ninja") } else { @('-A', 'x64') }
+$generator = if ($ninja) { @('-G', 'Ninja', "-DCMAKE_MAKE_PROGRAM=$ninja") } else { @('-A', $platform) }
 Note "generator: $(if ($ninja) { "Ninja ($ninja)" } else { "CMake's default Visual Studio" })"
+
+# The dynamic CRT for the libraries a program links, since mixing the static and dynamic CRT in
+# one process is a crash waiting to happen. The static CRT for the portable executable, so it
+# needs no Visual C++ redistributable: every library in it is static too, and none hands a FILE*
+# or a heap pointer across a DLL boundary to a second CRT.
+$crt = if ($Portable) { 'MultiThreaded' } else { 'MultiThreadedDLL' }
+Note "runtime: $crt"
+
+# A static-only zlib installs as zs.lib, a name CMake's FindZLIB does not look for, so the builds
+# after it are told where it is. Unset until zlib is built, and harmless to zlib itself.
+$hints = if ($Portable) { @("-DZLIB_LIBRARY=$Install/lib/zs.lib", "-DZLIB_INCLUDE_DIR=$Install/include") } else { @() }
 
 # ---------------------------------------------------------------- fetch
 # Get-Pinned downloads a pin to dir and checks its SHA-256 before anything reads it.
@@ -159,10 +192,12 @@ function Invoke-CMakeBuild([string]$name, [string]$source, [string[]]$options) {
         "-DCMAKE_INSTALL_PREFIX=$Install"
         "-DCMAKE_PREFIX_PATH=$Install"
         '-DCMAKE_BUILD_TYPE=Release'
-        # The dynamic CRT, as a Rust or Go program linking libtesseract uses, since mixing the
-        # static and dynamic CRT in one process is a crash waiting to happen.
-        '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL'
-    ) + $generator + $options
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=$crt"
+        # CMAKE_MSVC_RUNTIME_LIBRARY is read only under policy CMP0091, which a project declaring
+        # an old minimum CMake leaves off: leptonica built with the DLL CRT without it.
+        '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW'
+        '-DBUILD_SHARED_LIBS=OFF'
+    ) + $generator + $hints + $options
 
     & $cmake @cmakeArgs
     if ($LASTEXITCODE -ne 0) { throw "$name configure failed" }
@@ -176,14 +211,19 @@ function Invoke-CMakeBuild([string]$name, [string]$source, [string[]]$options) {
 }
 
 # ---------------------------------------------------------------- zlib
+# Shared for the linking build, whose libpng DLL loads it; static alone for the portable one, so
+# leptonica cannot find an import library to link against instead.
 Invoke-CMakeBuild 'zlib' $zlibSrc @(
     '-DZLIB_BUILD_EXAMPLES=OFF'
+    '-DZLIB_BUILD_TESTING=OFF'
+    "-DZLIB_BUILD_SHARED=$(if ($Portable) { 'OFF' } else { 'ON' })"
+    '-DZLIB_BUILD_STATIC=ON'
 )
 
 # ---------------------------------------------------------------- libpng
 Invoke-CMakeBuild 'libpng' $pngSrc @(
-    '-DPNG_SHARED=ON'
-    '-DPNG_STATIC=OFF'
+    "-DPNG_SHARED=$(if ($Portable) { 'OFF' } else { 'ON' })"
+    "-DPNG_STATIC=$(if ($Portable) { 'ON' } else { 'OFF' })"
     '-DPNG_TESTS=OFF'
     '-DPNG_TOOLS=OFF'
     "-DZLIB_ROOT=$Install"
@@ -227,21 +267,23 @@ $null = Get-Pinned 'eng' $TessData
 
 # ---------------------------------------------------------------- verify
 Step 'Verifying the result'
-$dlls = Get-ChildItem (Join-Path $Install 'bin') -Filter *.dll -ErrorAction SilentlyContinue
-Write-Host "`nShipped libraries:" -ForegroundColor Green
-$dlls | ForEach-Object { "  {0,-34} {1,7:N2} MB" -f $_.Name, ($_.Length / 1MB) }
-"  {0,-34} {1,7:N2} MB" -f 'TOTAL', (($dlls | Measure-Object -Property Length -Sum).Sum / 1MB)
+$exe = Join-Path $Install 'bin\tesseract.exe'
+if (-not (Test-Path $exe)) { throw "no $exe" }
 
 # The point of the exercise: no curl and no archive linked in. libtesseract is a static library
 # here, so what it links shows in the imports of the executable it is built into, not of a DLL.
 # dumpbin is on PATH from vcvars.
-Write-Host "`nDependency check (must not name libcurl or archive):" -ForegroundColor Green
-$exe = Join-Path $Install 'bin\tesseract.exe'
-if (-not (Test-Path $exe)) { throw "no $exe" }
-$imports = & dumpbin /DEPENDENTS $exe 2>&1 | Where-Object { $_ -match '\.dll' }
-$imports | ForEach-Object { "  $($_.Trim())" }
+Write-Host "`nImports (must not name libcurl or archive$(if ($Portable) { ', or any DLL Windows does not ship' })):" -ForegroundColor Green
+$imports = & dumpbin /DEPENDENTS $exe 2>&1 | Where-Object { $_ -match '^\s+\S+\.dll\s*$' } | ForEach-Object { $_.Trim() }
+$imports | ForEach-Object { "  $_" }
 if ($imports -match 'curl|archive') { throw 'libcurl or libarchive is linked' }
-Write-Host '  OK: no curl, no archive' -ForegroundColor Green
+if ($Portable) {
+    # What a fresh Windows has: the system DLLs and the Universal CRT's api sets, never the Visual
+    # C++ redistributable or a DLL of ours.
+    $foreign = $imports | Where-Object { $_ -notmatch '^(KERNEL32|USER32|ADVAPI32|SHELL32|WS2_32|ole32|OLEAUT32|bcrypt|ntdll)\.dll$' -and $_ -notmatch '^api-ms-win-' }
+    if ($foreign) { throw "the portable tesseract.exe imports $($foreign -join ', '), which Windows does not ship" }
+}
+Write-Host '  OK' -ForegroundColor Green
 
 # Tesseract's version lists the libraries compiled in, static ones included, which imports cannot.
 $version = & $exe --version 2>&1
@@ -249,10 +291,35 @@ if ($LASTEXITCODE -ne 0) { throw "$exe does not run" }
 $version | ForEach-Object { "  $_" }
 if ($version -match 'curl|archive') { throw 'tesseract reports libcurl or libarchive' }
 
-Write-Host "`nInstall prefix: $Install" -ForegroundColor Green
-Write-Host @"
+if (-not $Portable) {
+    Write-Host "`nInstall prefix: $Install" -ForegroundColor Green
+    Write-Host @"
 
 For pdfspec:
   `$env:PDFSPEC_TESSERACT = '$exe'
   `$env:TESSDATA_PREFIX   = '$TessData'
 "@ -ForegroundColor Yellow
+    return
+}
+
+# ---------------------------------------------------------------- portable layout
+# What pdfspec ships beside itself: the executable, the model, and the licences of everything in
+# them, which their terms require a copy to carry.
+$Out = Join-Path $Root 'portable\tesseract'
+Step "Laying out $Out"
+if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
+$licenses = Join-Path $Out 'licenses'
+New-Item -ItemType Directory -Force (Join-Path $Out 'tessdata'), $licenses | Out-Null
+Copy-Item $exe (Join-Path $Out 'tesseract.exe')
+Copy-Item (Join-Path $TessData 'eng.traineddata') (Join-Path $Out 'tessdata\eng.traineddata')
+Copy-Item (Join-Path $tessSrc 'LICENSE') (Join-Path $licenses 'tesseract.txt')
+Copy-Item (Join-Path $leptSrc 'leptonica-license.txt') (Join-Path $licenses 'leptonica.txt')
+Copy-Item (Join-Path $pngSrc 'LICENSE') (Join-Path $licenses 'libpng.txt')
+Copy-Item (Join-Path $zlibSrc 'LICENSE') (Join-Path $licenses 'zlib.txt')
+Copy-Item (Get-Pinned 'eng-license' $Src) (Join-Path $licenses 'tessdata_fast.txt')
+
+# It must read from where it stands, with its own model and nothing else.
+$smoke = & (Join-Path $Out 'tesseract.exe') --tessdata-dir (Join-Path $Out 'tessdata') --list-langs 2>&1
+if ($LASTEXITCODE -ne 0 -or ($smoke -notcontains 'eng')) { throw "the portable tesseract does not list eng: $smoke" }
+Write-Host "`nPortable Tesseract: $Out" -ForegroundColor Green
+Get-ChildItem $Out -Recurse -File | ForEach-Object { "  {0,-40} {1,7:N2} MB" -f $_.FullName.Substring($Out.Length + 1), ($_.Length / 1MB) }

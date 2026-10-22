@@ -1,0 +1,113 @@
+name: build
+
+# Builds the whole product for each platform, on that platform: pdfspec, and beside it the
+# Tesseract it ships, from native/tesseract (ADR 0052). Each is tested as a user gets it before it
+# is uploaded as an artifact, pdfspec_<os>_<arch>. ci.yml runs this on every push, and release.yml
+# runs it at a tag and publishes what it uploads, so a release is what CI tested.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit or tag to build; the caller's own when empty.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  product:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux on 22.04, so the one library the Tesseract links, the C library, is glibc 2.35:
+          # what it is built against is the oldest it runs on.
+          - { runner: ubuntu-22.04, os: linux, arch: amd64 }
+          - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
+          - { runner: macos-15-intel, os: darwin, arch: amd64 }
+          - { runner: macos-latest, os: darwin, arch: arm64 }
+          - { runner: windows-latest, os: windows, arch: amd64 }
+          - { runner: windows-11-arm, os: windows, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      NAME: pdfspec_${{ matrix.os }}_${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          # The tags, so the build stamps a release with its version.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: paths
+        shell: bash
+        run: |
+          echo "TESS_BUILD_ROOT=$RUNNER_TEMP/tess" >> "$GITHUB_ENV"
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
+      # The portable Tesseract, cached on the scripts and their pins: a bump in versions.txt
+      # rebuilds it.
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/tess/portable
+          key: tesseract-portable-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('native/tesseract/**') }}
+      - name: build tesseract
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.os != 'windows'
+        run: sh native/tesseract/build.sh --portable
+      - name: build tesseract
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.os == 'windows'
+        shell: pwsh
+        run: native/tesseract/build.ps1 -Portable -Root $env:TESS_BUILD_ROOT
+      # Outside the checkout: a file a build leaves in it is untracked, and Go stamps every build
+      # after it +dirty.
+      - name: build pdfspec
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=pdfspec
+          [ "${{ matrix.os }}" = windows ] && exe=pdfspec.exe
+          mkdir -p "$OUT/$NAME"
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$OUT/$NAME/$exe" ./cmd/pdfspec
+          cp -R "$TESS_BUILD_ROOT/portable/tesseract" "$OUT/$NAME/tesseract"
+          cp LICENSE README.md "$OUT/$NAME/"
+          ls -R "$OUT/$NAME"
+      # The tests that run Tesseract, run on the one in the archive. A test that cannot find the
+      # engine skips, and a skip passes, so one that names it fails the job here instead.
+      - name: test with its tesseract
+        shell: bash
+        run: |
+          set -euo pipefail
+          t="$OUT/$NAME/tesseract"
+          exe="$t/tesseract"
+          [ "${{ matrix.os }}" = windows ] && exe="$exe.exe"
+          export PDFSPEC_TEST_TESSERACT="$exe" TESSDATA_PREFIX="$t/tessdata"
+          go test -v ./ocr/tesseract ./cmd/pdfspec > test.log 2>&1 || { tail -50 test.log; exit 1; }
+          grep -E -- '^(--- |ok|FAIL)' test.log | grep -v -- '--- PASS' || true
+          if grep -q 'names no tesseract' test.log; then
+            echo "a test did not find tesseract"; exit 1
+          fi
+          grep -- '--- PASS: TestBenchmarkWithTesseract' test.log
+      # And the archive as a user unpacks it: nothing set and nothing on PATH, so the scan is read
+      # by the Tesseract beside pdfspec or not at all.
+      - name: run as a user gets it
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$OUT/$NAME/pdfspec"
+          [ "${{ matrix.os }}" = windows ] && exe="$exe.exe"
+          unset PDFSPEC_TESSERACT TESSDATA_PREFIX
+          export PDFSPEC_INFERD=off
+          "$exe" version
+          "$exe" probe testdata/reference/scan-paragraphs.pdf | tee probe.txt
+          grep -q 'engines     tesseract 5' probe.txt
+          PATH=/nonexistent "$exe" md testdata/reference/scan-paragraphs.pdf > scan.md
+          grep -q 'The first paragraph runs long enough' scan.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ runner.temp }}/out/${{ env.NAME }}
+          if-no-files-found: error
+          retention-days: 7

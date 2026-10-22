@@ -147,7 +147,10 @@ func (e *Engine) read(ctx context.Context, png []byte, psm string) ([]ocr.Word, 
 	if e.dpi > 0 {
 		args = append(args, "--dpi", strconv.Itoa(int(e.dpi+0.5)))
 	}
-	cmd := e.command(ctx, append(args, "tsv")...)
+	// TSV by setting rather than by the "tsv" config, which is a file in tessdata/configs: a
+	// directory holding only the language model, as pdfspec ships one, has none, and Tesseract
+	// then writes plain text without a word of warning.
+	cmd := e.command(ctx, append(args, "-c", "tessedit_create_tsv=1")...)
 	cmd.Stdin = bytes.NewReader(png)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

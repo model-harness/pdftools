@@ -5,6 +5,27 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-10-23 (the whole product in one install)
+
+- **Each release ships its Tesseract.** Every archive carries a portable Tesseract 5.5.3, with
+  its English model and the licences of what is in it. It is built on each platform's own
+  runner, needs nothing installed, and is found by `pdfspec` before any on PATH. The
+  installers put it where pdfspec looks, so scans are read as installed. ADR 0052.
+- **`PDFSPEC_WITH_INFERD=1` installs inferd too,** for describing pictures and charts: v0.8.0,
+  checked against pinned hashes and installed by its own installer. Its model is a 6 GB
+  download the first time it starts.
+- **`native/tesseract` builds the portable Tesseract** with `build.sh --portable` and
+  `build.ps1 -Portable`, and builds on Windows arm64.
+- **CI builds and tests the whole product on all six targets,** and the release publishes what
+  CI built (`.github/workflows/build.yml`).
+- `PDFSPEC_DOWNLOAD_URL` points the installers at a mirror of a release.
+
+### Fixed — 2026-10-23
+
+- **Tesseract is asked for TSV by setting, not by the `tsv` config file,** which a model
+  directory holding only the language model does not have. With one, every page read as plain
+  text, failed, and kept its extracted text.
+
 ### Added — 2026-10-22 (the converter as a library)
 
 - **Package `pdfspec` converts a PDF to Markdown,** the whole path `pdfspec md` takes:

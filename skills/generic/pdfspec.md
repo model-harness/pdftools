@@ -76,18 +76,19 @@ Three lines matter most:
   vision model, so treat it as a description and not as the image's text.
 - stderr lists, page by page, how many `[err]` and `[image]` were written. Tell the user when
   they matter to the task.
-- A warning that pages "yielded no text" means they are scanned pictures, and Tesseract is not
-  installed to read them.
+- A warning that pages "yielded no text" means they are scanned pictures that nothing could
+  read: pdfspec was installed without the Tesseract its release ships, such as by `go install`,
+  and none is on PATH.
 - A non-zero exit status means the conversion failed. Report the error and don't use partial
   output as if it were complete.
 
 ## Scans and pictures
 
-`md` reads scanned pages and pictures of text with Tesseract whenever it is installed, and asks
-a vision model through inferd when one is running. If `probe` shows pages that need reading and
-no engine to read them, tell the user that installing Tesseract would recover that text:
-`apt install tesseract-ocr` on Debian and Ubuntu, `brew install tesseract` on macOS, or the UB
-Mannheim installer on Windows.
+`md` reads scanned pages and pictures of text with the Tesseract that comes with pdfspec, and
+asks a vision model through inferd, when one is running, to describe pictures and charts. If
+`probe` shows images to read and no inferd, and the task needs what the pictures show, tell the
+user that installing inferd would describe them: rerun the pdfspec installer with
+`PDFSPEC_WITH_INFERD=1`, or follow https://inferd.io. Its model is a 6 GB download.
 
 ```sh
 pdfspec ocr -dry-run scan.pdf     # which pages would be read, without reading them
