@@ -1,4 +1,4 @@
-package main
+package pdfspec
 
 import (
 	"errors"
@@ -109,7 +109,7 @@ func TestFallbackClosesBothBackends(t *testing.T) {
 // and reading the source, and the list is built from the same constant the flag's help text uses so
 // the two cannot drift apart.
 func TestUnknownBackendNamesTheChoices(t *testing.T) {
-	_, err := openRasterizer("natve", "nonexistent.pdf")
+	_, err := OpenRasterizer("natve", "nonexistent.pdf")
 	if err == nil {
 		t.Fatal("a misspelled backend was accepted")
 	}
@@ -132,7 +132,7 @@ func TestUnknownBackendNamesTheChoices(t *testing.T) {
 // which is the corpus's most common case by a wide margin.
 func TestNativeBackendIsGivenFaces(t *testing.T) {
 	path := standard14PDF(t)
-	r, err := openRasterizer("native", path)
+	r, err := OpenRasterizer("native", path)
 	if err != nil {
 		t.Fatalf("openRasterizer: %v", err)
 	}

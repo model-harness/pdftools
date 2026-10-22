@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/model-harness/pdftools/extract"
+	"github.com/model-harness/pdftools/internal/oneline"
 	"github.com/model-harness/pdftools/objects"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/pdfspec"
 	"github.com/model-harness/pdftools/tag"
 )
 
@@ -62,13 +64,13 @@ type report struct {
 	// Unmapped counts the glyphs the file gives no Unicode value to, which md writes as [err]
 	// (ADR 0042), and UnmappedPages says where they are. Found by extracting the text, since a
 	// font's mapping is decided glyph by glyph: a /ToUnicode can cover all but one code.
-	Unmapped      int        `json:"unmapped"`
-	UnmappedPages []pageErrs `json:"unmapped_pages,omitempty"`
+	Unmapped      int                `json:"unmapped"`
+	UnmappedPages []pdfspec.PageErrs `json:"unmapped_pages,omitempty"`
 
 	// Engines are the readers md would use here, and Needs what it would ask them to read, page
 	// by page. A page that needs a reader there is none for keeps what the extractor found.
-	Engines engines    `json:"engines"`
-	Needs   []pageNeed `json:"needs,omitempty"`
+	Engines pdfspec.Engines    `json:"engines"`
+	Needs   []pdfspec.PageNeed `json:"needs,omitempty"`
 }
 
 type tagSummary struct {
@@ -95,7 +97,8 @@ type pageInfo struct {
 
 func probe(files []string, asJSON, wantPages bool) error {
 	reports := make([]report, 0, len(files))
-	eng := findEngines(context.Background())
+	exe, addr := envEngines("", "")
+	eng := pdfspec.FindEngines(context.Background(), exe, addr)
 	for _, f := range files {
 		r := probeOne(f, wantPages)
 		r.Engines = eng
@@ -186,9 +189,9 @@ func probeOne(path string, wantPages bool) report {
 
 	r.Filters, r.Fonts, r.Images, r.PageDetail, r.Unreadable = scanPages(s, wantPages)
 	if d, err := extract.New(s, extract.DefaultOptions).Document(); err == nil {
-		r.UnmappedPages = unmapped(d)
-		r.Unmapped = errTotal(r.UnmappedPages)
-		r.Needs = pageNeeds(d, describedImages(s, d))
+		r.UnmappedPages = pdfspec.Unmapped(d)
+		r.Unmapped = pdfspec.ErrTotal(r.UnmappedPages)
+		r.Needs = pdfspec.PageNeeds(s, d)
 	}
 
 	switch {
@@ -225,7 +228,7 @@ func scanPages(s objects.Store, wantPages bool) (filters, fonts []string, images
 			// it can say about that page — and skipping silently is how ISO/TS 32002's
 			// cover went missing from this table for the life of the project, with the
 			// per-page rows running 1, 2, 4, 5 and the total still reading 14.
-			sc.failed = append(sc.failed, fmt.Sprintf("page %d: %s", n, oneLine(err.Error())))
+			sc.failed = append(sc.failed, fmt.Sprintf("page %d: %s", n, oneline.Of(err.Error())))
 			continue
 		}
 
@@ -446,10 +449,10 @@ func printReports(rs []report) {
 			}
 		}
 		if r.Unmapped > 0 {
-			fmt.Printf("  unmapped    %d glyph(s) with no Unicode value, written [err]: %s\n", r.Unmapped, errPages(r.UnmappedPages))
+			fmt.Printf("  unmapped    %d glyph(s) with no Unicode value, written [err]: %s\n", r.Unmapped, pdfspec.ErrPages(r.UnmappedPages))
 		}
 		fmt.Printf("  engines     %s\n", r.Engines)
-		fmt.Printf("  needs       %s\n", needsLine(r.Needs))
+		fmt.Printf("  needs       %s\n", pdfspec.NeedsLine(r.Needs))
 		fmt.Printf("  probed in   %d ms\n", r.ProbeMS)
 
 		if len(r.PageDetail) > 0 {

@@ -9,6 +9,7 @@ import (
 	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/layout"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/pdfspec"
 )
 
 // TestBlockLinesDescribeTheirSpans holds doc.Block.Lines to the spans they index, at every
@@ -70,7 +71,7 @@ func TestBlockLinesDescribeTheirSpans(t *testing.T) {
 		check(path, "extracted", d)
 		layout.Hyphens(d)
 		check(path, "dehyphenated", d)
-		inferRoles(d)
+		pdfspec.InferRoles(d)
 		check(path, "laid out", d)
 	}
 	if blocks < 1000 || lines < 3000 {

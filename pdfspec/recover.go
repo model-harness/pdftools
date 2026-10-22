@@ -1,4 +1,4 @@
-package main
+package pdfspec
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -36,7 +35,7 @@ func (o *ocrRun) glyphs(ctx context.Context, d *doc.Document) (total, read int, 
 		total += strings.Count(p.Text(), doc.Unmapped)
 		ra, err := o.r.Page(p.Number, render.Options{DPI: glyphDPI, MaxPixels: o.ropt.MaxPixels})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  page %d: %v; its glyphs with no value stay [err]\n", p.Number, err)
+			fmt.Fprintf(o.log, "  page %d: %v; its glyphs with no value stay [err]\n", p.Number, err)
 			continue
 		}
 		// One reading of the page, which each line takes its words from: a reading a line would
@@ -189,7 +188,7 @@ func (o *ocrRun) confirmFills(ctx context.Context, img image.Image, words []ocr.
 		return
 	}
 	fail := func(err error) {
-		fmt.Fprintf(os.Stderr, "  %s failed, and glyphs are read without it: %v\n", o.second.Name(), err)
+		fmt.Fprintf(o.log, "  %s failed, and glyphs are read without it: %v\n", o.second.Name(), err)
 		o.second = nil
 	}
 	var doubt []ocr.Word
@@ -285,12 +284,12 @@ func recoveredPages(d *doc.Document) []string {
 			by[r.Engine] = append(by[r.Engine], r.Conf)
 			n[r.Engine] += r.Glyphs
 		}
-		engines := make([]string, 0, len(by))
+		Engines := make([]string, 0, len(by))
 		for e := range by {
-			engines = append(engines, e)
+			Engines = append(Engines, e)
 		}
-		sort.Strings(engines)
-		for _, e := range engines {
+		sort.Strings(Engines)
+		for _, e := range Engines {
 			cs := by[e]
 			sort.Float64s(cs)
 			out = append(out, fmt.Sprintf("p%d %d by %s at %.0f-%.0f", p.Number, n[e], e, cs[0], cs[len(cs)-1]))

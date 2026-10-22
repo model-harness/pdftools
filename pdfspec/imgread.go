@@ -1,11 +1,10 @@
-package main
+package pdfspec
 
 import (
 	"context"
 	"fmt"
 	"image"
 	"image/draw"
-	"os"
 	"regexp"
 	"strings"
 
@@ -62,7 +61,7 @@ func (o *ocrRun) images(ctx context.Context, d *doc.Document, describe describer
 			if ra == nil {
 				r, err := o.r.Page(p.Number, o.ropt)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "  page %d: %v\n", p.Number, err)
+					fmt.Fprintf(o.log, "  page %d: %v\n", p.Number, err)
 					break
 				}
 				ra = &rasterPage{img: r.Image, page: p.Box}
@@ -73,7 +72,7 @@ func (o *ocrRun) images(ctx context.Context, d *doc.Document, describe describer
 			}
 			words, err := o.eng.Read(ctx, crop)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  page %d: an image: %v\n", p.Number, err)
+				fmt.Fprintf(o.log, "  page %d: an image: %v\n", p.Number, err)
 				continue
 			}
 			read := o.image(ctx, p.Number, im.Box, crop, box, words, describe, &o.tables)

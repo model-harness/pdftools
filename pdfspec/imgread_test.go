@@ -1,4 +1,4 @@
-package main
+package pdfspec
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -91,7 +92,7 @@ func TestImageIsReadByKind(t *testing.T) {
 		{"a describer that fails", gridImage(false), nil, &fakeDescriber{err: errors.New("refused")}, "", 0, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			o := &ocrRun{eng: &fakeEngine{}, minConf: 30}
+			o := &ocrRun{log: io.Discard, eng: &fakeEngine{}, minConf: 30}
 			table := imageTables
 			read := o.image(context.Background(), 1, at, c.img, box, c.words, c.describe, &table)
 			if c.kind == "" {
@@ -241,7 +242,7 @@ func TestImageTextIsReadAgain(t *testing.T) {
 	}
 	many[0].Conf = 50
 	second := &secondReader{answer: "other"}
-	o := &ocrRun{eng: &fakeEngine{}, minConf: 30, second: second}
+	o := &ocrRun{log: io.Discard, eng: &fakeEngine{}, minConf: 30, second: second}
 	table := imageTables
 	read := o.image(context.Background(), 1, geom.NewRect(0, 0, 300, 200), gridImage(false), image.Rect(0, 0, 300, 200), many, nil, &table)
 	if read == nil || read.Kind != "text" || !strings.Contains(read.By, "second") || second.calls != 1 {
@@ -276,7 +277,7 @@ func TestImagesReadsWhatIsKept(t *testing.T) {
 	d := &doc.Document{Pages: []doc.Page{{Number: 1, Box: geom.NewRect(0, 0, 612, 792),
 		Images: []doc.Image{pic(100), pic(250), icon, done}}}}
 	eng := &fakeEngine{}
-	o := &ocrRun{eng: eng, r: &fakeRasterizer{pages: 1}, ropt: render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}}
+	o := &ocrRun{log: io.Discard, eng: eng, r: &fakeRasterizer{pages: 1}, ropt: render.Options{DPI: 72, MaxPixels: render.DefaultOptions.MaxPixels}}
 	describe := &fakeDescriber{desc: gemma.Description{Tag: "photo", Text: "a geyser erupting"}}
 	n := o.images(context.Background(), d, describe, func(page int, im doc.Image) bool { return im.MCID == 250 })
 	if n != (imageCounts{picture: 1}) || eng.calls != 1 || describe.asked != 1 {
@@ -288,18 +289,26 @@ func TestImagesReadsWhatIsKept(t *testing.T) {
 	}
 }
 
-// TestAutoOCRReadsImagesOnPagesWithText: a page whose text keeps it from OCR still has its images
+// TestReadReadsImagesOnPagesWithText: a page whose text keeps it from OCR still has its images
 // read, here by an engine that is not there.
-func TestAutoOCRReadsImagesOnPagesWithText(t *testing.T) {
-	path := fixture(t, "adobe-samples/exportPDFInput.pdf")
-	d := extractOnly(t, path)
-	if len(route(d, allPages(len(d.Pages)), ocr.DefaultThreshold, false)) != 0 {
+func TestReadReadsImagesOnPagesWithText(t *testing.T) {
+	opt := offline()
+	opt.Tesseract = filepath.Join(t.TempDir(), "no-tesseract.exe")
+	var log strings.Builder
+	opt.Log = &log
+	d, err := Open(fixture(t, "adobe-samples/exportPDFInput.pdf"), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+	if len(Route(d.Doc, allPages(len(d.Doc.Pages)), ocr.DefaultThreshold, false)) != 0 {
 		t.Fatal("test setup: a page of exportPDFInput routes")
 	}
-	t.Setenv(tesseractEnv, filepath.Join(t.TempDir(), "no-tesseract.exe"))
-	warned := captureStderr(t, func() { autoOCR(d, nil, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: 30}, "pdfium") })
-	if !strings.Contains(warned, "no-tesseract.exe does not run") {
-		t.Errorf("stderr = %q, want the images to have asked for an engine", warned)
+	if err := d.Read(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), "no-tesseract.exe does not run") {
+		t.Errorf("log = %q, want the images to have asked for an engine", log.String())
 	}
 }
 
@@ -354,7 +363,7 @@ func TestOCRPageIsLevelledAndItsTableRead(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		words = append(words, ocr.Word{Text: "prose", Box: image.Rect(200, 800+i*30, 300, 820+i*30), Conf: 95, Block: 2, Par: 1, Line: i + 1})
 	}
-	o := &ocrRun{eng: &fakeEngine{words: words}, r: &pageRasterizer{img: turnedTable(1)}, minConf: 30, force: true,
+	o := &ocrRun{log: io.Discard, eng: &fakeEngine{words: words}, r: &pageRasterizer{img: turnedTable(1)}, minConf: 30, force: true,
 		full: func(int) doc.Page { return doc.Page{} }}
 	p, _, err := o.page(context.Background(), 1, doc.Page{Number: 1, Box: geom.NewRect(0, 0, 360, 504)})
 	if err != nil {

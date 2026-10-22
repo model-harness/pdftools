@@ -135,7 +135,7 @@ func TestStripMarkerRequiresASeparator(t *testing.T) {
 // considers: "*" 3/8, "-" 0/11, both dots 0/0, ">" 0/0. So on the path this allowlist
 // governs, "-" never appears separated at all and the dots and ">" never appear — their
 // block-initial occurrences are all in a tagged file, where sectionize declares them table
-// cells and inferRoles never runs.
+// cells and pdfspec.InferRoles never runs.
 //
 // That is why this test is the whole pin for three of the five: a per-glyph A/B over all 50
 // documents changes **0 files** for either dot and for ">". Nothing in the output could catch

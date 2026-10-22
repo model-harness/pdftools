@@ -125,7 +125,7 @@ func TestHyphensTakeAHyphenSpanOfItsOwn(t *testing.T) {
 	}
 }
 
-// TestHyphensRunTwiceAsOnce: md runs the pass before inferRoles and again after PageBreaks,
+// TestHyphensRunTwiceAsOnce: md runs the pass before pdfspec.InferRoles and again after PageBreaks,
 // and the second run judges what the first left exactly as the first did.
 func TestHyphensRunTwiceAsOnce(t *testing.T) {
 	d := pages([]doc.Block{prose("turn it over now"), wrapped("they over-", "lap and exten-", "sive")})

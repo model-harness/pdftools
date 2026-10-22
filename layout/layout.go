@@ -603,7 +603,7 @@ func Lists(d *doc.Document, opt Options) ListStats {
 // entries ("[1] ISO/IEC 8825-1…"), and RFC reference lists. Forms are "a)" 174, "n." 43,
 // "[n]" 21, "n)" 17, "a." 5; lengths 2 to 11, with 25 runs of exactly 2. 4 runs are tables of
 // contents ("1. Introduction   1"), which are the only false positives on disk — and all 4
-// are in *tagged* documents, where inferRoles never runs because sectionize read the structure
+// are in *tagged* documents, where pdfspec.InferRoles never runs because sectionize read the structure
 // tree instead. On the untagged path this pass actually serves, the effect is 5 runs of 25
 // items, all in mupdf_explored.pdf, all genuine. A TOC guard was measured anyway and would
 // catch 3 of the 4 at zero cost to a genuine item; it is not here, because a guard that cannot
@@ -626,7 +626,7 @@ func Lists(d *doc.Document, opt Options) ListStats {
 // does not produce — its negative "flatten" case is already what every item gets. sameEdge's
 // tolerance is not ListStep under another name: one asks how far apart two edges must be to
 // mean different depths, the other how close they must be to mean the same margin. The
-// parameter stays for the signature the other three passes share, so inferRoles calls them
+// parameter stays for the signature the other three passes share, so pdfspec.InferRoles calls them
 // uniformly; adding a knob for the tolerance instead would be configurability no caller asked
 // for and no measurement wants, since the value sits in an empty band.
 //
@@ -694,7 +694,7 @@ func OrderedLists(d *doc.Document, opt Options) ListStats {
 // orderedItem returns an unpromoted paragraph's ordered label and its sequence value.
 //
 // The paragraph gate is Headings' and Lists' precedence, arriving here as a consequence
-// rather than a rule: inferRoles runs those first, so a block this sees as a paragraph is one
+// rather than a rule: pdfspec.InferRoles runs those first, so a block this sees as a paragraph is one
 // they both declined. A heading that ADR 0008 promoted is therefore never reconsidered, which
 // is the collision that ADR 0011 warned about, prevented by ordering rather than by argument.
 func orderedItem(b *doc.Block) (string, int) {

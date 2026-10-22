@@ -2,22 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/model-harness/pdftools/doc"
-	"github.com/model-harness/pdftools/extract"
-	"github.com/model-harness/pdftools/layout"
-	"github.com/model-harness/pdftools/objects"
-	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
-	"github.com/model-harness/pdftools/sectionize"
+	"github.com/model-harness/pdftools/pdfspec"
 	"github.com/model-harness/pdftools/sink/markdown"
-	"github.com/model-harness/pdftools/tag"
 )
 
 func runMD(args []string) error {
@@ -28,7 +22,7 @@ func runMD(args []string) error {
 	artifacts := fs.Bool("artifacts", false, "keep running headers, folios, and watermarks")
 	flat := fs.Bool("flat", false, "page-ordered prose with no headings, even when the file is tagged")
 	useOCR := fs.Bool("ocr", true, "read pages that carry no text with Tesseract, when it is installed")
-	backend := fs.String("backend", "pdfium", "rasterizer for OCR: "+backendNames)
+	backend := fs.String("backend", "pdfium", "rasterizer for OCR: "+pdfspec.BackendNames)
 	var eo engineFlags
 	eo.register(fs)
 	fs.Usage = func() {
@@ -52,227 +46,36 @@ func runMD(args []string) error {
 		return err
 	}
 
-	in := fs.Arg(0)
-	s, err := pcstore.Open(in)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = s.Close() }()
-
-	opt := extract.DefaultOptions
+	opt := eo.options()
 	opt.KeepArtifacts = *artifacts
-	ex := extract.New(s, opt)
-	d, err := ex.Document()
+	opt.Flat = *flat
+	opt.Frontmatter = *frontmatter
+	opt.OCR = *useOCR
+	opt.Backend = *backend
+	d, err := pdfspec.Open(fs.Arg(0), opt)
 	if err != nil {
 		return err
 	}
-	// The extractor reads the file, so it cannot know what the user called it.
-	d.Meta.Path = in
-	warnIfPagesFailed(ex.Failed(), len(d.Pages))
-	if *useOCR {
-		autoOCR(d, s, in, eo, *backend)
+	defer func() { _ = d.Close() }()
+	if err := d.Read(context.Background()); err != nil {
+		return err
 	}
-	warnIfEmpty(d)
-	warnIfUnmapped(os.Stderr, unmapped(d))
 
-	mopt := markdown.Options{Frontmatter: *frontmatter, Artifacts: *artifacts}
 	if *split {
 		// Per-page output is page-scoped by definition, so the outline does not apply:
 		// a clause running from page 412 to 414 cannot be a heading in three files.
-		return writeSplit(d, *out, mopt)
+		return writeSplit(d, *out)
 	}
 	if *out == "" {
-		return writeMarkdown(os.Stdout, s, d, *flat, mopt)
+		return d.Markdown(os.Stdout)
 	}
-	return writeFile(*out, func(w io.Writer) error {
-		return writeMarkdown(w, s, d, *flat, mopt)
-	})
-}
-
-// warnIfEmpty reports on stderr that a document yielded no text, and why it might not
-// have.
-//
-// A conversion that produces an empty file and exits 0 is the worst available outcome:
-// the caller has a plausible artifact and no signal, and in a shell loop over a corpus
-// nothing distinguishes it from a document that converted cleanly. This is the same
-// failure the okf.Write duplicate guard replaced — a silently short result — and it was
-// found the same way, by a file that extracted to nothing while every exit code said
-// it had worked.
-//
-// A warning rather than an error, because empty is sometimes the honest answer: a page
-// holding one image has no text, and TestFixtureNoTextIsNotAnError pins that down.
-// A font that gives its glyphs no value no longer empties a page, since each glyph is
-// written [err] and warnIfUnmapped counts them (ADR 0042). What is left is a page that
-// draws no text at all, which is most often a scan, so the hint names OCR. Written to
-// stderr so redirecting stdout to a .md still shows it.
-func warnIfEmpty(d *doc.Document) {
-	if len(d.Pages) == 0 || strings.TrimSpace(d.Text()) != "" || anyImageRead(d) {
-		return
-	}
-	fmt.Fprintf(os.Stderr, "warning: %d page(s) yielded no text\n", len(d.Pages))
-	fmt.Fprint(os.Stderr, "  the pages draw no text, and may be images of it.\n"+
-		"  run \"pdfspec probe\" to see what they hold, or \"pdfspec ocr\" to read them as images.\n")
-}
-
-// warnIfPagesFailed reports on stderr that some pages could not be read.
-//
-// Named pages rather than a count, because the number is what a reader acts on: the
-// output is a document with those pages blank, and nothing in the Markdown says which
-// ones. Extractor.Document keeps the other pages on purpose — one malformed page must
-// not cost the rest — and this is the half of that policy that was missing, since a
-// conversion with a page dropped read exactly like a whole one and exited 0.
-//
-// stderr for the same reason warnIfEmpty uses it: redirecting stdout to a .md still
-// shows the warning.
-func warnIfPagesFailed(failed []extract.PageError, pages int) {
-	if len(failed) == 0 {
-		return
-	}
-	nums := make([]string, 0, len(failed))
-	for _, f := range failed {
-		nums = append(nums, strconv.Itoa(f.Page))
-	}
-	fmt.Fprintf(os.Stderr, "warning: %d of %d page(s) could not be read and are blank in the output: %s\n",
-		len(failed), pages, strings.Join(nums, ", "))
-	fmt.Fprintf(os.Stderr, "  %s\n", oneLine(failed[0].Error()))
-}
-
-// oneLine folds an error onto a single line and bounds its length.
-//
-// Because a parser's error is not a sentence. The one this warning was written for arrives
-// as eleven lines — pdfcpu prints the page's whole resource inventory after its message —
-// and printed raw it takes the warning's shape apart: the continuation lines are
-// unindented, so they read as output rather than as the reason for a warning. Taking the
-// first line alone would not do either, since the message and the start of the inventory
-// share it. Folded and capped, a reader gets the sentence and can re-run for the rest.
-func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	const max = 200
-	if len(s) > max {
-		s = s[:max] + "…"
-	}
-	return s
-}
-
-// readOutline reconstructs the clause hierarchy, or returns nil when the file has no
-// structure tree to reconstruct it from.
-//
-// nil rather than an error, and a silent fallback to page order rather than a warning:
-// most PDFs are untagged, and for those the layout path is the correct answer, not a
-// degraded one. The output still says which path ran — Metadata.Tagged is in the
-// frontmatter for exactly this reason.
-func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
-	tr, err := tag.Read(s)
-	if err != nil {
-		return nil, err
-	}
-	if tr == nil {
-		return nil, nil
-	}
-	// Titles and bodies are joined on (page, MCID), so an unresolved tree yields an
-	// outline of empty sections. This is not optional.
-	if err := tr.ResolvePages(s); err != nil {
-		return nil, err
-	}
-	o, _ := sectionize.Tagged(d, tr, sectionize.DefaultOptions)
-	return o, nil
-}
-
-// inferRoles promotes table cells, headings, and list items in a document that declared
-// none.
-//
-// Called on the untagged branch only: where a structure tree exists, sectionize has
-// already assigned every role from what the producer declared, and guessing over a
-// declaration would replace evidence with a heuristic.
-//
-// Tables first, and this order is load-bearing rather than a precedence claim. It runs on
-// the page's own strokes, which the other two never consult, and it is the only pass that
-// changes the block list rather than relabelling blocks in place — a table's row arrives
-// as one paragraph and leaves as one block per cell. Running it second would hand
-// Headings a table's header row as a short paragraph in a distinct style, which is what
-// its size ranking promotes, and Lists a numeric first column, which is what its marker
-// test reads. Running it first leaves both nothing to misread: they consider only
-// RoleParagraph blocks, and a cell is RoleTableCell.
-//
-// Headings then Lists, on evidence and not on necessity. Both passes consider only
-// RoleParagraph blocks, so whichever runs second cannot reclassify what the first
-// promoted, and Headings has the stronger claim on the overlap — a section number the
-// document states outright, against a marker glyph.
-//
-// Necessity was measured, because there is a route by which the order could matter for
-// more than precedence: Lists edits span text, and Headings' bodyCluster ranks sizes by
-// rune count, so stripping markers first perturbs the counts it reads. Run both ways over
-// all 48 PDFs on disk, the two orders agree on every block's role and level, on every
-// heading count, and on every measured body size — 0 files differ. So the order is a
-// statement about which evidence outranks which, and nothing on disk depends on it.
-//
-// OrderedLists last, and here the order is a precedence claim that matters. Its evidence is
-// a run of incrementing numbers, and a numbered *heading* is exactly the block that could be
-// misread as one — which is ADR 0011's stated objection to recognizing ordered lists at all.
-// Running Headings first answers it structurally rather than by argument: a heading ADR 0008
-// promoted is no longer RoleParagraph, so it is not a candidate and cannot join a run. Tables
-// first removes the other collision the ADR names, a numeric first column.
-//
-// Shared by md and ocr so the two agree. They have to — ocr on a born-digital document
-// writes what md writes and runs no engine, and TestOCRVerbOnDigitalDocument holds them to
-// it. A page read by OCR is built of paragraphs with lines (ocr.Page), so every pass
-// considers it as it does an extracted page.
-func inferRoles(d *doc.Document) {
-	layout.Images(d)
-	layout.Furniture(d)
-	layout.Tables(d, layout.DefaultOptions)
-	layout.Headings(d, layout.DefaultOptions)
-	layout.Lists(d, layout.DefaultOptions)
-	layout.OrderedLists(d, layout.DefaultOptions)
-	layout.Footnotes(d)
-	layout.PageBreaks(d)
-	// Again after PageBreaks, which makes line starts of its own; see writeMarkdown.
-	layout.Hyphens(d)
-}
-
-// writeMarkdown writes the whole document as Markdown: the structure tree's outline when
-// the file has one and flat is off, and otherwise the page-ordered text with the roles
-// layout infers. It is the md verb's choice of output, and bench scores what it writes,
-// so the two cannot drift apart.
-func writeMarkdown(w io.Writer, s objects.Store, d *doc.Document, flat bool, opt markdown.Options) error {
-	// Before the outline, which copies the spans it is built from, and on every path, since a
-	// typesetter's hyphen is not a role. inferRoles runs it once more for the page breaks it joins.
-	layout.Hyphens(d)
-	if !flat {
-		o, err := readOutline(s, d)
-		if err != nil {
-			return err
-		}
-		if o != nil {
-			warnIfBareImages(os.Stderr, bareImages(d, imageLines(d, o)))
-			return markdown.WriteOutline(w, o, opt)
-		}
-		inferRoles(d)
-	}
-	warnIfBareImages(os.Stderr, bareImages(d, imageLines(d, nil)))
-	return markdown.Write(w, d, opt)
+	return writeFile(*out, d.Markdown)
 }
 
 // convertDefault converts path as md does with no flags, for bench.
 func convertDefault(path string) ([]byte, error) {
-	s, err := pcstore.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = s.Close() }()
-
-	ex := extract.New(s, extract.DefaultOptions)
-	d, err := ex.Document()
-	if err != nil {
-		return nil, err
-	}
-	d.Meta.Path = path
-	warnIfPagesFailed(ex.Failed(), len(d.Pages))
-	autoOCR(d, s, path, engineFlags{lang: "eng", dpi: ocrDPI, minConf: defaultMinConf}, "pdfium")
-	warnIfEmpty(d)
-
 	var buf bytes.Buffer
-	if err := writeMarkdown(&buf, s, d, false, markdown.Options{}); err != nil {
+	if err := pdfspec.Convert(context.Background(), &buf, path, defaultEngines().options()); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -296,22 +99,19 @@ func writeWhole(d *doc.Document, out string, opt markdown.Options) error {
 // Every page gets a file, including a blank one. A gap in the numbering reads as a
 // conversion that failed on those pages, and the empty file is the honest statement
 // that the page had nothing on it.
-func writeSplit(d *doc.Document, dir string, opt markdown.Options) error {
+func writeSplit(d *pdfspec.Document, dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	width := len(fmt.Sprint(len(d.Pages)))
-	total := len(d.Pages)
+	total := len(d.Doc.Pages)
+	width := len(fmt.Sprint(total))
 
-	for i := range d.Pages {
-		p := d.Pages[i]
-		name := fmt.Sprintf("page-%0*d.md", width, p.Number)
-		path := filepath.Join(dir, name)
-		err := writeFile(path, func(w io.Writer) error {
-			return markdown.WritePage(w, d.Meta, p, total, opt)
-		})
+	for i := range d.Doc.Pages {
+		n := d.Doc.Pages[i].Number
+		path := filepath.Join(dir, fmt.Sprintf("page-%0*d.md", width, n))
+		err := writeFile(path, func(w io.Writer) error { return d.WritePage(w, i+1) })
 		if err != nil {
-			return fmt.Errorf("page %d: %w", p.Number, err)
+			return fmt.Errorf("page %d: %w", n, err)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "wrote %d pages to %s\n", total, dir)
@@ -335,17 +135,4 @@ func writeFile(path string, fn func(io.Writer) error) error {
 		return err
 	}
 	return f.Close()
-}
-
-// anyImageRead reports an image something was read off (ADR 0046): a page that is one image,
-// described or read as text, yielded what it holds, though no glyph of it is text.
-func anyImageRead(d *doc.Document) bool {
-	for _, p := range d.Pages {
-		for _, im := range p.Images {
-			if im.Read != nil {
-				return true
-			}
-		}
-	}
-	return false
 }

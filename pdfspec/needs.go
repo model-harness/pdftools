@@ -1,11 +1,10 @@
-package main
+package pdfspec
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -96,9 +95,9 @@ func warnIfBareImages(w io.Writer, pages []pageCount) {
 	fmt.Fprintf(w, "  by page: %s\n", perPage(pages))
 }
 
-// pageNeed is what an engine would read on one page: the page whole, which the router sends to
+// PageNeed is what an engine would read on one page: the page whole, which the router sends to
 // OCR, its images worth reading, and its glyphs with no value.
-type pageNeed struct {
+type PageNeed struct {
 	Page     int  `json:"page"`
 	Whole    bool `json:"read_whole,omitempty"`
 	Images   int  `json:"images,omitempty"`
@@ -107,11 +106,11 @@ type pageNeed struct {
 
 // pageNeeds is what md would ask an engine to read in d, page by page, by the rules it reads by:
 // ocr.Route for a page, layout.Keep and the file's own descriptions for an image (ADR 0046).
-func pageNeeds(d *doc.Document, described func(page int, im doc.Image) bool) []pageNeed {
+func pageNeeds(d *doc.Document, described func(page int, im doc.Image) bool) []PageNeed {
 	keep := layout.Keep(d)
-	var out []pageNeed
+	var out []PageNeed
 	for pi, p := range d.Pages {
-		need := pageNeed{Page: p.Number, Whole: ocr.Route(p, ocr.DefaultThreshold), Unmapped: strings.Count(p.Text(), doc.Unmapped)}
+		need := PageNeed{Page: p.Number, Whole: ocr.Route(p, ocr.DefaultThreshold), Unmapped: strings.Count(p.Text(), doc.Unmapped)}
 		for ii, im := range p.Images {
 			// A page read whole is read with its images: the reading's text lies over them, and
 			// what lies under text is not read again (layout.Keep).
@@ -126,9 +125,9 @@ func pageNeeds(d *doc.Document, described func(page int, im doc.Image) bool) []p
 	return out
 }
 
-// needsLine is probe's line for what the pages need: "read whole: 1-3; images: p5 2; glyphs
+// NeedsLine is probe's line for what the pages need: "read whole: 1-3; images: p5 2; glyphs
 // with no value: p7 12".
-func needsLine(needs []pageNeed) string {
+func NeedsLine(needs []PageNeed) string {
 	var whole []int
 	var images, glyphs []pageCount
 	for _, n := range needs {
@@ -158,15 +157,15 @@ func needsLine(needs []pageNeed) string {
 	return strings.Join(parts, "; ")
 }
 
-// engines names the readers md would use, or why there is none.
-type engines struct {
+// Engines names the readers md would use, or why there is none.
+type Engines struct {
 	Tesseract string `json:"tesseract"`
 	Inferd    string `json:"inferd"`
 }
 
 // String is probe's line: each engine by its name, or what it is with what stops it, "tesseract
 // 5.5.3 eng; inferd off".
-func (e engines) String() string {
+func (e Engines) String() string {
 	t, i := e.Tesseract, e.Inferd
 	if !strings.HasPrefix(t, "tesseract ") {
 		t = "tesseract " + t
@@ -177,11 +176,12 @@ func (e engines) String() string {
 	return t + "; " + i
 }
 
-// findEngines looks for the engines as md does, by PDFSPEC_TESSERACT and PDFSPEC_INFERD and
-// their defaults: Tesseract on PATH, and inferd's daemon at the platform's address.
-func findEngines(ctx context.Context) engines {
-	var e engines
-	switch exe := os.Getenv(tesseractEnv); {
+// FindEngines looks for the engines as Read does, by Options' Tesseract and Inferd: exe is the
+// tesseract executable, "" for the one on PATH, or "off"; addr is inferd's generation endpoint,
+// "" for the platform's, or "off".
+func FindEngines(ctx context.Context, exe, addr string) Engines {
+	var e Engines
+	switch {
 	case exe == "off":
 		e.Tesseract = "off"
 	default:
@@ -195,13 +195,10 @@ func findEngines(ctx context.Context) engines {
 			e.Tesseract = t.Name()
 		}
 	}
-	switch addr := os.Getenv(inferdEnv); addr {
+	switch addr {
 	case "off":
 		e.Inferd = "off"
 	default:
-		if addr == "auto" {
-			addr = ""
-		}
 		m, err := gemma.Open(ctx, addr, "")
 		if err != nil {
 			e.Inferd = "unavailable: " + err.Error()

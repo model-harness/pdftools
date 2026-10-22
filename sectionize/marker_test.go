@@ -176,7 +176,7 @@ func TestDeclaredItemsHyphenIsItsMarker(t *testing.T) {
 // The case is real rather than hypothetical — a producer that declares "a." as the label
 // and also draws a bullet. Consulting the glyph would record the bullet and leave "a." in
 // the text, inverting which of the two the output keeps. It is the same precedence md.go
-// states for not running inferRoles over a structure tree.
+// states for not running pdfspec.InferRoles over a structure tree.
 func TestDeclaredLabelOutranksTheGlyph(t *testing.T) {
 	d := docWith(
 		sp{1, 0, "1 Scope"},

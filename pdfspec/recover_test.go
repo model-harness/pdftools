@@ -1,9 +1,10 @@
-package main
+package pdfspec
 
 import (
 	"context"
 	"errors"
 	stdimage "image"
+	"io"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ func twoLines() (*doc.Document, int) {
 func TestGlyphsReadEachLine(t *testing.T) {
 	d, _ := twoLines()
 	eng := &fakeEngine{words: append(onLine(72, 96, "When", "creating", "lists,"), onLine(100, 95, "and", "motion")...)}
-	o := &ocrRun{eng: eng, r: &fakeRasterizer{pages: 1}}
+	o := &ocrRun{log: io.Discard, eng: eng, r: &fakeRasterizer{pages: 1}}
 	total, read, err := o.glyphs(context.Background(), d)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +95,7 @@ func TestGlyphsNeedSureOrAgreed(t *testing.T) {
 		if d == nil {
 			d, _ = twoLines()
 		}
-		o := &ocrRun{eng: &fakeEngine{words: c.read}, r: &fakeRasterizer{pages: 1}}
+		o := &ocrRun{log: io.Discard, eng: &fakeEngine{words: c.read}, r: &fakeRasterizer{pages: 1}}
 		if c.second != nil {
 			o.second = c.second
 		}
@@ -115,7 +116,7 @@ func TestGlyphsNeedSureOrAgreed(t *testing.T) {
 	d, _ := twoLines()
 	d.Pages[0].Rasterized = true
 	eng := &fakeEngine{}
-	if total, _, _ := (&ocrRun{eng: eng, r: &fakeRasterizer{pages: 1}}).glyphs(context.Background(), d); total != 0 || eng.calls != 0 {
+	if total, _, _ := (&ocrRun{log: io.Discard, eng: eng, r: &fakeRasterizer{pages: 1}}).glyphs(context.Background(), d); total != 0 || eng.calls != 0 {
 		t.Errorf("a page read by OCR: %d glyphs, %d reads", total, eng.calls)
 	}
 }
@@ -167,7 +168,7 @@ func TestGlyphsFindTheirSpan(t *testing.T) {
 		Spans: []doc.Span{{Text: "When ", Box: box, Page: 1, MCID: -1}, {Text: "crea" + doc.Unmapped + "ng lists,", Box: box, Page: 1, MCID: -1}},
 		Lines: []doc.Line{{Box: box, Page: 1, Size: 10, Span: 0, Offset: 0}}}
 	d := &doc.Document{Pages: []doc.Page{{Number: 1, Box: geom.NewRect(0, 0, 612, 792), Blocks: []doc.Block{b}}}}
-	o := &ocrRun{eng: &fakeEngine{words: onLine(72, 96, "When", "creating", "lists,")}, r: &fakeRasterizer{pages: 1}}
+	o := &ocrRun{log: io.Discard, eng: &fakeEngine{words: onLine(72, 96, "When", "creating", "lists,")}, r: &fakeRasterizer{pages: 1}}
 	if _, _, err := o.glyphs(context.Background(), d); err != nil {
 		t.Fatal(err)
 	}
@@ -189,12 +190,10 @@ func TestGlyphsKeepAReaderThatRefuses(t *testing.T) {
 		{"failed", errors.New("connection reset"), false},
 	} {
 		d := &doc.Document{Pages: []doc.Page{{Number: 1, Box: geom.NewRect(0, 0, 612, 792), Blocks: []doc.Block{lone}}}}
-		o := &ocrRun{eng: &fakeEngine{words: onLine(72, 99, "$", "mutool", "usage")}, r: &fakeRasterizer{pages: 1}, second: &secondReader{err: c.err}}
-		_ = captureStderr(t, func() {
-			if _, _, err := o.glyphs(context.Background(), d); err != nil {
-				t.Fatal(err)
-			}
-		})
+		o := &ocrRun{log: io.Discard, eng: &fakeEngine{words: onLine(72, 99, "$", "mutool", "usage")}, r: &fakeRasterizer{pages: 1}, second: &secondReader{err: c.err}}
+		if _, _, err := o.glyphs(context.Background(), d); err != nil {
+			t.Fatal(err)
+		}
 		if got := d.Pages[0].Blocks[0].Spans[0].Text; !strings.HasPrefix(got, doc.Unmapped) || (o.second != nil) != c.kept {
 			t.Errorf("%s: %q, reader kept %v", c.name, got, o.second != nil)
 		}

@@ -1,4 +1,4 @@
-package main
+package pdfspec
 
 import (
 	"errors"
@@ -11,10 +11,10 @@ import (
 	renderpdfium "github.com/model-harness/pdftools/render/pdfium"
 )
 
-// backendNames is what -backend accepts, and the order is the order they are documented in.
-const backendNames = "pdfium, native, auto"
+// BackendNames is what -backend accepts, and the order is the order they are documented in.
+const BackendNames = "pdfium, native, auto"
 
-// openRasterizer builds the rasterizer a -backend value names.
+// OpenRasterizer builds the rasterizer a -backend value names.
 //
 // One constructor for every caller, which is the point of it: render and ocr both needed a
 // Rasterizer and both had `renderpdfium.Open` written out, so adding a second backend to one of
@@ -25,7 +25,7 @@ const backendNames = "pdfium, native, auto"
 // typeface because pdfium uses Foxit's faces and this uses Liberation — so making native the
 // default would silently change every rendered page for existing callers. Opt-in is the honest
 // shape until the native backend draws everything.
-func openRasterizer(name, path string) (render.Rasterizer, error) {
+func OpenRasterizer(name, path string) (render.Rasterizer, error) {
 	switch name {
 	case "pdfium":
 		return renderpdfium.Open(path)
@@ -48,7 +48,7 @@ func openRasterizer(name, path string) (render.Rasterizer, error) {
 		}
 		return &fallback{native: nat, borrowed: pdf}, nil
 	}
-	return nil, fmt.Errorf("unknown -backend %q, want one of: %s", name, backendNames)
+	return nil, fmt.Errorf("unknown -backend %q, want one of: %s", name, BackendNames)
 }
 
 // openNative opens a store and wraps the native rasterizer so closing one closes both.

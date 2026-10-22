@@ -5,6 +5,22 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-10-22 (the converter as a library)
+
+- **Package `pdfspec` converts a PDF to Markdown,** the whole path `pdfspec md` takes:
+  `Open` reads the file's own text, `Read` runs Tesseract and the second reader, and
+  `Markdown` writes the result, or `Convert` does all three. It reads no environment variable,
+  since its engines are fields of `Options`, and it writes its warnings to `Options.Log`. The
+  command is flags and output over it. ADR 0051.
+- Before this, the conversion lived in `cmd/pdfspec`, which nothing could import, and the
+  README's library example skipped OCR, the outline and the inferred roles.
+
+### Changed — 2026-10-22 (the converter as a library)
+
+- **`pdfspec ocr` now gives `md`'s warnings after reading:** glyphs left `[err]`, and a
+  document that yielded no text. Run over every PDF here, its output and every other
+  message are as before.
+
 ### Added — 2026-10-22 (Tesseract built here)
 
 - **`native/tesseract/` builds Tesseract 5.5.3 from source**, moved from print2, with

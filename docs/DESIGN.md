@@ -1648,7 +1648,7 @@ OKF-ified spec.
     which excludes `7.4 Filters` and `1 Scope`, and a dotted clause number has no single value
     to increment and so cannot form a run at all — ADR 0008's collision closed by construction
     rather than by threshold. Corpus-wide: 70 runs of 260 items, all read; the 4
-    false positives are tables of contents and all 4 sit in *tagged* files, where `inferRoles`
+    false positives are tables of contents and all 4 sit in *tagged* files, where `pdfspec.InferRoles`
     never runs. Live effect on the untagged path: 5 runs of 25 items in `mupdf_explored.pdf`,
     all genuine, with 3 lone numbered paragraphs correctly left as prose. Against producers'
     own `/Lbl` declarations, `doc.OrderedLabel` reads the same form in 16 of 16.
@@ -1712,7 +1712,7 @@ OKF-ified spec.
   declared list items whose text opens with a marker glyph, 124 also declare a `Lbl` — and
   the label's first rune is that glyph in **124 of 124, with 0 disagreeing**, which is the
   strongest available check on the `layout` allowlist. 1291 declare no label at all, so the
-  glyph rule has to run on this path too. That is not `inferRoles` over a declaration: the
+  glyph rule has to run on this path too. That is not `pdfspec.InferRoles` over a declaration: the
   block is *already* declared `RoleListItem` and the only question is which of its runes is
   the label it was declared to have. What the declaration adds that no glyph could is 16
   ordered labels — `a.`, `b.`, `[1]`–`[7]` and `1.`–`3.` — exactly the case ADR 0011 records
@@ -2446,7 +2446,7 @@ OKF-ified spec.
     probe rather than by argument.** It said the remaining half was *untagged*, that `Style.Mono`
     was the signal, and that the loss happened in `extract`'s `appendLine`. A tagged/untagged
     census over mono-bearing files: **11 of 12 are tagged, and the twelfth has no mono at all**,
-    so `inferRoles` — and with it the whole of `layout` — never executes on this population. A
+    so `pdfspec.InferRoles` — and with it the whole of `layout` — never executes on this population. A
     prior measurement pass of 360 mono blocks had already been run against a code path that does
     not run. Mono and `Code` are disjoint signals on this corpus: WTPDF's 11 listings are declared
     rather than monospaced, and six other files have no mono whatsoever.
@@ -2793,7 +2793,7 @@ OKF-ified spec.
     means and does not drift. **A walk is only as wide as the pipeline it runs**: the first version
     reached 46722 blocks and three of the four write sites, because `outlineOf` stops at
     `sectionize` and never runs the layout passes — so the one site that had neither a corpus
-    population nor a fixture stayed uncovered by the test written to cover it. Calling `inferRoles`
+    population nor a fixture stayed uncovered by the test written to cover it. Calling `pdfspec.InferRoles`
     and re-walking the pages brings it to 72218.
   - **Two figures carried from the log entry were wrong, and only re-measuring caught it.** The log
     said 34127 duplicates on 7411 blocks, which came from a narrower walk; over the whole pipeline

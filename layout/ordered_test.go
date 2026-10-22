@@ -165,7 +165,7 @@ func TestOrderedListsRequiresOneLeftEdge(t *testing.T) {
 	}
 }
 
-// TestOrderedListsLeavesDeclaredRolesAlone is the precedence inferRoles depends on, and the
+// TestOrderedListsLeavesDeclaredRolesAlone is the precedence pdfspec.InferRoles depends on, and the
 // direct answer to ADR 0011's objection.
 //
 // The ADR's case is that a numbered item and a numbered heading are the same block. They are,

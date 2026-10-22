@@ -150,26 +150,22 @@ go test ./...      # runs the whole suite, with nothing else installed
 
 ## Using it from your own code
 
-Everything the command does is available as a Go library:
+The command is a thin layer over a Go package, `github.com/model-harness/pdftools/pdfspec`,
+which does the whole conversion. You get the same Markdown `pdfspec md` writes:
 
 ```go
-s, err := pcstore.Open("report.pdf")
-if err != nil {
-    return err
-}
-defer s.Close()
-
-d, err := extract.New(s, extract.DefaultOptions).Document()
-if err != nil {
-    return err
-}
-err = markdown.Write(os.Stdout, d, markdown.DefaultOptions)
+err := pdfspec.Convert(ctx, os.Stdout, "report.pdf", pdfspec.DefaultOptions)
 ```
 
-The imports are `github.com/model-harness/pdftools/extract`,
-`github.com/model-harness/pdftools/objects/pdfcpu` (as `pcstore`) and
-`github.com/model-harness/pdftools/sink/markdown`. `cmd/pdfspec` shows the full pipeline,
-including tagged documents and text recognition.
+`pdfspec.DefaultOptions` reads scans and pictures with Tesseract and a vision model when it
+finds them, just as the command does. The package reads no environment variables, so your
+program decides: set `Tesseract` to the path of an executable, or to `"off"`, and `Inferd` to
+an address, or to `"off"`. The warnings the command prints go to `Options.Log`, which is
+discarded unless you give it a writer.
+
+For more control, `Open` reads the file's own text, `Read` runs the engines, and `Markdown`
+writes the result. In between, `Document.Doc` holds everything that was found: pages,
+blocks, tables, images, and what was read off the pixels.
 
 ## Using it with coding agents
 

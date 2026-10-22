@@ -1,76 +1,10 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/model-harness/pdftools/doc"
-	"github.com/model-harness/pdftools/extract"
 )
-
-// TestWarnIfEmptySpeaksOnlyWhenNothingCameOut covers the signal that a conversion
-// produced nothing.
-//
-// The failure it guards is not a crash, it is a success: an empty .md and exit 0, which
-// in a loop over a corpus is indistinguishable from a document that converted cleanly.
-// That happened — a pdfTeX file whose fonts carry no /ToUnicode and glyph names outside
-// the Adobe glyph list extracted to zero bytes with nothing reporting it.
-//
-// The two negative cases are the point of the test rather than padding. A warning that
-// fires on documents that did convert is noise a user learns to ignore, at which point
-// it no longer reports the case it exists for.
-func TestWarnIfEmptySpeaksOnlyWhenNothingCameOut(t *testing.T) {
-	page := func(spans ...string) doc.Page {
-		p := doc.Page{Number: 1}
-		for _, s := range spans {
-			p.Blocks = append(p.Blocks, doc.Block{Spans: []doc.Span{{Text: s}}})
-		}
-		return p
-	}
-
-	for _, tc := range []struct {
-		name string
-		d    doc.Document
-		warn bool
-	}{
-		{"text on the page", doc.Document{Pages: []doc.Page{page("Hello world.")}}, false},
-		{"no blocks at all", doc.Document{Pages: []doc.Page{page()}}, true},
-		// Whitespace is not text. A page of positioned spaces is what a font with no
-		// decodable glyphs leaves behind once the undecodable ones are dropped, so
-		// comparing against "" rather than trimming would miss the real case.
-		{"only whitespace", doc.Document{Pages: []doc.Page{page("   ", "\n\t")}}, true},
-		// One page of many carrying text is a document that converted. Partial loss is
-		// a real problem and not this one: reporting it needs a per-page threshold,
-		// which is what the OCR router already does with coverage.
-		{"one page empty of two", doc.Document{Pages: []doc.Page{page(), page("Body.")}}, false},
-		// No pages is a different failure — an unreadable or zero-page file — and the
-		// store reports that. Warning here would attach a font-encoding hint to it.
-		{"no pages", doc.Document{}, false},
-		// A page that is one image read off its pixels yielded what it holds (ADR 0046); one
-		// unread is still a page with nothing in it but "[image]".
-		{"an image read", doc.Document{Pages: []doc.Page{{Number: 1, Images: []doc.Image{{Read: &doc.ImageRead{Kind: "picture"}}}}}}, false},
-		{"an image unread", doc.Document{Pages: []doc.Page{{Number: 1, Images: []doc.Image{{}}}}}, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := captureStderr(t, func() { warnIfEmpty(&tc.d) })
-			if warned := strings.Contains(got, "warning:"); warned != tc.warn {
-				t.Errorf("warned = %v, want %v; stderr was %q", warned, tc.warn, got)
-			}
-			if !tc.warn {
-				return
-			}
-			// The warning has to say what to do next, or it reports a dead end. Both
-			// verbs named here recover something a bare "no text" does not.
-			for _, want := range []string{"probe", "ocr"} {
-				if !strings.Contains(got, want) {
-					t.Errorf("the warning does not mention %q: %q", want, got)
-				}
-			}
-		})
-	}
-}
 
 // captureStderr redirects os.Stderr for the duration of fn and returns what was written.
 //
@@ -112,50 +46,4 @@ func captureStderr(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	return out
-}
-
-// TestWarnIfPagesFailedNamesThePages covers the other silent success: a conversion that
-// dropped whole pages and said nothing.
-//
-// The case is real rather than hypothetical. ISO/TS 32002's cover page failed to load for
-// the life of the project, so every conversion of that file emitted 13 of its 14 pages,
-// with no warning and exit 0 — indistinguishable, to a reader or a script, from a complete
-// one. Extractor.Document keeps the other pages on purpose; this is the part that says
-// which one is missing.
-//
-// The page numbers are asserted rather than just the count, because the number is what a
-// reader acts on: it tells them which part of the output to distrust.
-func TestWarnIfPagesFailedNamesThePages(t *testing.T) {
-	t.Run("silent when nothing failed", func(t *testing.T) {
-		if got := captureStderr(t, func() { warnIfPagesFailed(nil, 14) }); got != "" {
-			t.Errorf("stderr = %q, want nothing", got)
-		}
-	})
-
-	t.Run("names every page and the document size", func(t *testing.T) {
-		// The first error is the real one's shape, not a sentence: pdfcpu prints the page's
-		// whole resource inventory after its message, on ten further lines. Printed raw it
-		// takes the warning apart — the continuation lines are unindented, so they read as
-		// output rather than as a reason — and a one-line fake error cannot see that.
-		failed := []extract.PageError{
-			{Page: 3, Err: errors.New(
-				"extract: page 3: pdfcpu: page 3: missing required resource subdict: Properties\n" +
-					"\tPageResourceNames:\n\tPattern: \n\tProperties: MC0\n\tXObject: Fm0\n\tFont: TT0, TT1, TT2, F1\n")},
-			{Page: 9, Err: errors.New("no content")},
-		}
-		got := captureStderr(t, func() { warnIfPagesFailed(failed, 14) })
-		for _, want := range []string{"warning:", "2 of 14", "3, 9", "Properties"} {
-			if !strings.Contains(got, want) {
-				t.Errorf("stderr = %q, want it to contain %q", got, want)
-			}
-		}
-		if n := strings.Count(strings.TrimRight(got, "\n"), "\n"); n != 1 {
-			t.Errorf("stderr has %d newlines, want 1 — two lines, whatever shape the error arrived in:\n%s", n, got)
-		}
-		// And the page is named once. The wrapped error already says "page 3" twice; a
-		// PageError that prepended its own would make three, which is what a reader reads.
-		if n := strings.Count(got, "page 3"); n > 2 {
-			t.Errorf("%q names page 3 %d times, want at most 2", got, n)
-		}
-	})
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/model-harness/pdftools/geom"
+	"github.com/model-harness/pdftools/pdfspec"
 	"github.com/model-harness/pdftools/render"
 )
 
@@ -27,7 +28,7 @@ func runRender(args []string) error {
 	jobs := fs.Int("jobs", 0, "pages to render in parallel (default: min(4, NumCPU))")
 	annots := fs.Bool("annots", false, "render annotations and form fields")
 	maxPx := fs.Int("maxpixels", render.DefaultOptions.MaxPixels, "reduce DPI to keep a page under this many pixels")
-	backend := fs.String("backend", "pdfium", "rasterizer: "+backendNames)
+	backend := fs.String("backend", "pdfium", "rasterizer: "+pdfspec.BackendNames)
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, "usage: pdfspec render -o dir [-dpi n] [-pages 1,4-9] [-format png|jpeg] [-jobs n] [-backend pdfium|native|auto] <file.pdf>\n\n")
 		fs.PrintDefaults()
@@ -55,7 +56,7 @@ func runRender(args []string) error {
 	}
 
 	in := fs.Arg(0)
-	r, err := openRasterizer(*backend, in)
+	r, err := pdfspec.OpenRasterizer(*backend, in)
 	if err != nil {
 		return err
 	}
@@ -142,7 +143,7 @@ func renderPages(in, backend string, r render.Rasterizer, want []int, opt render
 			ras := r
 			if j > 0 {
 				var err error
-				ras, err = openRasterizer(backend, in)
+				ras, err = pdfspec.OpenRasterizer(backend, in)
 				if err != nil {
 					// One worker failing to start is not fatal: the others cover its
 					// pages more slowly. Recorded against its first page so the run

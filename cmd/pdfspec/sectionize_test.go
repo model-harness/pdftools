@@ -13,6 +13,7 @@ import (
 	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/geom"
 	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/pdfspec"
 	"github.com/model-harness/pdftools/sectionize"
 	"github.com/model-harness/pdftools/tag"
 )
@@ -949,7 +950,7 @@ func TestBlockMCIDsAreTheUnionOfTheirSpans(t *testing.T) {
 		// pass rewrites the blocks in place, so checking only the result would leave the
 		// extractor's own sets unmeasured, and it is exactly the copy-then-cut in spanBlock
 		// (b := *src, then re-derive) that the shared-array rule exists for.
-		inferRoles(d)
+		pdfspec.InferRoles(d)
 		for pi := range d.Pages {
 			check(name, "layout", d.Pages[pi].Blocks)
 		}

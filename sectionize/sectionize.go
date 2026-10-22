@@ -1221,7 +1221,7 @@ func (b *builder) place(blk doc.Block, pg span) {
 // Two sources for one field, and the order between them is the whole rule: a declaration
 // is evidence and a glyph is a guess, so the declaration is taken whenever it exists and
 // the glyph is never consulted then. That is the same precedence md.go states for not
-// running inferRoles over a structure tree.
+// running pdfspec.InferRoles over a structure tree.
 //
 // # Why the glyph rule runs here at all
 //

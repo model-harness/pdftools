@@ -6,9 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/layout"
-	pcstore "github.com/model-harness/pdftools/objects/pdfcpu"
+	"github.com/model-harness/pdftools/pdfspec"
 	"github.com/model-harness/pdftools/sectionize"
 	"github.com/model-harness/pdftools/sink/okf"
 )
@@ -37,34 +36,29 @@ func runOKF(args []string) error {
 	}
 
 	in := fs.Arg(0)
-	s, err := pcstore.Open(in)
+	popt := pdfspec.DefaultOptions
+	popt.OCR = false
+	popt.KeepArtifacts = *artifacts
+	popt.Log = os.Stderr
+	pd, err := pdfspec.Open(in, popt)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = s.Close() }()
-
-	eopt := extract.DefaultOptions
-	eopt.KeepArtifacts = *artifacts
-	ex := extract.New(s, eopt)
-	d, err := ex.Document()
-	if err != nil {
-		return err
-	}
-	d.Meta.Path = in
-	warnIfPagesFailed(ex.Failed(), len(d.Pages))
+	defer func() { _ = pd.Close() }()
+	d := pd.Doc
 
 	layout.Hyphens(d) // before the outline copies the spans, as md does
-	o, err := readOutline(s, d)
+	o, err := pd.Outline()
 	if err != nil {
 		return err
 	}
 	if o == nil {
-		// No structure tree, so the clauses come from inference instead: inferRoles marks
+		// No structure tree, so the clauses come from inference instead: InferRoles marks
 		// the headings md already renders, and sectionize.Untagged runs the same level
 		// stack over them that the tagged path runs over H1..H6 elements. 4 of the
 		// untagged documents on disk yield a real outline this way — mupdf_explored.pdf
 		// 296 clauses to 3 levels, LightOnOCR 21, and the two reference fixtures.
-		inferRoles(d)
+		pdfspec.InferRoles(d)
 		o, _ = sectionize.Untagged(d, sectionize.DefaultOptions)
 		if len(o.Sections) == 0 {
 			// A bundle is one file per clause, and inference found no heading to name one
