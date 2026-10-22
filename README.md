@@ -12,7 +12,7 @@ On Windows, install it from PowerShell with
 `irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex`. Both
 installers download the build for your machine from the latest release and check it against the
 release's checksums before installing it. If you have Go, you can also run
-`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.0`.
+`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.0.1`.
 
 If you've ever tried this with an ordinary PDF library, you probably got back text with words
 run together, two columns shuffled into one, and a page number stuck in the middle of a

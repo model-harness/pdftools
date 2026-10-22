@@ -5,6 +5,20 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-10-22
+
+Fixes for web pages printed to PDF, and the first release with prebuilt binaries.
+
+### Added — 2026-10-21 (binaries, installers, agent skills, project page)
+
+- **Each release tag builds pdfspec** for Linux, macOS and Windows, on amd64 and arm64, and
+  attaches the archives, their checksums and their build provenance to the release.
+- **`install.sh` and `install.ps1`** download the build for the machine from the latest release,
+  or the one `PDFSPEC_VERSION` names, and check it against the release's checksums first.
+- **Agent skills** for Claude, Codex and any other agent (`skills/`) point a coding agent at
+  `pdfspec` when a task needs a PDF's contents.
+- **A project page** on GitHub Pages, built from `site/`.
+
 ### Fixed — 2026-10-22 (web pages printed to PDF)
 
 - **Inline code stays in its sentence and its table cell** on the tagged path, where it was
@@ -4073,7 +4087,8 @@ tag rather than `@latest` — the API is not stable before 1.0.
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
 
-[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/model-harness/pdftools/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/model-harness/pdftools/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/model-harness/pdftools/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/model-harness/pdftools/releases/tag/v0.1.0
