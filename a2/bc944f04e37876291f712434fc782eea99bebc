@@ -1,0 +1,40 @@
+docs/adr/0052-pdfspec-ships-its-tesseract.md
+  s_5cd1b28ed520c1::t_8f3a7370700d90 70-74
+  s_5cd1b28ed520c1::t_d8647843877db7 62
+testdata/reference/chrome-report.gold.md
+  s_5cd1b28ed520c1::t_8db79dbd640f54 20-25
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_936ecfa536958f 29-34
+  s_5cd1b28ed520c1::t_803ece28f9f337 22-25
+README.md
+  s_5cd1b28ed520c1::t_0c78f04cc35da3 141-143
+cmd/pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_35bf02efe00699 294-295,299-328
+  s_5cd1b28ed520c1::t_8db79dbd640f54 296-298
+.github/workflows/inferd.yml
+  s_5cd1b28ed520c1::t_51708cf5a2ca53 1-59,62-64,72-103
+  s_5cd1b28ed520c1::t_a4f6a4f5051649 60-61,65-71
+docs/adr/0053-the-vision-model-is-tested-on-cpu.md
+  s_5cd1b28ed520c1::t_db323739086270 1-54
+install.sh
+  s_5cd1b28ed520c1::t_b1a45f439d8469 134-139
+  s_5cd1b28ed520c1::t_4e10e752c18457 100-108
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_6219889886104a 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "a2bc944f04e37876291f712434fc782eea99bebc",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
