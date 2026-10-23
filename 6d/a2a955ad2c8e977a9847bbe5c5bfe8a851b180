@@ -1,0 +1,37 @@
+skills/codex/pdfspec/SKILL.md
+  s_5cd1b28ed520c1::t_2964b462d5f8f2 24-25
+install.sh
+  s_5cd1b28ed520c1::t_0271bd3515429e 98
+  s_5cd1b28ed520c1::t_8081e5a47624b0 99-101
+  s_5cd1b28ed520c1::t_de362eea693393 85-86
+  s_5cd1b28ed520c1::t_e68b956e241c64 10-11,89-97,102-105
+skills/generic/pdfspec.md
+  s_5cd1b28ed520c1::t_2964b462d5f8f2 19-20
+README.md
+  s_5cd1b28ed520c1::t_2964b462d5f8f2 15-16
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_7ecfe465d80370 8-16
+skills/claude/pdfspec/SKILL.md
+  s_5cd1b28ed520c1::t_2964b462d5f8f2 24-25
+site/index.html
+  s_5cd1b28ed520c1::t_2964b462d5f8f2 243
+install.ps1
+  s_5cd1b28ed520c1::t_a0f9cbd94ffbd6 9-10
+  s_5cd1b28ed520c1::t_86cf5872a12d65 61-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "6da2a955ad2c8e977a9847bbe5c5bfe8a851b180",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
