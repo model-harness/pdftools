@@ -1,0 +1,47 @@
+pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_67c2171ba2cd3b 192
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_9642f023f98681 29-33
+docs/adr/0053-the-vision-model-is-tested-on-cpu.md
+  s_5cd1b28ed520c1::t_e68b2a277e1e17 40,42-45,66
+  s_5cd1b28ed520c1::t_9642f023f98681 41,46-49,63-65
+pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_d11c055ad7726a 158,184,188
+internal/inferd/timeout_test.go
+  s_5cd1b28ed520c1::t_a059906b2cddee 127-135,137-138,140-141
+pdfspec/pdfspec.go
+  s_5cd1b28ed520c1::t_d11c055ad7726a 25,76-78
+pdfspec/needs.go
+  s_5cd1b28ed520c1::t_d11c055ad7726a 202
+ocr/gemma/gemma_test.go
+  s_5cd1b28ed520c1::t_e3a5f3e353ec8e 151
+cmd/pdfspec/tesseract_test.go
+  s_5cd1b28ed520c1::t_52845e78b86d50 11,330-350
+  s_5cd1b28ed520c1::t_e6ccdd02176b69 351-352
+cmd/pdfspec/ocr.go
+  s_5cd1b28ed520c1::t_52845e78b86d50 12-14,135,228-252
+internal/inferd/client.go
+  s_5cd1b28ed520c1::t_867f528e3982b5 25,30,41-44,52-53,61
+  s_5cd1b28ed520c1::t_e68b2a277e1e17 26
+  s_5cd1b28ed520c1::t_b2e88debf4255d 27-29
+ocr/gemma/live_test.go
+  s_5cd1b28ed520c1::t_9959851d83f0f3 18
+ocr/gemma/gemma.go
+  s_5cd1b28ed520c1::t_a5329dcb6b1883 19,40-42,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "64e266bf63088b01247ca940e7297a7942445555",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
