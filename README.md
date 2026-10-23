@@ -14,7 +14,7 @@ installers download the build for your machine from the latest release and check
 release's checksums before installing it, along with the copy of Tesseract it uses to read
 scans, and add `pdfspec` to your PATH, so it runs by name in the next terminal you open. Set
 `PDFSPEC_NO_MODIFY_PATH=1` to do that yourself. If you have Go, you can also run
-`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.1.0`, which builds `pdfspec` alone
+`go install github.com/model-harness/pdftools/cmd/pdfspec@v1.1.1`, which builds `pdfspec` alone
 and reads scans with a Tesseract on your PATH.
 
 If you've ever tried this with an ordinary PDF library, you probably got back text with words
