@@ -21,7 +21,8 @@ pdfspec version
 ```
 
 If the command is missing, install the release build for the machine. The installer checks it
-against the release's checksums before installing it:
+against the release's checksums before installing it, and adds it to the user's PATH for new
+terminals. In the shell you are already in, run it by the full path the installer prints:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | sh

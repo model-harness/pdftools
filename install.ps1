@@ -6,6 +6,8 @@
 # PDFSPEC_VERSION picks a release, such as v1.0.0 (default: the latest), and PDFSPEC_INSTALL_DIR
 # where the binary goes (default: %LOCALAPPDATA%\pdfspec\bin). Tesseract goes beside it.
 # PDFSPEC_DOWNLOAD_URL takes the release's files from a mirror of them instead of GitHub.
+# When that directory is not on your user PATH, it is added there; PDFSPEC_NO_MODIFY_PATH=1
+# leaves it to you.
 #
 # PDFSPEC_WITH_INFERD=1 also installs inferd (https://inferd.io), the local model daemon pdfspec
 # asks to describe pictures and charts. It runs at your login and, on first start, downloads its
@@ -56,8 +58,24 @@ try {
     }
     $installed = & $exe version | Select-Object -First 1
     Write-Output "installed $installed to $exe"
-    if (($env:PATH -split ';') -notcontains $dir) {
-        Write-Output "add $dir to your PATH to run it as pdfspec"
+    # Not on the user's PATH, it is added there, and to this session's. The value is read and
+    # written raw, as an expandable string: [Environment]::SetEnvironmentVariable would expand
+    # the %VAR% references a user's PATH holds and write them back as a plain string.
+    $key = Get-Item -Path 'HKCU:\Environment'
+    $userPath = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $entries = $userPath -split ';' | Where-Object { $_ }
+    if ($env:PDFSPEC_NO_MODIFY_PATH -eq '1') {
+        if (($env:PATH -split ';') -notcontains $dir) { Write-Output "add $dir to your PATH to run it as pdfspec" }
+    }
+    elseif ($entries -notcontains $dir) {
+        $kind = if ($userPath) { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+        Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value ((@($entries) + $dir) -join ';') -Type $kind
+        # A registry write tells no running program; setting and clearing a variable through
+        # .NET broadcasts the change, so a terminal opened next has the new PATH.
+        [Environment]::SetEnvironmentVariable('PDFSPEC_INSTALL_PATH_CHANGED', '1', 'User')
+        [Environment]::SetEnvironmentVariable('PDFSPEC_INSTALL_PATH_CHANGED', $null, 'User')
+        $env:PATH = "$env:PATH;$dir"
+        Write-Output "added $dir to your PATH; open a new terminal to run it as pdfspec"
     }
 
     if ($env:PDFSPEC_WITH_INFERD -eq '1') {

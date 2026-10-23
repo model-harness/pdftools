@@ -12,7 +12,8 @@ On Windows, install it from PowerShell with
 `irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex`. Both
 installers download the build for your machine from the latest release and check it against the
 release's checksums before installing it, along with the copy of Tesseract it uses to read
-scans. If you have Go, you can also run
+scans, and add `pdfspec` to your PATH, so it runs by name in the next terminal you open. Set
+`PDFSPEC_NO_MODIFY_PATH=1` to do that yourself. If you have Go, you can also run
 `go install github.com/model-harness/pdftools/cmd/pdfspec@v1.1.0`, which builds `pdfspec` alone
 and reads scans with a Tesseract on your PATH.
 

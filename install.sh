@@ -7,6 +7,8 @@
 # PDFSPEC_VERSION picks a release, such as v1.0.0 (default: the latest), and PDFSPEC_INSTALL_DIR
 # where the binary goes (default: ~/.local/bin). Tesseract goes beside it, in ../share/pdfspec.
 # PDFSPEC_DOWNLOAD_URL takes the release's files from a mirror of them instead of GitHub.
+# When that directory is not on PATH, it is added in your shell's startup file (~/.zshrc,
+# ~/.bashrc or ~/.profile); PDFSPEC_NO_MODIFY_PATH=1 leaves it to you.
 #
 # PDFSPEC_WITH_INFERD=1 also installs inferd (https://inferd.io), the local model daemon pdfspec
 # asks to describe pictures and charts. It runs as your own user service and, on first start,
@@ -80,9 +82,27 @@ if [ -d "$tmp/$name/tesseract" ]; then
   chmod 0755 "$share/tesseract/tesseract"
 fi
 echo "installed $("$dir/pdfspec" version | head -n 1) to $dir/pdfspec"
+# Not on PATH, it is added in the startup file of the user's shell, once: a second install to
+# the same directory finds its line and adds nothing.
 case ":$PATH:" in
   *":$dir:"*) ;;
-  *) echo "add $dir to your PATH to run it as pdfspec" ;;
+  *)
+    if [ "${PDFSPEC_NO_MODIFY_PATH:-}" = 1 ]; then
+      echo "add $dir to your PATH to run it as pdfspec"
+    else
+      case "${SHELL:-}" in
+        */zsh) rc="$HOME/.zshrc" ;;
+        */bash) rc="$HOME/.bashrc" ;;
+        *) rc="$HOME/.profile" ;;
+      esac
+      if ! grep -qsF "export PATH=\"$dir:" "$rc"; then
+        # $PATH is for the shell that reads the file, not this one.
+        # shellcheck disable=SC2016
+        printf '\nexport PATH="%s:$PATH" # added by the pdfspec installer\n' "$dir" >> "$rc"
+      fi
+      echo "added $dir to your PATH in $rc; open a new terminal, or run: export PATH=\"$dir:\$PATH\""
+    fi
+    ;;
 esac
 
 [ "${PDFSPEC_WITH_INFERD:-}" = 1 ] || exit 0

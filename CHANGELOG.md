@@ -5,6 +5,15 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Added — 2026-10-23 (the installers set PATH)
+
+- **The installers add `pdfspec` to your PATH,** so it runs by name in the next terminal.
+  `install.ps1` adds its directory to the user's PATH, reading and writing the raw registry
+  value so a `%VAR%` in it survives, and keeps the value's type. `install.sh` adds one line to
+  `~/.zshrc`, `~/.bashrc` or `~/.profile`, by the user's shell, and a second install to the same
+  directory adds nothing. `PDFSPEC_NO_MODIFY_PATH=1` leaves PATH alone and prints the hint, as
+  before.
+
 ## [1.1.0] — 2026-10-23
 
 The whole product in one install: each release ships its own Tesseract, and the installers can
