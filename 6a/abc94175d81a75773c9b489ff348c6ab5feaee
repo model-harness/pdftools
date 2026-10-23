@@ -1,0 +1,22 @@
+.github/workflows/inferd.yml
+  s_5cd1b28ed520c1::t_7e6d54d9069901 72-79,90,93,112
+  s_5cd1b28ed520c1::t_2e3f7fa7cdf8ca 43-44
+install.sh
+  s_5cd1b28ed520c1::t_ab98de1b3e4e6d 130-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "6aabc94175d81a75773c9b489ff348c6ab5feaee",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
