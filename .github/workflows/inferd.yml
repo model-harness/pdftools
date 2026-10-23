@@ -40,6 +40,8 @@ jobs:
           echo "TESS_BUILD_ROOT=$RUNNER_TEMP/tess" >> "$GITHUB_ENV"
           echo "PDFSPEC_INSTALL_DIR=$RUNNER_TEMP/bin" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          # Where systemd's user session puts inferd's sockets, and so where pdfspec looks.
+          [ -n "${XDG_RUNTIME_DIR:-}" ] || echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
       # The same portable Tesseract build.yml ships, from the same cache.
       - id: tess
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -67,7 +69,14 @@ jobs:
             echo "$start"
             sh -c "${start% &} > \"$RUNNER_TEMP/daemon.log\" 2>&1 &"
           else
-            systemctl --user is-active inferd
+            # Started by the installer: active once it is up, or failed.
+            for _ in $(seq 1 30); do
+              state=$(systemctl --user is-active inferd || true)
+              [ "$state" = active ] && exit 0
+              [ "$state" = failed ] && { journalctl --user -u inferd --no-pager | tail -30; exit 1; }
+              sleep 2
+            done
+            echo "inferd is still $state"; exit 1
           fi
       - name: wait for the model
         run: |
@@ -78,10 +87,10 @@ jobs:
               du -sh ~/.local/share/models
               exit 0
             fi
-            pgrep -f inferd-daemon >/dev/null || { echo "inferd exited"; tail -30 "$RUNNER_TEMP/daemon.log"; exit 1; }
+            pgrep -f inferd-daemon >/dev/null || { echo "inferd exited"; tail -30 "$RUNNER_TEMP/daemon.log" 2>/dev/null || journalctl --user -u inferd --no-pager | tail -30; exit 1; }
             sleep 15
           done
-          echo "no model after 30 minutes"; tail -30 "$RUNNER_TEMP/daemon.log"; exit 1
+          echo "no model after 30 minutes"; tail -30 "$RUNNER_TEMP/daemon.log" 2>/dev/null || journalctl --user -u inferd --no-pager | tail -30; exit 1
       # A test that cannot reach an engine skips, and a skip passes, so one that says so fails the
       # job here instead, and the ones that measure are required by name.
       - name: test with both engines
@@ -100,4 +109,4 @@ jobs:
           done
       - name: inferd's log
         if: always()
-        run: tail -40 "$RUNNER_TEMP/daemon.log" || true
+        run: tail -40 "$RUNNER_TEMP/daemon.log" 2>/dev/null || journalctl --user -u inferd --no-pager | tail -40 || true

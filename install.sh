@@ -127,7 +127,12 @@ else
   ctl="$dir/inferdctl"
   if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
     mkdir -p "$HOME/.config/systemd/user"
-    cp -f "$tmp/$pkg/packaging/inferd.service" "$HOME/.config/systemd/user/"
+    # The unit runs %h/.local/bin/inferd-daemon; it is wherever this put it.
+    sed "s|%h/.local/bin/inferd-daemon|$dir/inferd-daemon|" "$tmp/$pkg/packaging/inferd.service" > "$HOME/.config/systemd/user/inferd.service"
+    grep -q "^ExecStart=$dir/inferd-daemon" "$HOME/.config/systemd/user/inferd.service" || {
+      echo "inferd: its unit no longer starts %h/.local/bin/inferd-daemon; inferd was not started." >&2
+      exit 1
+    }
     systemctl --user daemon-reload
     systemctl --user enable --now inferd
   else
