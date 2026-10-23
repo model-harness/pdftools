@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/extract"
@@ -72,6 +73,9 @@ type Options struct {
 	// Inferd is inferd's generation endpoint for the second reader, "" for the platform's, or
 	// "off" to ask none.
 	Inferd string
+	// InferdTimeout bounds each request to the model: zero is five minutes, enough for a CPU with
+	// no accelerator, and negative waits as long as the model takes.
+	InferdTimeout time.Duration
 
 	// Log receives what a reader of the output should know and the output cannot say: pages
 	// that could not be read, what OCR read and what it could not, and text left unread. nil

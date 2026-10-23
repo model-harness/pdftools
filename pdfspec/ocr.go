@@ -155,7 +155,7 @@ func readPages(ctx context.Context, d *doc.Document, path string, routed []int, 
 	var describe describer
 	// A nil *gemma.Model in an interface is not a nil interface, so each is set only from a
 	// model there is.
-	if m := openSecond(ctx, opt.Inferd, opt.MinConf, log); m != nil {
+	if m := openSecond(ctx, opt.Inferd, opt.InferdTimeout, opt.MinConf, log); m != nil {
 		run.second, describe = m, m
 	}
 	if len(routed) > 0 {
@@ -181,11 +181,11 @@ func readPages(ctx context.Context, d *doc.Document, path string, routed []int, 
 // daemon, a model still loading, or one that sees no images. The run is the same without it,
 // with Tesseract's confidence alone deciding. addr is inferd's generation endpoint, "" for the
 // platform's, or "off" for none.
-func openSecond(ctx context.Context, addr string, minConf float64, log io.Writer) *gemma.Model {
+func openSecond(ctx context.Context, addr string, timeout time.Duration, minConf float64, log io.Writer) *gemma.Model {
 	if addr == "off" {
 		return nil
 	}
-	m, err := gemma.Open(ctx, addr, "")
+	m, err := gemma.Open(ctx, addr, "", timeout)
 	if err != nil {
 		fmt.Fprintf(log, "  no second reader: %v; words under confidence %g are [err]\n", err, minConf)
 		return nil

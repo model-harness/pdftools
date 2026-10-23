@@ -16,6 +16,7 @@ import (
 	"image"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/internal/inferd"
@@ -36,8 +37,9 @@ type Model struct {
 }
 
 // Open finds inferd's vision backend from its admin socket. addr and admin are the generation
-// and admin endpoints, empty for the platform defaults.
-func Open(ctx context.Context, addr, admin string) (*Model, error) {
+// and admin endpoints, empty for the platform defaults, and timeout bounds each request to the
+// model: zero is inferd.DefaultTimeout, and negative waits as long as the model takes.
+func Open(ctx context.Context, addr, admin string, timeout time.Duration) (*Model, error) {
 	st, err := inferd.ReadStatus(ctx, admin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
@@ -46,7 +48,7 @@ func Open(ctx context.Context, addr, admin string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Model{client: &inferd.Client{Address: addr}, backend: backend}, nil
+	return &Model{client: &inferd.Client{Address: addr, Timeout: timeout}, backend: backend}, nil
 }
 
 // choose is the backend Open uses: a ready daemon's v2 backend that sees images.

@@ -124,40 +124,20 @@ func TestBackendNotReadySurvivesExpiredContext(t *testing.T) {
 	}
 }
 
-func TestResolveTimeout(t *testing.T) {
-	cases := []struct {
-		env  string
-		want time.Duration
-	}{
-		{"", DefaultTimeout},
-		{"30s", 30 * time.Second},
-		{"2m", 2 * time.Minute},
-		{"45", 45 * time.Second},    // bare integer = seconds
-		{"0", 0},                    // explicit disable
-		{"garbage", DefaultTimeout}, // malformed must not break the conversion
-		{"-5s", DefaultTimeout},     // negative duration rejected
+// TestDefaultTimeoutOutlastsACPURequest: a client given no timeout waits DefaultTimeout, which
+// must outlast one request on a CPU with no accelerator. On a 4-vCPU CI runner one description
+// of a page image took 58.6 s, against the 60 s bound this replaced, and the gold set's page of
+// images then failed when one ran over. The bound is for a daemon that never answers, so it can
+// afford a slower machine than that runner several times over.
+func TestDefaultTimeoutOutlastsACPURequest(t *testing.T) {
+	const measured = 58600 * time.Millisecond
+	if got := (&Client{}).timeout(); got != DefaultTimeout {
+		t.Errorf("a client with no timeout waits %v, want DefaultTimeout %v", got, DefaultTimeout)
 	}
-	for _, c := range cases {
-		t.Setenv(TimeoutEnv, c.env)
-		if c.env == "" {
-			// t.Setenv can't unset; emulate an absent variable.
-			t.Setenv(TimeoutEnv, "")
-		}
-		if got := resolveTimeout(); got != c.want {
-			t.Errorf("resolveTimeout(%q) = %v, want %v", c.env, got, c.want)
-		}
+	if DefaultTimeout < 4*measured {
+		t.Errorf("DefaultTimeout %v is under four times the %v one CPU request took", DefaultTimeout, measured)
 	}
-}
-
-// An explicit Client.Timeout must win over the environment.
-func TestClientTimeoutOverridesEnv(t *testing.T) {
-	t.Setenv(TimeoutEnv, "99s")
-	cl := &Client{Timeout: 3 * time.Second}
-	if got := cl.timeout(); got != 3*time.Second {
-		t.Errorf("Client.Timeout should win over env: got %v", got)
-	}
-	envOnly := &Client{}
-	if got := envOnly.timeout(); got != 99*time.Second {
-		t.Errorf("env should apply when Client.Timeout is zero: got %v", got)
+	if got := (&Client{Timeout: 3 * time.Second}).timeout(); got != 3*time.Second {
+		t.Errorf("an explicit timeout: %v", got)
 	}
 }

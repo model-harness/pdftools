@@ -199,7 +199,7 @@ func FindEngines(ctx context.Context, exe, addr string) Engines {
 	case "off":
 		e.Inferd = "off"
 	default:
-		m, err := gemma.Open(ctx, addr, "")
+		m, err := gemma.Open(ctx, addr, "", 0)
 		if err != nil {
 			e.Inferd = "unavailable: " + err.Error()
 		} else {

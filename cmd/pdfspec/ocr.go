@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/model-harness/pdftools/doc"
 	"github.com/model-harness/pdftools/ocr"
@@ -129,6 +132,7 @@ func (e engineFlags) options() pdfspec.Options {
 	o := pdfspec.DefaultOptions
 	o.Tesseract, o.Inferd = envEngines(e.exe, e.inferd)
 	o.TessData, o.Lang, o.DPI, o.MinConf = e.tessdata, e.lang, e.dpi, e.minConf
+	o.InferdTimeout = inferdTimeout(os.Getenv(inferdTimeoutEnv))
 	// With neither a flag nor the environment naming one, the Tesseract a release ships comes
 	// before any on PATH: it is the build the gold set is measured with. Its model is its own,
 	// whatever TESSDATA_PREFIX says, since that names the model of some other install.
@@ -221,3 +225,28 @@ const tesseractEnv = "PDFSPEC_TESSERACT"
 
 // inferdEnv is "off" to ask no model, which tests set, or names inferd's generation endpoint.
 const inferdEnv = "PDFSPEC_INFERD"
+
+// inferdTimeoutEnv bounds each request to the model: a Go duration ("90s", "5m") or bare
+// seconds, and "0" for none, for an operator debugging a slow model.
+const inferdTimeoutEnv = "PDFSPEC_INFERD_TIMEOUT"
+
+// inferdTimeout is Options.InferdTimeout for the value of inferdTimeoutEnv: zero, the library's
+// default, when it is empty or unreadable, and negative, no bound, for "0".
+func inferdTimeout(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		n, nerr := strconv.Atoi(raw)
+		if nerr != nil {
+			return 0
+		}
+		d = time.Duration(n) * time.Second
+	}
+	switch {
+	case d < 0:
+		return 0
+	case d == 0:
+		return -1
+	}
+	return d
+}

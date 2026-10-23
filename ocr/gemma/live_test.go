@@ -15,7 +15,7 @@ func TestLiveDescribe(t *testing.T) {
 	if os.Getenv("PDFSPEC_TEST_INFERD") == "" {
 		t.Skip("PDFSPEC_TEST_INFERD is not set")
 	}
-	m, err := Open(context.Background(), "", "")
+	m, err := Open(context.Background(), "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

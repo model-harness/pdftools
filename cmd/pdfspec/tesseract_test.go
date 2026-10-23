@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/model-harness/pdftools/bench"
 	"github.com/model-harness/pdftools/pdfspec"
@@ -324,5 +325,28 @@ func TestBenchmarkWithBothEngines(t *testing.T) {
 	}
 	if m.errs > a.errs {
 		t.Errorf("%.3f [err] per fixture with the model, %.3f without", m.errs, a.errs)
+	}
+}
+
+// TestInferdTimeoutFromTheEnvironment: PDFSPEC_INFERD_TIMEOUT is a Go duration or bare seconds;
+// "0" waits as long as the model takes; empty, malformed or negative is the library's default,
+// since a typo in an environment variable must not break the conversion.
+func TestInferdTimeoutFromTheEnvironment(t *testing.T) {
+	for _, c := range []struct {
+		env  string
+		want time.Duration
+	}{
+		{"", 0},
+		{"30s", 30 * time.Second},
+		{"2m", 2 * time.Minute},
+		{"45", 45 * time.Second},
+		{"0", -1},
+		{"garbage", 0},
+		{"-5s", 0},
+	} {
+		t.Setenv(inferdTimeoutEnv, c.env)
+		if got := defaultEngines().options().InferdTimeout; got != c.want {
+			t.Errorf("%s=%q: %v, want %v", inferdTimeoutEnv, c.env, got, c.want)
+		}
 	}
 }

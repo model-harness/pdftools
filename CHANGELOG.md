@@ -26,6 +26,11 @@ All notable changes to this project are documented here, following
 
 ### Fixed — 2026-10-23
 
+- **A request to the vision model may take five minutes, not 60 s.** On a 4-vCPU machine with no
+  GPU one description took 58.6 s, and a picture went undescribed when a request ran over. The
+  timeout is `Options.InferdTimeout` in the library now, which read `PDFSPEC_INFERD_TIMEOUT`
+  itself; the command still honours the variable. ADR 0053.
+
 - **`chrome-report`'s gold gives its chart's values,** as `image-kinds`' gold gives the same
   chart's: it had `[image]`, which is what the converter wrote without a vision model, not what
   the page shows. Its floor without engines goes down to CER 0.095 and tables 0.545, the

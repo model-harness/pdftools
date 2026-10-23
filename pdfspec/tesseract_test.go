@@ -189,7 +189,7 @@ func TestOCRSecondReaderDecides(t *testing.T) {
 // TestOpenSecondHonoursOff: off asks nothing and says nothing.
 func TestOpenSecondHonoursOff(t *testing.T) {
 	var log strings.Builder
-	if got := openSecond(context.Background(), "off", 30, &log); got != nil || log.Len() != 0 {
+	if got := openSecond(context.Background(), "off", 0, 30, &log); got != nil || log.Len() != 0 {
 		t.Errorf("reader %v, log %q; off asks nothing and says nothing", got, log.String())
 	}
 }

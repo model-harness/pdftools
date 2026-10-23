@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -24,33 +22,12 @@ var ErrBackendNotReady = errors.New("inferd: backend not ready")
 //
 // The model is optional, so a daemon that accepts the connection and never answers — mid model
 // load, or wedged — must cost a bounded wait, not the run. The bound lives here so that no caller
-// can forget it. One call reads one crop or one image: the spike's slowest strip took 33 s at
-// the default image budget, and a word crop takes under a second.
-const DefaultTimeout = 60 * time.Second
-
-// TimeoutEnv is the environment variable that overrides DefaultTimeout.
-// Value is a Go duration ("30s", "2m") or bare seconds ("30"). A value
-// of "0" disables the deadline entirely, for an operator debugging a slow local model.
-const TimeoutEnv = "PDFSPEC_INFERD_TIMEOUT"
-
-// resolveTimeout returns the per-Post deadline: $PDFSPEC_INFERD_TIMEOUT
-// when set and parseable, else DefaultTimeout. A malformed value falls
-// back to the default rather than erroring — a typo in an env var must
-// not break the conversion.
-func resolveTimeout() time.Duration {
-	raw := strings.TrimSpace(os.Getenv(TimeoutEnv))
-	if raw == "" {
-		return DefaultTimeout
-	}
-	if d, err := time.ParseDuration(raw); err == nil && d >= 0 {
-		return d
-	}
-	// Bare integer = seconds.
-	if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
-		return time.Duration(n) * time.Second
-	}
-	return DefaultTimeout
-}
+// can forget it. One call reads one crop or one image, and its time is the machine's: the spike's
+// slowest strip took 33 s on the development machine, and on a 4-vCPU CI runner with no
+// accelerator one description of a page image took 58.6 s. The bound was 60 s, and the gold
+// set's page of images lost a picture when a request ran over, so it is set for a machine several
+// times slower than that runner.
+const DefaultTimeout = 5 * time.Minute
 
 // Client dials the inferd generation socket once per Post. Address is a
 // Unix socket path (Unix) or a named-pipe path (Windows); empty resolves
@@ -61,9 +38,10 @@ type Client struct {
 	// Address is the inferd generation endpoint. Empty -> platform default.
 	Address string
 
-	// Timeout bounds one Post round-trip. Zero resolves to
-	// $PDFSPEC_INFERD_TIMEOUT, else DefaultTimeout. Negative disables the
-	// deadline (unbounded — only for operators debugging a slow model).
+	// Timeout bounds one Post round-trip. Zero is DefaultTimeout. Negative
+	// disables the deadline (unbounded — only for operators debugging a slow
+	// model). Nothing here reads the environment: the command maps
+	// PDFSPEC_INFERD_TIMEOUT onto this.
 	Timeout time.Duration
 
 	// dialFunc, when non-nil, replaces the real dial. Test seam only;
@@ -71,8 +49,8 @@ type Client struct {
 	dialFunc func(ctx context.Context) (net.Conn, error)
 }
 
-// timeout resolves the effective per-Post deadline. An explicit
-// Client.Timeout wins over the environment; negative means unbounded.
+// timeout resolves the effective per-Post deadline: Client.Timeout, or
+// DefaultTimeout when it is zero; negative means unbounded.
 func (c *Client) timeout() time.Duration {
 	if c.Timeout < 0 {
 		return 0
@@ -80,7 +58,7 @@ func (c *Client) timeout() time.Duration {
 	if c.Timeout > 0 {
 		return c.Timeout
 	}
-	return resolveTimeout()
+	return DefaultTimeout
 }
 
 // Post submits one generation request to inferd over the v0.4

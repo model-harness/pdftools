@@ -148,7 +148,7 @@ func TestReadTokensBoundsTheReply(t *testing.T) {
 
 // TestOpenWithoutADaemon: no daemon is ErrUnavailable, the caller's signal to go on without it.
 func TestOpenWithoutADaemon(t *testing.T) {
-	if _, err := Open(context.Background(), "", `\\.\pipe\pdfspec-test-no-such-admin`); !errors.Is(err, ErrUnavailable) {
+	if _, err := Open(context.Background(), "", `\\.\pipe\pdfspec-test-no-such-admin`, 0); !errors.Is(err, ErrUnavailable) {
 		t.Errorf("Open = %v, want ErrUnavailable", err)
 	}
 }
