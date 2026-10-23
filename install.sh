@@ -97,6 +97,15 @@ case "$os/$arch" in
   *) echo "inferd has no build for $os/$arch; pdfspec works without it, and leaves pictures undescribed." >&2; exit 0 ;;
 esac
 pkg="inferd-$iv-$target"
+# inferd's Linux builds need glibc 2.38, Ubuntu 24.04 or Debian 13 and later; on an older system
+# the daemon cannot start, so it is not downloaded.
+if [ "$os" = linux ]; then
+  glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')
+  if [ -z "$glibc" ] || [ "$(printf '%s\n2.38\n' "$glibc" | sort -t. -k1,1n -k2,2n | head -n 1)" != 2.38 ]; then
+    echo "inferd $iv needs glibc 2.38 or later, and this system has ${glibc:-none}; pdfspec works without it, and leaves pictures undescribed." >&2
+    exit 0
+  fi
+fi
 echo "downloading inferd $iv"
 fetch "https://github.com/3rg0n/inferd/releases/download/$iv/$pkg.tar.gz" "$tmp/$pkg.tar.gz"
 if [ "$(sha256 "$tmp/$pkg.tar.gz")" != "$isha" ]; then
@@ -122,7 +131,12 @@ else
     systemctl --user daemon-reload
     systemctl --user enable --now inferd
   else
-    echo "inferd: no systemd user session here, so it is not started as a service; run $dir/inferd-daemon yourself."
+    # The daemon takes its sockets as arguments, which the unit passes; these are its paths, and
+    # where pdfspec looks.
+    run="${XDG_RUNTIME_DIR:-$HOME/.inferd/run}"
+    [ -n "${XDG_RUNTIME_DIR:-}" ] && run="$run/inferd"
+    echo "inferd: no systemd user session here, so it is not started as a service. Start it with:"
+    echo "  mkdir -p $run && $dir/inferd-daemon --lock $run/inferd.lock --uds $run/inferd.sock --admin-addr $run/admin.sock &"
   fi
 fi
 echo "installed inferd $iv. On first start it downloads its model, about 6 GB; follow it with: $ctl watch"

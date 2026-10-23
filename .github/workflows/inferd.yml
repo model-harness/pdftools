@@ -1,0 +1,103 @@
+name: inferd
+
+# The vision model, on CPU: inferd installed as a user installs it, by install.sh with
+# PDFSPEC_WITH_INFERD=1, started as the installer says to start it without systemd, and then the
+# tests that ask it. Those are the live wire tests, the gold set's page of images, and the whole
+# gold set with both engines, every v1 target held (ADR 0053). The model, about 6 GB, is cached
+# on the inferd release pdfspec pins.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/inferd/**'
+      - 'ocr/**'
+      - 'pdfspec/**'
+      - 'layout/**'
+      - 'testdata/reference/**'
+      - 'install.sh'
+      - '.github/workflows/inferd.yml'
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vision:
+    # inferd's Linux build needs glibc 2.38.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: paths
+        run: |
+          echo "TESS_BUILD_ROOT=$RUNNER_TEMP/tess" >> "$GITHUB_ENV"
+          echo "PDFSPEC_INSTALL_DIR=$RUNNER_TEMP/bin" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # The same portable Tesseract build.yml ships, from the same cache.
+      - id: tess
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/tess/portable
+          key: tesseract-portable-linux-amd64-${{ hashFiles('native/tesseract/**') }}
+      - name: build tesseract
+        if: steps.tess.outputs.cache-hit != 'true'
+        run: sh native/tesseract/build.sh --portable
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/models
+          key: inferd-models-v0.8.0-gemma-4-e4b
+      - name: install inferd
+        run: |
+          set -euo pipefail
+          PDFSPEC_WITH_INFERD=1 sh install.sh | tee install.log
+      # Where the shell has no systemd user session, the installer says how to start the daemon
+      # instead, and that line is run as it is printed; where it has one, it started the service.
+      - name: start inferd
+        run: |
+          set -euo pipefail
+          if grep -q 'Start it with:' install.log; then
+            start=$(grep -A1 'Start it with:' install.log | tail -n 1)
+            echo "$start"
+            sh -c "${start% &} > \"$RUNNER_TEMP/daemon.log\" 2>&1 &"
+          else
+            systemctl --user is-active inferd
+          fi
+      - name: wait for the model
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/pdfspec-dev" ./cmd/pdfspec
+          for _ in $(seq 1 120); do
+            if PDFSPEC_TESSERACT=off "$RUNNER_TEMP/pdfspec-dev" probe testdata/reference/image-kinds.pdf 2>/dev/null | grep -q 'via inferd'; then
+              du -sh ~/.local/share/models
+              exit 0
+            fi
+            pgrep -f inferd-daemon >/dev/null || { echo "inferd exited"; tail -30 "$RUNNER_TEMP/daemon.log"; exit 1; }
+            sleep 15
+          done
+          echo "no model after 30 minutes"; tail -30 "$RUNNER_TEMP/daemon.log"; exit 1
+      # A test that cannot reach an engine skips, and a skip passes, so one that says so fails the
+      # job here instead, and the ones that measure are required by name.
+      - name: test with both engines
+        run: |
+          set -euo pipefail
+          t="$TESS_BUILD_ROOT/portable/tesseract"
+          export PDFSPEC_TEST_TESSERACT="$t/tesseract" TESSDATA_PREFIX="$t/tessdata" PDFSPEC_TEST_INFERD=1
+          go test -v -timeout 60m -run 'TestLive|TestImageKindsAreRead|TestBenchmarkWithBothEngines' \
+            ./internal/inferd ./ocr/gemma ./cmd/pdfspec > test.log 2>&1 || { tail -80 test.log; exit 1; }
+          grep -E -- '^(--- |ok|FAIL)|means over' test.log
+          if grep -qE 'PDFSPEC_TEST_INFERD is not set|names no tesseract' test.log; then
+            echo "a test did not find its engine"; exit 1
+          fi
+          for name in TestLiveVision TestLiveDescribe TestImageKindsAreRead TestBenchmarkWithBothEngines; do
+            grep -q -- "--- PASS: $name" test.log || { echo "$name did not pass"; exit 1; }
+          done
+      - name: inferd's log
+        if: always()
+        run: tail -40 "$RUNNER_TEMP/daemon.log" || true

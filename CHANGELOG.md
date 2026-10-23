@@ -19,9 +19,19 @@ All notable changes to this project are documented here, following
 - **CI builds and tests the whole product on all six targets,** and the release publishes what
   CI built (`.github/workflows/build.yml`).
 - `PDFSPEC_DOWNLOAD_URL` points the installers at a mirror of a release.
+- **The vision model runs in CI, on CPU** (`.github/workflows/inferd.yml`): inferd installed by
+  `install.sh` as a user installs it, then the live tests, the page of images, and the gold set
+  with both engines. The installer checks for inferd's glibc 2.38 before downloading it, and
+  without systemd prints the daemon's whole start command. ADR 0053.
 
 ### Fixed — 2026-10-23
 
+- **`chrome-report`'s gold gives its chart's values,** as `image-kinds`' gold gives the same
+  chart's: it had `[image]`, which is what the converter wrote without a vision model, not what
+  the page shows. Its floor without engines goes down to CER 0.095 and tables 0.545, the
+  values being in pixels, and is the one floor this lowers. `TestBenchmarkWithBothEngines`, new,
+  holds every v1 target with Tesseract and inferd: CER 0.0006 and tables 0.989 over all 33
+  fixtures.
 - **Tesseract is asked for TSV by setting, not by the `tsv` config file,** which a model
   directory holding only the language model does not have. With one, every page read as plain
   text, failed, and kept its extracted text.

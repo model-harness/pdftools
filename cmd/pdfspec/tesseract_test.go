@@ -291,3 +291,38 @@ func TestBundledTesseractIsFoundBesideTheCommand(t *testing.T) {
 		}
 	}
 }
+
+// TestBenchmarkWithBothEngines is the gold set with Tesseract and inferd's vision model, as md
+// runs with both installed: every v1 target over all fixtures, no fixture's characters worse than
+// with Tesseract alone, and no more [err]. TestImageKindsAreRead checks what the model reads off
+// each kind of image. Skipped unless
+// PDFSPEC_TEST_TESSERACT and PDFSPEC_TEST_INFERD both name an engine.
+func TestBenchmarkWithBothEngines(t *testing.T) {
+	if os.Getenv("PDFSPEC_TEST_INFERD") == "" {
+		t.Skip("PDFSPEC_TEST_INFERD is not set")
+	}
+	dir := filepath.Join("..", "..", "testdata", "reference")
+	testTesseract(t)
+	alone, err := benchRows(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(inferdEnv, "auto")
+	both, err := benchRows(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, a := benchMeans(both), benchMeans(alone)
+	t.Logf("means over every fixture with both engines: %+v", m)
+	for _, miss := range benchMisses(m, benchTargets) {
+		t.Errorf("over every fixture with both engines, %s", miss)
+	}
+	for i, r := range both {
+		if r.s.CER > alone[i].s.CER+0.001 {
+			t.Errorf("%s: CER %.4f with the model, %.4f without", r.name, r.s.CER, alone[i].s.CER)
+		}
+	}
+	if m.errs > a.errs {
+		t.Errorf("%.3f [err] per fixture with the model, %.3f without", m.errs, a.errs)
+	}
+}

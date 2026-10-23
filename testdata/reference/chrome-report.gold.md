@@ -17,6 +17,11 @@ Sailings that left on time
 | Sailing | One departure (`sailing_id`), counted once. |
 | Excluded | Test runs and the rows in `EXCLUDED`. |
 
-[image]
+| Month | Sales |
+| --- | --- |
+| Jan | 12 |
+| Feb | 18 |
+| Mar | 9 |
+| Apr | 24 |
 
 The figures are final.

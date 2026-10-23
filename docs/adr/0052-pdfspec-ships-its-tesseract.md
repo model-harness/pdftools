@@ -59,6 +59,7 @@ That copy is the measured build. Its model is its own, whatever `TESSDATA_PREFIX
   - on macOS, the archive unpacked to `~/.local/share/inferd`, where its LaunchAgent runs it;
   - on Windows, its `packaging\install.ps1`, which stages it in `%LOCALAPPDATA%\inferd` and adds it to the Startup folder.
 - inferd has no Intel macOS build, and the installer says so and goes on.
+- inferd's Linux builds need glibc 2.38: on Debian 12, with 2.36, the daemon would not start, failing on `GLIBC_2.38 not found`. So the installer checks `getconf GNU_LIBC_VERSION` before downloading, and on an older system says why and installs pdfspec alone. That is Ubuntu 24.04 or Debian 13 and later. pdfspec's own Tesseract needs only 2.35.
 - Without systemd, as in a container, the installer says how to start the daemon rather than failing.
 
 ## Acceptance
@@ -66,6 +67,11 @@ That copy is the measured build. Its model is its own, whatever `TESSDATA_PREFIX
 - **Windows x64:** the portable `tesseract.exe` is 4.47 MB and imports `KERNEL32.dll` alone. With the model and licences, the bundle is 8.4 MB.
 - **Linux x64:** built on Ubuntu 22.04, it links `libc`, `libm` and the loader alone. It reads the scan fixture on clean `debian:12-slim`, `fedora:41` and `ubuntu:24.04` images, with nothing installed.
 - **The benchmark:** with the bundle's Tesseract, after the TSV fix, the means over the 33 fixtures equal the dynamic build's in every digit: CER 0.0030, recall 0.995, precision 0.998, order 1.000, blocks 0.968, headings 0.978, tables 0.959 and style 0.967.
+- **Both engines, measured for the first time:** `TestBenchmarkWithBothEngines` holds every v1 target over the 33 fixtures with Tesseract and inferd's `gemma-4-e4b`. It also fails if any fixture's CER is worse than with Tesseract alone, or if more `[err]` are left. Its means are CER 0.0006, recall 0.998, precision 0.998, order 1.000, blocks 0.970, headings 0.978, tables 0.989 and style 0.967.
+- **A gold that said less than its page:** the first run of that test found one. `chrome-report`'s chart is `image-kinds`' bar chart, and the model read its values correctly. But the gold, written by looking at output without the model, gave the chart as `[image]`. `image-kinds`' gold gives the same chart's values as a table, since a gold is what the page shows. So `chrome-report`'s gold now does too.
+  - The fixture's floor without engines goes down accordingly, which is the one floor this change lowers. It is not a regression in the code. It goes from 1.000 everywhere to CER 0.095, recall 0.846, blocks 0.947 and tables 0.545, the chart's table being in pixels.
+  - Over the 26 fixtures a clone reads, the means are still inside every target: CER 0.0037, blocks 0.960, headings 0.971, tables 0.943.
+  - With Tesseract alone, over all 33, they are CER 0.0059, recall 0.990 and tables 0.914.
 - **Unpacked:** with `PATH` holding only `System32` and nothing set, the unpacked layout's `probe` reports `tesseract 5.5.3 eng`, and `md` reads the scan.
 - **Installed:** from a mock release, `install.sh` on a clean Debian, as a fresh user, puts Tesseract in `~/.local/share/pdfspec/tesseract`. `install.ps1` puts it in `bin\tesseract`. In both, pdfspec finds it with nothing set.
 - **On every platform:** CI's `build.yml` runs the same checks on all six targets.

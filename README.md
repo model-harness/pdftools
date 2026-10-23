@@ -138,7 +138,9 @@ curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install
 On Windows, run `$env:PDFSPEC_WITH_INFERD = '1'` before the PowerShell command above. inferd runs
 as your own background service and works on an ordinary CPU, no graphics card needed. The first
 time it starts, it downloads its model, Gemma 4 (`gemma-4-e4b`), which is about 6 GB. You can also
-install it yourself by following [inferd.io](https://inferd.io).
+install it yourself by following [inferd.io](https://inferd.io). On Linux, inferd needs a recent
+system, such as Ubuntu 24.04 or Debian 13; on an older one, the installer says so and installs
+`pdfspec` alone.
 
 Without inferd, `pdfspec` reads everything else and writes `[image]` where a picture would have
 been described. `pdfspec probe` tells you which engines it found.
