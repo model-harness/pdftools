@@ -99,7 +99,9 @@ jobs:
           t="$TESS_BUILD_ROOT/portable/tesseract"
           export PDFSPEC_TEST_TESSERACT="$t/tesseract" TESSDATA_PREFIX="$t/tessdata" PDFSPEC_TEST_INFERD=1
           go test -v -timeout 60m -run 'TestLive|TestImageKindsAreRead|TestBenchmarkWithBothEngines' \
-            ./internal/inferd ./ocr/gemma ./cmd/pdfspec > test.log 2>&1 || { tail -80 test.log; exit 1; }
+            ./internal/inferd ./ocr/gemma ./cmd/pdfspec > test.log 2>&1 || {
+            # The failing tests' own lines, which the converter's messages would bury in a tail.
+            grep -E -- '^(=== RUN|--- FAIL|    [a-z_]+_test\.go:[0-9]+:)' test.log; tail -5 test.log; exit 1; }
           grep -E -- '^(--- |ok|FAIL)|means over' test.log
           if grep -qE 'PDFSPEC_TEST_INFERD is not set|names no tesseract' test.log; then
             echo "a test did not find its engine"; exit 1
