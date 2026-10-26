@@ -1048,3 +1048,12 @@ func TestOutputIsShapedForAModel(t *testing.T) {
 		t.Errorf("got %q\nwant %q", got, want)
 	}
 }
+
+// TestListingEndsAtItsLastText: a listing's trailing white space, a line end and a space a
+// producer drew after it, is not written inside the fence as an empty last line.
+func TestListingEndsAtItsLastText(t *testing.T) {
+	got := render(t, doc.Block{Role: doc.RoleCode, Spans: []doc.Span{{Text: "endstream\nendobj\n "}}})
+	if want := "```\nendstream\nendobj\n```\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

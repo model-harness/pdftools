@@ -110,7 +110,7 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 		return out, Stats{Blocks: len(out.Preamble)}
 	}
 
-	b := &builder{opt: opt, index: newIndex(d)}
+	b := &builder{opt: opt, index: newIndex(d), monoBody: layout.MonoBody(d)}
 	b.notes = readNotes(tr, b.index)
 	b.visit(tr.Root)
 
@@ -126,6 +126,10 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 type builder struct {
 	opt   Options
 	index *index
+
+	// monoBody says the document is set in a monospaced face, so that its face makes nothing a
+	// listing (layout.Listing).
+	monoBody bool
 
 	// noAlt is the element whose /Alt already went to its image's line (images), so its own
 	// block does not write it again.
@@ -448,7 +452,11 @@ func breakAtBaselines(blk *doc.Block) {
 	out := make([]doc.Span, 0, len(blk.Spans))
 	for i := range blk.Spans {
 		sp := &blk.Spans[i]
-		if n := len(out); n > 0 && newLine(&out[n-1], sp) {
+		// Not where the break is already written, which the extractor does between two
+		// monospaced lines it joined into one block: at the end of the line, or at the start of
+		// the next span, as in Word's line-end space when a blank line follows it.
+		if n := len(out); n > 0 && newLine(&out[n-1], sp) && !strings.HasSuffix(out[n-1].Text, "\n") &&
+			!strings.HasPrefix(sp.Text, "\n") {
 			out = append(out, doc.Span{Text: "\n", MCID: -1})
 		}
 		out = append(out, *sp)
@@ -1169,6 +1177,15 @@ func (b *builder) emitItem(e *tag.Elem, role doc.Role, spans []*doc.Span, pg spa
 		a, okA := b.index.block[spans[i-1]]
 		c, okC := b.index.block[spans[i]]
 		held[i] = okA && okC && a == c
+	}
+	// A paragraph set wholly in a monospaced face over more than one line is a listing, as on the
+	// untagged path, before its spans are joined: its line ends are content (ADR 0054). Word
+	// declares each of its code samples a P.
+	if role == doc.RoleParagraph && layout.Listing(blk.Spans, b.monoBody) {
+		role, blk.Role = doc.RoleCode, doc.RoleCode
+	}
+	if !linesText(role) {
+		layout.FoldBreaks(blk.Spans)
 	}
 	spaceAtGaps(&blk, linesText(role), held)
 	if linesText(role) {

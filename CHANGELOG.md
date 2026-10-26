@@ -5,6 +5,16 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-26 (code samples keep their lines)
+
+- **A paragraph set wholly in a monospaced face over two or more lines is a code listing,**
+  fenced with its lines, indentation and blank lines, on both paths. Word sets a code sample as
+  one `P` whose lines its author broke by hand, and it converted as one line of inline code. So
+  did 53 PDF-syntax, XML and C examples across ISO 32000-2, ISO/TS 32003, 32004 and 32005 and
+  pymupdf's v110-changes. The extractor keeps the line break between two monospaced lines; a
+  document set in a monospaced face throughout, and a single line of code, are left as they were.
+  ADR 0054.
+
 ## [1.1.1] — 2026-10-23
 
 Installed, `pdfspec` runs by name: the installers add it to your PATH.

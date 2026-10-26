@@ -470,10 +470,16 @@ func TestOutlineConservesCharacters(t *testing.T) {
 // output lines that begin with whitespace closes that, because an adopted run is a line's indent
 // and a rejected one is at most a single inferred space.
 //
-// 3944 across the corpus, and most of it is not this rule's: ISO 32000-2 alone contributes 3396
-// from table cells and declared listings, and only PDF-Declarations' 23 come from here. That is
-// the point of asserting the total rather than the delta — the figure is sensitive to this rule in
-// both directions while also pinning that the rule did not disturb the other 3921.
+// 4119 across the corpus, and most of it is not this rule's: ISO 32000-2 alone contributes 3455
+// from table cells, declared listings and the listings layout.Listing finds, and only
+// PDF-Declarations' 23 come from here. That is the point of asserting the total rather than the
+// delta — the figure is sensitive to this rule in both directions while also pinning that the
+// rule did not disturb the rest.
+//
+// It was 3944 until monospaced paragraphs became listings (ADR 0054), and the 175 reconcile by
+// document: ISO 32000-2 +59, its new listings' 83 indented lines less 24 that were one-line
+// paragraphs and are now lines of them; ISO/TS 32004 +106, 108 less 2; ISO/TS 32005 +10. No
+// other document moved.
 func TestListingIndentsReachTheirListing(t *testing.T) {
 	// Every figure below is a count over the whole corpus, so an absent corpus does not make
 	// them 0 — it makes them unmeasured, and asserting 23 against a clone that legitimately has
@@ -529,8 +535,8 @@ func TestListingIndentsReachTheirListing(t *testing.T) {
 	if indents != 23 || others != 43 {
 		t.Errorf("untagged whitespace runs: %d indents, %d others; want 23 and 43", indents, others)
 	}
-	if lines != 3944 {
-		t.Errorf("indented output lines = %d, want 3944", lines)
+	if lines != 4119 {
+		t.Errorf("indented output lines = %d, want 4119", lines)
 	}
 	sort.Float64s(attached)
 	sort.Float64s(detached)

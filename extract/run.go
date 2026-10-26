@@ -1315,6 +1315,18 @@ func domSize(ln *line) float64 {
 func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 	var lineBox geom.Rect
 	start := doc.Line{Span: -1}
+	// Two lines set wholly in a monospaced face are a listing's, whose line ends are content, so
+	// they are joined by a line break where a wrap gets a space. The space a producer draws at a
+	// line's end goes with it; the next line's leading spaces, its indentation, stay. Word sets a
+	// code sample as one paragraph whose lines are one span each, with nothing else to say where
+	// the lines ended once they are joined.
+	listing := len(b.Spans) > 0 && !ln.joinPrev && monoLine(ln) && monoTail(b)
+	if listing {
+		// Spaces and tabs only, so the trim cannot reach back past the line's start: the line
+		// before a listing's line ends in its break.
+		last := &b.Spans[len(b.Spans)-1]
+		last.Text = strings.TrimRight(last.Text, " \t") + "\n"
+	}
 	for i := range ln.frags {
 		fr := &ln.frags[i]
 		txt := string(fr.text)
@@ -1337,6 +1349,7 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 			// Trailing placement fixed all 29 and broke none. TestWrapSpaceTrailsThe-
 			// PreviousSpan pins it, since text joined from the spans reads identically
 			// either way and no assertion on the joined string can tell them apart.
+			// A listing's break is white space, so WrapSpace adds nothing after it.
 			if WrapSpace(b.Spans, txt) {
 				b.Spans[len(b.Spans)-1].Text += " "
 			}
@@ -1387,6 +1400,47 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 	// field describes the spans and an accumulator that happens to agree is still a second
 	// implementation of a contract stated on the field. See doc.Block.SetMCIDs.
 	b.SetMCIDs()
+}
+
+// monoLine reports whether every fragment of ln that draws more than white space is set in a
+// monospaced face. A line of white space alone, as Word draws an empty line of a code sample,
+// is one: it continues a listing, and monoTail decides whether there is one to continue.
+func monoLine(ln *line) bool {
+	for i := range ln.frags {
+		if strings.TrimSpace(string(ln.frags[i].text)) != "" && !ln.frags[i].style.Mono {
+			return false
+		}
+	}
+	return true
+}
+
+// monoTail reports whether the last of b's lines that draws more than white space is set wholly in
+// a monospaced face, in monoLine's sense: a blank line inside a listing is the listing's.
+func monoTail(b *doc.Block) bool {
+	end := [2]int{len(b.Spans), 0}
+	for k := len(b.Lines) - 1; k >= 0; k-- {
+		l := b.Lines[k]
+		inked, mono := false, true
+		for i := l.Span; i < len(b.Spans) && i <= end[0]; i++ {
+			text := b.Spans[i].Text
+			if i == end[0] {
+				text = text[:min(end[1], len(text))]
+			}
+			if i == l.Span {
+				text = text[min(l.Offset, len(text)):]
+			}
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			inked = true
+			mono = mono && b.Spans[i].Style.Mono
+		}
+		if inked {
+			return mono
+		}
+		end = [2]int{l.Span, l.Offset}
+	}
+	return false
 }
 
 // endsWithSpace and startsWithSpace report whether a word boundary is already written at

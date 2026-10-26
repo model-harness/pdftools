@@ -129,6 +129,8 @@ func readOutline(s objects.Store, d *doc.Document) (*doc.Outline, error) {
 func InferRoles(d *doc.Document) {
 	layout.Images(d)
 	layout.Furniture(d)
+	// Before Tables: a listing's alignment is syntax, not columns.
+	layout.Listings(d)
 	layout.Tables(d, layout.DefaultOptions)
 	layout.Headings(d, layout.DefaultOptions)
 	layout.Lists(d, layout.DefaultOptions)

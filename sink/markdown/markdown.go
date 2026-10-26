@@ -434,8 +434,10 @@ func (w *writer) block(b doc.Block) {
 		w.nl()
 		// Verbatim. Escaping inside a fence would emit the backslashes literally,
 		// which is the one place the escaping policy must not run — sanitize adds no
-		// backslashes and so is the one substitution that still applies here.
-		w.str(strings.TrimRight(text, "\n"))
+		// backslashes and so is the one substitution that still applies here. Its trailing
+		// white space goes, a line end with a space a producer drew after it among it, which
+		// would otherwise be an empty last line.
+		w.str(strings.TrimRight(text, " \t\n"))
 		w.nl()
 		w.str(fence)
 		w.nl()
