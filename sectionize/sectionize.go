@@ -118,6 +118,7 @@ func Tagged(d *doc.Document, tr *tag.Tree, opt Options) (*doc.Outline, Stats) {
 	out.Preamble = b.preamble
 	out.Unplaced = b.index.unplaced(d)
 	placeUnclaimed(out, d, b.index)
+	ruledTables(out, d)
 
 	return out, b.stats(out)
 }

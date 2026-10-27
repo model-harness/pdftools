@@ -839,6 +839,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	var prev *line
 	var shape indent
 	cols := r.columns(opt)
+	drawn := drawsWrapSpaces(r.lines)
 
 	for i := range r.lines {
 		ln := &r.lines[i]
@@ -876,7 +877,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 		default:
 			shape.observe(ln)
 		}
-		appendLine(cur, ln, r.tol, r.page)
+		appendLine(cur, ln, r.tol, r.page, drawn)
 		prev = ln
 	}
 
@@ -1311,8 +1312,9 @@ func domSize(ln *line) float64 {
 }
 
 // appendLine adds a line's fragments to a block as spans, joining to the previous
-// line with a space.
-func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
+// line with a space. drawn says the page draws the space at each line it wraps between words,
+// so that a wrap with none drawn broke a word (drawsWrapSpaces).
+func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int, drawn bool) {
 	var lineBox geom.Rect
 	start := doc.Line{Span: -1}
 	// Two lines set wholly in a monospaced face are a listing's, whose line ends are content, so
@@ -1349,9 +1351,17 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 			// Trailing placement fixed all 29 and broke none. TestWrapSpaceTrailsThe-
 			// PreviousSpan pins it, since text joined from the spans reads identically
 			// either way and no assertion on the joined string can tell them apart.
-			// A listing's break is white space, so WrapSpace adds nothing after it.
+			// A listing's break is white space, so WrapSpace adds nothing after it. On a page
+			// that draws its wrap spaces, a line of one word with none drawn after it, ending in a
+			// letter before a lowercase one, may be a word Word broke because it was too wide for
+			// the line by itself, as in a narrow cell, "Confidenc" and "e", or one word to a line
+			// there, "Object" and "number"; the document's words decide it (resolveBreaks).
 			if WrapSpace(b.Spans, txt) {
-				b.Spans[len(b.Spans)-1].Text += " "
+				if drawn && oneWordLine(b) && brokenWord(b.Spans[len(b.Spans)-1].Text, txt) {
+					b.Spans[len(b.Spans)-1].Text += wordMark
+				} else {
+					b.Spans[len(b.Spans)-1].Text += " "
+				}
 			}
 		}
 
@@ -1400,6 +1410,78 @@ func appendLine(b *doc.Block, ln *line, t geom.Tolerance, page int) {
 	// field describes the spans and an accumulator that happens to agree is still a second
 	// implementation of a contract stated on the field. See doc.Block.SetMCIDs.
 	b.SetMCIDs()
+}
+
+// wrapHabit is the fewest wrap spaces a page must draw before drawing them is its habit.
+const wrapHabit = 5
+
+// drawsWrapSpaces reports whether a page draws the space at the lines it wraps between words, as
+// Word does and LaTeX and Chrome do not: of its lines that run on into one starting in a lowercase
+// letter, wrapHabit or more end in a drawn space, and more do than do not. A line ending in a dash
+// is left out, since the dash, not a space, is what it was broken at. A page that draws no wrap
+// spaces is silent about which of its wraps broke a word.
+func drawsWrapSpaces(lines []line) bool {
+	wraps, drawn := 0, 0
+	for i := 0; i+1 < len(lines); i++ {
+		a, b := &lines[i], &lines[i+1]
+		if a.orient != 0 || b.orient != 0 {
+			continue
+		}
+		last, first := lineEnd(a), lineStart(b)
+		r, _ := utf8.DecodeRuneInString(first)
+		end, _ := utf8.DecodeLastRuneInString(last)
+		if !unicode.IsLower(r) || unicode.Is(unicode.Pd, end) {
+			continue
+		}
+		wraps++
+		if endsWithSpace(last) {
+			drawn++
+		}
+	}
+	return drawn >= wrapHabit && drawn > wraps-drawn
+}
+
+// lineEnd is the text of ln's last fragment that has any, and lineStart that of its first,
+// trimmed of leading white space.
+func lineEnd(ln *line) string {
+	for i := len(ln.frags) - 1; i >= 0; i-- {
+		if t := string(ln.frags[i].text); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+func lineStart(ln *line) string {
+	for i := range ln.frags {
+		if t := strings.TrimLeftFunc(string(ln.frags[i].text), unicode.IsSpace); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// oneWordLine reports whether b's last line is a single word: no white space inside it. A block
+// that a line runs on into has recorded its lines, each within its spans.
+func oneWordLine(b *doc.Block) bool {
+	l := b.Lines[len(b.Lines)-1]
+	var sb strings.Builder
+	for i := l.Span; i < len(b.Spans); i++ {
+		text := b.Spans[i].Text
+		if i == l.Span {
+			text = text[l.Offset:]
+		}
+		sb.WriteString(text)
+	}
+	return !strings.ContainsFunc(strings.TrimSpace(sb.String()), unicode.IsSpace)
+}
+
+// brokenWord reports whether prev and next meet inside a word: a letter ends one and a lowercase
+// letter starts the other.
+func brokenWord(prev, next string) bool {
+	last, _ := utf8.DecodeLastRuneInString(prev)
+	first, _ := utf8.DecodeRuneInString(next)
+	return unicode.IsLetter(last) && unicode.IsLower(first)
 }
 
 // monoLine reports whether every fragment of ln that draws more than white space is set in a

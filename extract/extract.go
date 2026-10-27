@@ -142,7 +142,7 @@ func (e *Extractor) Document() (*doc.Document, error) {
 	}
 	d.Pages = make([]doc.Page, 0, n)
 	for i := 1; i <= n; i++ {
-		p, err := e.Page(i)
+		p, err := e.page(i)
 		if err != nil {
 			// Failed on the page as well as in the list, because the list is only visible
 			// to a caller that asks this Extractor and the page travels to every sink. A
@@ -153,6 +153,8 @@ func (e *Extractor) Document() (*doc.Document, error) {
 		}
 		d.Pages = append(d.Pages, p)
 	}
+	// A wrap that may break a word is decided by the whole document's words.
+	resolveBreaks(d.Pages)
 	return d, nil
 }
 
@@ -164,6 +166,16 @@ func (e *Extractor) Failed() []PageError { return e.failed }
 
 // Page extracts one 1-based page.
 func (e *Extractor) Page(n int) (doc.Page, error) {
+	p, err := e.page(n)
+	// A wrap that may break a word is decided by the page's own words, which are all this call
+	// has; Document decides by every page's.
+	pages := []doc.Page{p}
+	resolveBreaks(pages)
+	return pages[0], err
+}
+
+// page extracts one 1-based page, with any wrap that may break a word still marked.
+func (e *Extractor) page(n int) (doc.Page, error) {
 	page, err := e.s.Page(n)
 	if err != nil {
 		return doc.Page{Number: n}, fmt.Errorf("extract: page %d: %w", n, err)

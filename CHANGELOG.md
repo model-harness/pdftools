@@ -5,6 +5,21 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-27 (Word's tables and the words in their cells)
+
+- **A Word table whose structure was lost in export converts as a table.** Word declares such a
+  table as one bare `P` per cell and rules only its header, each cell's own bottom border with a
+  joint where two meet. That rule now names the columns, the paragraphs over and under it are
+  the header and rows, and the table runs on across a page under the next page's repeated
+  header, which is dropped. A table Word tagged without a `TH` gains its header row from the same
+  rule.
+- **A word Word broke in a narrow cell is whole:** "Confidenc e" is "Confidence". On a page that
+  draws the space at its wraps, a wrap after a line of one word with none drawn is decided by the
+  document's own words. Other producers' pages, and wraps after a line of several words, are
+  unchanged.
+- New fixture `word-report`, exported by Word from `word-report.ps1`, scoring 1.000 on every
+  dimension. ADR 0055.
+
 ### Fixed — 2026-10-26 (code samples keep their lines)
 
 - **A paragraph set wholly in a monospaced face over two or more lines is a code listing,**

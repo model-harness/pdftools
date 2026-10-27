@@ -143,8 +143,8 @@ func TestFixtureManifestMatchesTree(t *testing.T) {
 			return nil
 		}
 		// The reference fixtures' sources and expectations are exempt, and only those:
-		// their .tex, the one .html Chrome prints, degrade.go, which makes the scans,
-		// their .gold.md, and the directory's README.
+		// their .tex, the .html Chrome prints, the .ps1 that drives Word, degrade.go,
+		// which makes the scans, their .gold.md, and the directory's README.
 		//
 		// Not an erosion of the rule but a different answer to it. What the manifest
 		// protects against is a binary of unknown origin and unknown licence sitting in
@@ -164,7 +164,7 @@ func TestFixtureManifestMatchesTree(t *testing.T) {
 		if strings.HasPrefix(rel, "reference/") {
 			base := filepath.Base(rel)
 			switch {
-			case strings.HasSuffix(rel, ".tex"), strings.HasSuffix(rel, ".html"), strings.HasSuffix(rel, ".gold.md"),
+			case strings.HasSuffix(rel, ".tex"), strings.HasSuffix(rel, ".html"), strings.HasSuffix(rel, ".ps1"), strings.HasSuffix(rel, ".gold.md"),
 				base == "degrade.go", base == "README.md":
 				return nil
 			}
