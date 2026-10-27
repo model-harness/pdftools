@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,20 +14,30 @@ import (
 // is decided before a document leaves the package, in every committed fixture and every corpus
 // document present: no span carries one.
 func TestNoWordMarkLeavesTheExtractor(t *testing.T) {
+	// Every committed fixture but an empty one, zeroLength.pdf, is a PDF this opens, so a test
+	// that opened fewer read less than it says, on a clone without the corpus too.
 	var paths []string
+	want := 0
 	for _, name := range fixturePDFs(t) {
-		paths = append(paths, filepath.Join(fixtureDir, name))
+		path := filepath.Join(fixtureDir, name)
+		paths = append(paths, path)
+		if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
+			want++
+		}
 	}
+	fixtures := len(paths)
 	for _, name := range corpusFiles() {
 		paths = append(paths, filepath.Join(corpusDir, name))
 	}
 	opened := 0
-	for _, path := range paths {
+	for i, path := range paths {
 		s, err := pcstore.Open(path)
 		if err != nil {
 			continue
 		}
-		opened++
+		if i < fixtures {
+			opened++
+		}
 		d, err := extract.New(s, extract.DefaultOptions).Document()
 		_ = s.Close()
 		if err != nil {
@@ -42,8 +53,7 @@ func TestNoWordMarkLeavesTheExtractor(t *testing.T) {
 			}
 		}
 	}
-	// Every committed fixture is a PDF this opens, so opening none means the test read nothing.
-	if opened < len(fixturePDFs(t)) {
-		t.Fatalf("opened %d of %d documents", opened, len(paths))
+	if opened != want {
+		t.Fatalf("opened %d of the %d committed fixtures with content", opened, want)
 	}
 }
