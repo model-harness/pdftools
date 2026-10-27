@@ -19,13 +19,13 @@ and reads scans with a Tesseract on your PATH.
 
 If you've ever tried this with an ordinary PDF library, you probably got back text with words
 run together, two columns shuffled into one, and a page number stuck in the middle of a
-sentence. That isn't the library being careless. It comes from what a PDF actually is.
+sentence. The library isn't being careless. The file was never built to hold those things.
 
 ## A PDF is a drawing of a page
 
 PDF was designed in the era of print, to make a page look exactly the same on every screen
-and every printer. It does that by describing the page as a drawing. A PDF is essentially a
-list of vector instructions: draw the shape of the letter "T" here, in this font, at this size;
+and every printer. It does that by describing the page as a drawing. A PDF is a list of
+vector instructions: draw the shape of the letter "T" here, in this font, at this size;
 draw an "h" just to its right; draw a line under the heading; place this photo in that box.
 
 That's perfect for printing, and awkward for everything else, because the drawing is all
@@ -65,15 +65,15 @@ the spaces. pdfplumber found just over a third as many words, and one in six of 
 ran past 25 characters, because it missed the gaps between them. Go libraries fare worse still: one we
 tested found a space in only 0.01% of its text, and produced a single "word" 4,069 letters long.
 
-The fashionable fix is to skip all this and show each page to an AI vision model. That works,
-but it costs far more and takes far longer than reading text the file already contains. Worse,
-when a model can't make something out, it tends to guess, and a confident guess looks exactly
-like the real thing.
+The popular fix is to skip all this and show each page to an AI vision model. That works, but
+it costs far more and takes far longer than reading text the file already contains. And when a
+model can't make something out, it tends to guess, and a confident guess looks just like the
+real thing.
 
 ## How pdfspec does it
 
-`pdfspec` treats the file as the best witness to its own content, and only looks further when
-the file runs out.
+`pdfspec` trusts what the file says about itself first, and looks elsewhere only where the file
+has nothing to say.
 
 First it reads what the file holds, and rebuilds the document from it. It works out the words
 from the gaps between letters, the reading order from the columns, the headings from size and
@@ -88,7 +88,7 @@ and run on your own machine.
 
 What it can't read, it doesn't guess. A letter nobody could read comes out as `[err]`, and an
 image nobody could describe comes out as `[image]`. Each run also tells you which pages they
-were on, so you know exactly where to look.
+were on, so you know where to look.
 
 ## Getting started
 
@@ -122,12 +122,12 @@ scanned pages. Run `pdfspec <command> -h` for the options.
 
 ## Reading scans and pictures
 
-Everything you need to read scans comes in the box. Each release of `pdfspec` ships with its own
+You don't need to install anything else to read scans. Each release of `pdfspec` ships with its own
 copy of Tesseract, the open-source text recognizer, built from this repository with the English
 model. The installers put it beside `pdfspec`, so a scanned page, a screenshot of a table, or a
 letter whose font never said what it was gets read without anything else to install.
 
-Describing pictures and charts is the one thing that needs more. For that, `pdfspec` asks a
+Describing pictures and charts needs one more piece. For that, `pdfspec` asks a
 vision model you run on your own machine, through [inferd](https://inferd.io). The model also
 gives a second opinion on any word Tesseract isn't sure of. To install inferd along with
 `pdfspec`, set `PDFSPEC_WITH_INFERD=1`:
