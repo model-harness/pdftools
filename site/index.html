@@ -155,7 +155,7 @@
     <a class="name" href="#">pdftools</a>
     <nav aria-label="Project">
       <a href="https://github.com/model-harness/pdftools">GitHub</a>
-      <a href="https://github.com/model-harness/pdftools/releases/tag/v1.1.1">v1.1.1</a>
+      <a href="https://github.com/model-harness/pdftools/releases/tag/v1.2.0">v1.2.0</a>
     </nav>
   </header>
 
@@ -240,7 +240,7 @@ pdfspec md report.pdf &gt; report.md</code></pre>
           <h3>Convert a file</h3>
 <pre class="block"><code>curl -fsSL https://raw.githubusercontent.com/model-harness/pdftools/main/install.sh | sh
 pdfspec md report.pdf &gt; report.md</code></pre>
-          <p>On Windows, run <code>irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex</code> in PowerShell. Either installer checks the download against the release&rsquo;s checksums first, and adds <code>pdfspec</code> to your PATH for the next terminal you open. With Go, <code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.1.1</code> works too.</p>
+          <p>On Windows, run <code>irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | iex</code> in PowerShell. Either installer checks the download against the release&rsquo;s checksums first, and adds <code>pdfspec</code> to your PATH for the next terminal you open. With Go, <code>go install github.com/model-harness/pdftools/cmd/pdfspec@v1.2.0</code> works too.</p>
           <p>That installs everything. It comes with its own copy of Tesseract, so scanned pages are read without anything else to install. To have pictures and charts described too, add <code>PDFSPEC_WITH_INFERD=1</code> to the install, which sets up <a href="https://inferd.io">inferd</a>, a vision model that runs on your own machine. Its model is a 6&nbsp;GB download the first time it starts.</p>
         </div>
         <div>

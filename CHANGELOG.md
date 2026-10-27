@@ -5,6 +5,12 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-27
+
+Word documents convert as they are laid out: code samples keep their lines, tables come out as
+tables, and words Word broke in narrow cells are whole again. An image the vision model fails on
+is now named in the log.
+
 ### Fixed — 2026-10-27 (Word's tables and the words in their cells)
 
 - **A Word table whose structure was lost in export converts as a table.** Word declares such a
@@ -4197,7 +4203,8 @@ tag rather than `@latest` — the API is not stable before 1.0.
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
 
-[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/model-harness/pdftools/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/model-harness/pdftools/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/model-harness/pdftools/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/model-harness/pdftools/compare/v1.0.0...v1.0.1
