@@ -5,6 +5,10 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-10-27
+
+Pictures and charts are described when inferd is busy, rather than left as `[image]`.
+
 ### Fixed — 2026-10-27 (a busy inferd is waited for)
 
 - **Pictures and charts are described when inferd is busy.** `pdfspec` asks inferd whether a
@@ -4211,7 +4215,8 @@ tag rather than `@latest` — the API is not stable before 1.0.
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
 
-[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/model-harness/pdftools/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/model-harness/pdftools/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/model-harness/pdftools/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/model-harness/pdftools/compare/v1.0.1...v1.1.0
