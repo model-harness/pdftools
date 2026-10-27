@@ -46,18 +46,22 @@ func word(text string, x0, y0, x1, y1, line int) ocr.Word {
 
 // fakeDescriber answers Describe and Chart with fixed replies.
 type fakeDescriber struct {
-	desc  gemma.Description
-	rows  [][]string
-	err   error
-	asked int
+	desc gemma.Description
+	rows [][]string
+	err  error
+	// chartErr is what Chart fails with, if it does.
+	chartErr error
+	asked    int
 }
 
 func (f *fakeDescriber) Describe(context.Context, image.Image) (gemma.Description, error) {
 	f.asked++
 	return f.desc, f.err
 }
-func (f *fakeDescriber) Chart(context.Context, image.Image) ([][]string, error) { return f.rows, nil }
-func (f *fakeDescriber) Name() string                                           { return "describer" }
+func (f *fakeDescriber) Chart(context.Context, image.Image) ([][]string, error) {
+	return f.rows, f.chartErr
+}
+func (f *fakeDescriber) Name() string { return "describer" }
 
 // TestImageIsReadByKind: a ruled grid with words is a table, words covering the image make it
 // text, and the rest goes to the describer, which a chart's description sends on for its values.
@@ -385,5 +389,37 @@ func TestOCRPageIsLevelledAndItsTableRead(t *testing.T) {
 	}
 	if cells != 4 || p.Blocks[0].Role != doc.RoleTableCell || p.Blocks[0].Text() != "Name" {
 		t.Errorf("%d cells, first block %s %q: want the table read, first", cells, p.Blocks[0].Role, p.Blocks[0].Text())
+	}
+}
+
+// TestAFailedModelReadIsLogged: a description or a chart's values the model fails to give is
+// said in the log, with the page, since the image is then left unread, or a chart without its
+// table, and nothing else would say why.
+func TestAFailedModelReadIsLogged(t *testing.T) {
+	at := geom.NewRect(100, 400, 400, 600)
+	box := image.Rect(500, 300, 800, 500)
+	for _, c := range []struct {
+		name string
+		d    *fakeDescriber
+		kind string
+	}{
+		{"a description", &fakeDescriber{err: errors.New("connection refused")}, ""},
+		{"a chart's values", &fakeDescriber{desc: gemma.Description{Tag: "diagram", Text: "A bar chart of sales"},
+			chartErr: errors.New("connection refused")}, "chart"},
+	} {
+		var log strings.Builder
+		o := &ocrRun{log: &log, eng: &fakeEngine{}, minConf: 30}
+		table := imageTables
+		read := o.image(context.Background(), 7, at, gridImage(false), box, nil, c.d, &table)
+		kind := ""
+		if read != nil {
+			kind = read.Kind
+		}
+		if kind != c.kind || (read != nil && len(read.Blocks) != 0) || table != imageTables {
+			t.Errorf("%s: read %+v, table %d, want kind %q and no table numbered", c.name, read, table, c.kind)
+		}
+		if !strings.Contains(log.String(), "page 7") || !strings.Contains(log.String(), "connection refused") {
+			t.Errorf("%s: log %q, want the page and the model's error", c.name, log.String())
+		}
 	}
 }

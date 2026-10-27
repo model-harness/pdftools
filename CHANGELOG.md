@@ -20,6 +20,12 @@ All notable changes to this project are documented here, following
 - New fixture `word-report`, exported by Word from `word-report.ps1`, scoring 1.000 on every
   dimension. ADR 0055.
 
+### Fixed — 2026-10-27 (a failed model read says so)
+
+- **An image the vision model fails on is named in the log,** with its page and the model's
+  error, as a page Tesseract fails on already was. It was left `[image]`, or a chart without
+  its values, and nothing said why.
+
 ### Fixed — 2026-10-26 (code samples keep their lines)
 
 - **A paragraph set wholly in a monospaced face over two or more lines is a code listing,**

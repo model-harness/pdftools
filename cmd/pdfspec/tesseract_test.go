@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -159,6 +158,15 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 	}
 }
 
+// testLog writes each message to t's log.
+type testLog struct{ t *testing.T }
+
+func (l testLog) Write(p []byte) (int, error) {
+	l.t.Helper()
+	l.t.Log(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
+}
+
 // TestImageKindsAreRead is #11's done-when on the gold set's page of images (ADR 0046): with
 // Tesseract the text image is text and the table image a table, each at its character and cell
 // target; with inferd's vision model too, the chart is a chart, its values a table, and the
@@ -171,7 +179,8 @@ func TestImageKindsAreRead(t *testing.T) {
 		t.Setenv(inferdEnv, "auto")
 	}
 	opt := defaultEngines().options()
-	opt.Log = io.Discard
+	// The converter's messages are the test's, so an image the model failed on says why.
+	opt.Log = testLog{t}
 	pd, err := pdfspec.Open(path, opt)
 	if err != nil {
 		t.Fatal(err)

@@ -120,17 +120,23 @@ func (o *ocrRun) image(ctx context.Context, page int, at geom.Rect, crop image.I
 	if describe == nil {
 		return nil
 	}
+	// A model that fails leaves the image unread, or a chart without its table, which the log
+	// says, as it says a page Tesseract fails on: nothing else in the output would.
 	d, err := describe.Describe(ctx, crop)
 	if err != nil {
+		fmt.Fprintf(o.log, "  page %d: an image: %v\n", page, err)
 		return nil
 	}
 	read := &doc.ImageRead{Kind: "picture", Alt: d.String(), By: describe.Name()}
 	if chartTags[d.Tag] || chartWords.MatchString(d.Text) {
 		read.Kind = "chart"
-		if rows, err := describe.Chart(ctx, crop); err == nil {
-			*table++
-			read.Blocks = cellBlocks(rows, *table, page, at, box, nil, nil)
+		rows, err := describe.Chart(ctx, crop)
+		if err != nil {
+			fmt.Fprintf(o.log, "  page %d: a chart's values: %v\n", page, err)
+			return read
 		}
+		*table++
+		read.Blocks = cellBlocks(rows, *table, page, at, box, nil, nil)
 	}
 	return read
 }
