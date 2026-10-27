@@ -158,11 +158,12 @@ func TestBenchmarkWithTesseract(t *testing.T) {
 	}
 }
 
-// testLog writes each message to t's log.
+// testLog writes each message to t's log. It is no helper, so a message is credited to this file,
+// as inferd.yml's failure filter, which keeps only lines from a _test.go file, needs: a helper
+// would credit it to fmt, the converter's caller.
 type testLog struct{ t *testing.T }
 
 func (l testLog) Write(p []byte) (int, error) {
-	l.t.Helper()
 	l.t.Log(strings.TrimRight(string(p), "\n"))
 	return len(p), nil
 }
