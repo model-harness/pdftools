@@ -5,6 +5,14 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-27 (a busy inferd is waited for)
+
+- **Pictures and charts are described when inferd is busy.** `pdfspec` asks inferd whether a
+  vision model is ready and waited three seconds for the answer. A daemon running on a CPU, busy
+  with another request, can take longer, and `pdfspec` then went on without the model, leaving
+  pictures as `[image]`. It now waits up to 30 seconds. With no daemon running, it still learns
+  that within a quarter of a second.
+
 ## [1.2.0] — 2026-10-27
 
 Word documents convert as they are laid out: code samples keep their lines, tables come out as

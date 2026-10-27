@@ -41,9 +41,11 @@ func (s Status) Vision() (Capability, bool) {
 	return Capability{}, false
 }
 
-// adminTimeout bounds reading the admin socket's opening frames, which the daemon writes at
-// once on connect.
-const adminTimeout = 3 * time.Second
+// adminTimeout bounds reading the admin socket's opening frames. The daemon writes them on
+// connect, but one on a CPU, busy with another request, can take seconds to: three was too few on
+// inferd.yml's runner, and a document read on without its model. A run without inferd learns that
+// within adminDial, so the bound costs only a daemon that is there and slow.
+const adminTimeout = 30 * time.Second
 
 // adminDial bounds the dial. A Windows pipe can be briefly absent between instances, so the
 // dialer retries a missing one, but a run without inferd asks once per document and should not
