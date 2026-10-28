@@ -1,0 +1,85 @@
+testdata/manifest.json
+  s_5cd1b28ed520c1::t_34a0fd795f7560 65
+extract/ruled.go
+  s_5cd1b28ed520c1::t_f767059f5aa222 1-5,7-116,208
+  s_5cd1b28ed520c1::t_a16004d2e22871 166-168
+  s_5cd1b28ed520c1::t_e09ef68e8b4467 6,117-123,125-136,141-146,148-154,169-207
+  s_5cd1b28ed520c1::t_990322ea63b51b 139-140
+  s_5cd1b28ed520c1::t_b510b4abae8e97 155-158,160-165
+  s_5cd1b28ed520c1::t_d7ca844f6ab06b 124,137
+  s_5cd1b28ed520c1::t_8355e2754d8c16 138
+  s_5cd1b28ed520c1::t_11507c7c6dec60 147
+  s_5cd1b28ed520c1::t_c7d9b4bb98e402 159
+sectionize/ruled_test.go
+  s_5cd1b28ed520c1::t_f767059f5aa222 14
+layout/lattice.go
+  s_5cd1b28ed520c1::t_158bbba3c77642 370-379,404-410
+layout/ruledtable_test.go
+  s_5cd1b28ed520c1::t_c248ad73165477 21-22,24-30
+  s_5cd1b28ed520c1::t_514a1ca1ebf1bc 50-71,73,75-89,91,94-107,109-131
+  s_5cd1b28ed520c1::t_5828200884b135 1-20,23,31-49
+  s_5cd1b28ed520c1::t_8666826b4d15fc 72,74,90,92-93,108
+sectionize/ruled.go
+  s_5cd1b28ed520c1::t_f767059f5aa222 8,16,26,28,66,100,171,187,202,220,255,313,330,346
+docs/adr/0056-an-untagged-table-is-read-from-its-header-rule.md
+  s_5cd1b28ed520c1::t_cf25175baff18d 46-60
+  s_5cd1b28ed520c1::t_3b18bde407dec1 61
+  s_5cd1b28ed520c1::t_244708c9b87723 1-45,62-66
+layout/ruledtable.go
+  s_5cd1b28ed520c1::t_0fb37d0c6cd3e7 174-176
+  s_5cd1b28ed520c1::t_429b2aafda09c8 77-82
+  s_5cd1b28ed520c1::t_2886693f50d42e 1-19,22-55,60-65,67-76,83-100,103-118,134-146,149-173,177-179
+  s_5cd1b28ed520c1::t_44f3faa3c8d2da 101-102
+  s_5cd1b28ed520c1::t_c7e0b9d2207e14 56-59
+  s_5cd1b28ed520c1::t_eae14cfdadb69d 119-133
+  s_5cd1b28ed520c1::t_566c7503cfedff 20-21
+  s_5cd1b28ed520c1::t_a16004d2e22871 147-148
+  s_26b41e6f3ea417::t_5625b3652b30c6 66
+testdata/reference/word-report-untagged.gold.md
+  s_5cd1b28ed520c1::t_34a0fd795f7560 1-24
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_c853aa1209884f 8-18
+layout/tables.go
+  s_5cd1b28ed520c1::t_158bbba3c77642 69-70
+  s_5cd1b28ed520c1::t_9e4a4f278678a8 71-73
+extract/ruled_test.go
+  s_5cd1b28ed520c1::t_11090f39755bf4 4,82-85,87-88,90-91,95-97,101-111
+  s_5cd1b28ed520c1::t_c248ad73165477 86,98-100
+  s_5cd1b28ed520c1::t_e5ed889e277702 114-136,143-148
+  s_5cd1b28ed520c1::t_11fecc4cb5e4e4 89,92-94
+  s_5cd1b28ed520c1::t_f767059f5aa222 1-3,5-81,112-113
+  s_5cd1b28ed520c1::t_72ce505de7c1f2 137-139
+  s_5cd1b28ed520c1::t_de09f348a5aacb 140-142
+testdata/reference/word-report.ps1
+  s_5cd1b28ed520c1::t_a03c7348f28e87 8,11,74-76
+extract/run.go
+  s_5cd1b28ed520c1::t_41da5794e34ac0 831
+testdata/reference/README.md
+  s_5cd1b28ed520c1::t_34a0fd795f7560 166,185
+cmd/pdfspec/benchfloor_test.go
+  s_5cd1b28ed520c1::t_c6a641fbe5f2d9 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "70f1990062768437d7b5521d55a5520cadc91ef7",
+  "prompts": {},
+  "sessions": {
+    "s_26b41e6f3ea417": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9107192-a9ac-4ddc-acb9-8075f5a301fb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
