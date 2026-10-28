@@ -258,3 +258,40 @@ func TestAnUnnumberedHeadingsLevelComesFromItsStyle(t *testing.T) {
 		}
 	})
 }
+
+// TestACentredTitleHeadsItsBody: a title centred on its page, set half as large again as the body
+// or more, is a heading though the paragraph after it starts at the margin, as a book's chapter
+// title and a report's title are, or a figure follows it, as a textbook's section does (ADR 0058).
+// A centred line at the body's size is a caption, which ADR 0031 keeps out, and so is one off the
+// page's centre or not half as large again.
+func TestACentredTitleHeadsItsBody(t *testing.T) {
+	title := func(size, x0, x1 float64, bold bool) doc.Block {
+		b := block("Author's Note to the 2021 Edition", size, bold)
+		b.Box = geom.Rect{X0: x0, X1: x1}
+		return b
+	}
+	para := block(strings.Repeat("This book is a reprinted version of a book, as the title says. ", 6), 11, false)
+	para.Box = geom.Rect{X0: 57, X1: 377}
+	for _, c := range []struct {
+		name string
+		head doc.Block
+		want doc.Role
+	}{
+		{"a centred title", title(24, 112, 316, true), doc.RoleHeading},
+		{"half as large again", title(16.5, 112, 316, false), doc.RoleHeading},
+		{"a centred caption at the body's size", title(11, 112, 316, true), doc.RoleParagraph},
+		{"a large line off the centre", title(24, 152, 356, true), doc.RoleParagraph},
+		{"not half as large again", title(16.25, 112, 316, false), doc.RoleParagraph},
+		{"over a figure", title(24, 112, 316, true), doc.RoleHeading},
+	} {
+		next := para
+		if c.name == "over a figure" {
+			next = doc.Block{Role: doc.RoleImage, Box: geom.Rect{X0: 57, Y0: 300, X1: 377, Y1: 500}}
+		}
+		d := &doc.Document{Pages: []doc.Page{{Number: 1, Box: geom.NewRect(0, 0, 432, 648), Blocks: []doc.Block{c.head, next, para, para}}}}
+		Headings(d, DefaultOptions)
+		if got := d.Pages[0].Blocks[0].Role; got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+}

@@ -86,6 +86,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/geom"
 )
 
 // Options configures inference.
@@ -191,7 +192,7 @@ func Headings(d *doc.Document, opt Options) Stats {
 	for pi := range d.Pages {
 		for bi := range d.Pages[pi].Blocks {
 			if b := &d.Pages[pi].Blocks[bi]; b.Role != doc.RoleArtifact {
-				flat = append(flat, placed{b, pi})
+				flat = append(flat, placed{b, pi, d.Pages[pi].Box})
 			}
 		}
 	}
@@ -242,7 +243,7 @@ func Headings(d *doc.Document, opt Options) Stats {
 			byStyle[k][c.level]++
 			continue
 		}
-		if c.words && headsBody(flat, cands, i) {
+		if c.words && (headsBody(flat, cands, i) || centredTitle(flat[i], c.style.Size, size)) {
 			unnumbered = append(unnumbered, i)
 		}
 	}
@@ -266,10 +267,11 @@ func Headings(d *doc.Document, opt Options) Stats {
 	return st
 }
 
-// placed is a block and the index of the page it is on.
+// placed is a block, the index of the page it is on, and that page's box.
 type placed struct {
 	b    *doc.Block
 	page int
+	box  geom.Rect
 }
 
 // candidate is a block that passed Headings' typographic gate.
@@ -329,6 +331,14 @@ const (
 	// headedSkip is how many numbered headings a heading can sit above before its text:
 	// "7.3.4 String objects" is followed at once by "7.3.4.1 General".
 	headedSkip = 4
+	// titleRatio is how much larger than the body a title set centred must be to be a heading
+	// whatever follows it (ADR 0058). The centred captions ADR 0031 kept out are set at
+	// about the body's size; the titles of opendataloader-bench's single pages are 1.6 to 2.4
+	// times it.
+	titleRatio = 1.5
+	// titleCentre is how far a centred title's middle can be from its page's, in the page's width:
+	// a book page's text is set off the page's centre by its gutter, 6 points in 434 there.
+	titleCentre = 0.025
 )
 
 // headsBody reports whether the unnumbered candidate at flat[i] is followed by the body
@@ -383,6 +393,18 @@ func headsBody(flat []placed, cands map[int]*candidate, i int) bool {
 		return size < hs-headedSize || (math.Abs(size-hs) <= headedSize && cands[i].style.Bold && !bold)
 	}
 	return false
+}
+
+// centredTitle reports whether h is set centred on its page, its middle within titleCentre of the
+// page's, and titleRatio times the body's size or more: a title, which heads whatever follows it,
+// though that starts at the margin or is a figure, as headsBody asks of a heading set flush.
+//
+// Headings asks it only where the document has a body, so bodySize is set; a page with no box
+// has no middle a block's can be within titleCentre of.
+func centredTitle(h placed, size, bodySize float64) bool {
+	mid := (h.box.X0 + h.box.X1) / 2
+	at := (h.b.Box.X0 + h.b.Box.X1) / 2
+	return math.Abs(at-mid) <= titleCentre*h.box.Width() && size >= titleRatio*bodySize
 }
 
 // dominant returns the size most of a block's characters are set in, whether most of them

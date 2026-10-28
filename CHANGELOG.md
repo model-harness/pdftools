@@ -5,6 +5,16 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-28 (centred titles)
+
+- **A title set large and centred on its page is a heading.** A heading had to start where the
+  text under it does, which keeps a centred caption out, and so kept out a book's chapter title,
+  a report's title and a textbook's section title over its figure. A line centred on its page and
+  half as large again as the body, or more, is now a heading whatever follows it. On
+  opendataloader-bench, with the leading fix above, headings rise from 0.522 to 0.599 and the
+  overall score from 0.755 to 0.776. In the corpus, `mupdf_explored`'s title and part pages and
+  `exportPDFInput`'s cover title become headings, and nothing else changes. ADR 0058.
+
 ### Fixed — 2026-10-28 (paragraphs on a loose leading)
 
 - **A page set on a loose leading keeps its paragraphs.** The extractor broke a paragraph wherever
