@@ -5,6 +5,16 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-28 (paragraphs on a loose leading)
+
+- **A page set on a loose leading keeps its paragraphs.** The extractor broke a paragraph wherever
+  a line stepped down more than 1.5 times its type size, and a page that sets 9-point type 14
+  points apart steps that far at every line: on 55 of opendataloader-bench's 116 text pages, every
+  line came out as a paragraph of its own. A step the page itself takes from line to line now
+  continues a paragraph, after a full prose line and in a size the page sets no tighter; a larger
+  step still breaks it, and a list's items and a table's rows are read as before. 29 of the 55
+  pages read as paragraphs again, and no document in the corpus changes. ADR 0057.
+
 ### Fixed — 2026-10-28 (Word's tables without tags)
 
 - **A Word table ruled only under its header converts as a table when the PDF has no tags.**

@@ -841,6 +841,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 	var shape indent
 	cols := r.columns(opt)
 	drawn := drawsWrapSpaces(r.lines)
+	pitch := linePitches(r.lines, r.tol)
 
 	for i := range r.lines {
 		ln := &r.lines[i]
@@ -867,7 +868,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 			// The column break fell inside a paragraph. The block runs on, measured from
 			// here against the new column's margin.
 			shape = shape.atColumnTop(ln)
-		case cur == nil || (!ln.joinPrev && (!continues(prev, ln, r.tol) || shape.startsParagraph(ln, r.tol))):
+		case cur == nil || (!ln.joinPrev && (!continues(prev, ln, r.tol, pitch) || shape.startsParagraph(ln, r.tol))):
 			out = append(out, doc.Block{Role: roleOf(art)})
 			cur = &out[len(out)-1]
 			if top && cols.flush(ln, i, r.tol) {
@@ -915,7 +916,7 @@ func lineIsArtifact(ln *line) bool {
 
 // continues reports whether ln belongs to the same paragraph as the line before
 // it.
-func continues(prev, ln *line, t geom.Tolerance) bool {
+func continues(prev, ln *line, t geom.Tolerance, pitch leading) bool {
 	if prev == nil || prev.orient != ln.orient {
 		return false
 	}
@@ -929,7 +930,8 @@ func continues(prev, ln *line, t geom.Tolerance) bool {
 	if step < 0 {
 		return false
 	}
-	if step > t.ParaFrac*h {
+	// A step the page takes from line to line continues a paragraph however loose the leading.
+	if step > t.ParaFrac*h && !pitch.onPitch(prev, ln, step) {
 		return false
 	}
 	if sameElement(prev, ln) {
