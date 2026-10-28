@@ -1,0 +1,34 @@
+layout/headed_test.go
+  s_5cd1b28ed520c1::t_a8947073b3c6e9 261-262,267-284,286,292-297
+  s_5cd1b28ed520c1::t_5f24a9986a4f8f 263,265-266,285,287-291
+  s_5cd1b28ed520c1::t_eca1bcbddb9721 264
+layout/layout.go
+  s_5cd1b28ed520c1::t_4eb58fa180b9f7 401-403
+  s_5cd1b28ed520c1::t_d58ba234725de6 335
+  s_5cd1b28ed520c1::t_791907ea7cfd5c 89,195,270,274,336-341,398,404-407
+  s_5cd1b28ed520c1::t_6c745b66d471aa 246,334,399-400
+  s_5cd1b28ed520c1::t_2ca31726293029 408-409
+docs/adr/0058-a-centred-title-is-a-heading.md
+  s_5cd1b28ed520c1::t_3b18bde407dec1 39
+  s_5cd1b28ed520c1::t_11507c7c6dec60 1-10,12-35,40-44
+  s_5cd1b28ed520c1::t_c7d9b4bb98e402 11
+  s_5cd1b28ed520c1::t_cf25175baff18d 36-38
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_4f4595fff4c654 8-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "37e0db46f974acc6b3cc96df66701e2bb4a2330c",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
