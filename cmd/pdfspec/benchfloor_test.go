@@ -53,6 +53,7 @@ var benchFloors = map[string]benchFigures{
 	"type3-unmapped":           {cer: 1.000, recall: 0.000, precision: 0.000, order: 1.000, blocks: 0.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"type3-words":              {cer: 0.057, recall: 0.949, precision: 0.984, order: 1.000, blocks: 0.667, headings: 1.000, tables: 1.000, style: 1.000},
 	"unnumbered-headings":      {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
+	"word-report-untagged":     {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"word-report":              {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 1.000, tables: 1.000, style: 1.000},
 	"xelatex-article":          {cer: 0.000, recall: 1.000, precision: 1.000, order: 1.000, blocks: 1.000, headings: 0.800, tables: 1.000, style: 0.800},
 }

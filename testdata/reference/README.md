@@ -163,6 +163,7 @@ work.
 | `chrome-article.html` | The same article printed by Chrome | yes |
 | `chrome-report.html` | A web report printed by Chrome: inline code, wrapped labels, an unmarked image, ligatures | yes |
 | `word-report.ps1` | A report exported by Word: a table ruled under its header, words broken in narrow cells, a code sample | yes |
+| `word-report.ps1 -Untagged` | The same report exported with no tags, `word-report-untagged.pdf`, for the layout path | no |
 | `scan-*.tex` | Four of the above as degraded 200 dpi scans, with no text | no |
 
 Each has a `.pdf` built from it and a `.gold.md` holding the expected Markdown.
@@ -181,6 +182,7 @@ xelatex  -interaction=nonstopmode xelatex-article.tex
 chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-article.pdf chrome-article.html
 chrome --headless --no-pdf-header-footer --print-to-pdf=chrome-report.pdf chrome-report.html
 pwsh -File word-report.ps1                           # needs Word, on Windows
+pwsh -File word-report.ps1 -Untagged                 # word-report-untagged.pdf
 ```
 
 `table-across-pages.tex` needs two `pdflatex` runs, as every `longtable` does.

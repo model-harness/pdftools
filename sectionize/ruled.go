@@ -5,15 +5,15 @@ import (
 	"strings"
 
 	"github.com/model-harness/pdftools/doc"
+	"github.com/model-harness/pdftools/extract"
 	"github.com/model-harness/pdftools/geom"
-	"github.com/model-harness/pdftools/layout"
 )
 
 // ruledTables reads the tables a tree declared as bare paragraphs, where the page rules their
 // header cell by cell, and marks the header row of a declared table its page rules so (ADR 0055).
 //
 // Word exports a table whose structure it has lost as one P per cell, in row order, and it rules
-// the header as each cell's own bottom border: layout.RuledHeaders reads that as the columns. So a
+// the header as each cell's own bottom border: extract.RuledHeaders reads that as the columns. So a
 // run of paragraphs that sits in those columns, the header above the rule and the rows below it,
 // is the table the page draws. A new row starts wherever a cell's column does not advance past the
 // one before it, since a row's cells come in order and a row's first cell is left of its last. A
@@ -23,9 +23,9 @@ import (
 // row is the producer's statement that it is one, unless the table is ruled under every row, a
 // grid, where the rule says nothing about the first.
 func ruledTables(out *doc.Outline, d *doc.Document) {
-	heads := map[int][]layout.RuledHeader{}
+	heads := map[int][]extract.RuledHeader{}
 	for pi := range d.Pages {
-		if hs := layout.RuledHeaders(&d.Pages[pi]); len(hs) > 0 {
+		if hs := extract.RuledHeaders(d.Pages[pi].Rules); len(hs) > 0 {
 			heads[d.Pages[pi].Number] = hs
 		}
 	}
@@ -63,7 +63,7 @@ func lastTable(out *doc.Outline) int {
 }
 
 // tablesIn reads the ruled tables among blocks and returns blocks with them made cells.
-func tablesIn(blocks []doc.Block, heads map[int][]layout.RuledHeader, next *int) []doc.Block {
+func tablesIn(blocks []doc.Block, heads map[int][]extract.RuledHeader, next *int) []doc.Block {
 	drop := map[int]bool{}
 	for i := 0; i < len(blocks); {
 		end, ok := ruledTable(blocks, i, heads, *next, drop)
@@ -97,7 +97,7 @@ func tablesIn(blocks []doc.Block, heads map[int][]layout.RuledHeader, next *int)
 // header: a cell's padding sets a table's row pitch, and a paragraph after a table sits further
 // off. The table runs on past a page break where the next page's first blocks are cells under a
 // ruled header with the same columns, which is Word's repeated header row.
-func ruledTable(blocks []doc.Block, i int, heads map[int][]layout.RuledHeader, table int, drop map[int]bool) (int, bool) {
+func ruledTable(blocks []doc.Block, i int, heads map[int][]extract.RuledHeader, table int, drop map[int]bool) (int, bool) {
 	page := blockPage(&blocks[i])
 	for _, h := range heads[page] {
 		j, prev := i, -1
@@ -168,7 +168,7 @@ func ruledTable(blocks []doc.Block, i int, heads map[int][]layout.RuledHeader, t
 
 // continued is the ruled header among hs with h's columns, a table's header repeated on its next
 // page.
-func continued(h layout.RuledHeader, hs []layout.RuledHeader) (layout.RuledHeader, bool) {
+func continued(h extract.RuledHeader, hs []extract.RuledHeader) (extract.RuledHeader, bool) {
 	for _, c := range hs {
 		if len(c.Cols) != len(h.Cols) {
 			continue
@@ -184,7 +184,7 @@ func continued(h layout.RuledHeader, hs []layout.RuledHeader) (layout.RuledHeade
 			return c, true
 		}
 	}
-	return layout.RuledHeader{}, false
+	return extract.RuledHeader{}, false
 }
 
 // lowest is the lowest bottom edge among blocks.
@@ -199,7 +199,7 @@ func lowest(blocks []doc.Block) float64 {
 // headerCell reports whether b is a header cell over h: a paragraph on h's page in one of its
 // columns, its last line just above the rule, within a line of it. Its marked content may run on
 // to later pages, where Word repeats a header row, as long as it says the same there.
-func headerCell(b *doc.Block, page int, h layout.RuledHeader) bool {
+func headerCell(b *doc.Block, page int, h extract.RuledHeader) bool {
 	if b.Role != doc.RoleParagraph || b.Cell != nil || b.Box.IsZero() || columnOf(b, h) < 0 || blockPage(b) != page {
 		return false
 	}
@@ -217,7 +217,7 @@ func headerCell(b *doc.Block, page int, h layout.RuledHeader) bool {
 // its columns, below the rule. A row that breaks across a page break is a cell whose marked content
 // runs on to the next page, which continues the table under a header with h's columns (continued),
 // in the same column there.
-func bodyCell(b *doc.Block, page int, h layout.RuledHeader, heads map[int][]layout.RuledHeader) bool {
+func bodyCell(b *doc.Block, page int, h extract.RuledHeader, heads map[int][]extract.RuledHeader) bool {
 	if b.Role != doc.RoleParagraph || b.Cell != nil || b.Box.IsZero() || blockPage(b) != page {
 		return false
 	}
@@ -252,7 +252,7 @@ func bodyCell(b *doc.Block, page int, h layout.RuledHeader, heads map[int][]layo
 const ruledSlack = 1.0
 
 // columnOf is the column of h whose border b's box lies within, or -1.
-func columnOf(b *doc.Block, h layout.RuledHeader) int {
+func columnOf(b *doc.Block, h extract.RuledHeader) int {
 	for c, col := range h.Cols {
 		if b.Box.X0 >= col[0]-ruledSlack && b.Box.X1 <= col[1]+ruledSlack {
 			return c
@@ -310,7 +310,7 @@ func blockSize(b *doc.Block) float64 {
 
 // markHeaders marks as its header the first row of each table among blocks that declares no
 // header there, where its page rules that row cell by cell and no row below it.
-func markHeaders(blocks []doc.Block, heads map[int][]layout.RuledHeader) {
+func markHeaders(blocks []doc.Block, heads map[int][]extract.RuledHeader) {
 	for i := 0; i < len(blocks); {
 		c := blocks[i].Cell
 		if c == nil {
@@ -327,7 +327,7 @@ func markHeaders(blocks []doc.Block, heads map[int][]layout.RuledHeader) {
 }
 
 // markHeader marks row 0 of one table's cells as its header, by markHeaders' rule.
-func markHeader(cells []doc.Block, heads map[int][]layout.RuledHeader) {
+func markHeader(cells []doc.Block, heads map[int][]extract.RuledHeader) {
 	var first, rest []*doc.Block
 	for k := range cells {
 		if cells[k].Cell.Row == 0 {
@@ -343,7 +343,7 @@ func markHeader(cells []doc.Block, heads map[int][]layout.RuledHeader) {
 		return
 	}
 	page := blockPage(first[0])
-	var under *layout.RuledHeader
+	var under *extract.RuledHeader
 	for _, h := range heads[page] {
 		over := true
 		for _, b := range first {

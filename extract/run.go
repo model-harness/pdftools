@@ -828,6 +828,7 @@ func (r *run) blocks(opt Options) []doc.Block {
 		return nil
 	}
 	r.splitAtRules()
+	r.splitAtHeaders()
 	r.strikeThrough()
 	r.linkWords()
 	r.sortLines()

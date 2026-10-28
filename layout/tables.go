@@ -66,9 +66,11 @@ func Tables(d *doc.Document, opt Options) TableStats {
 	n := 0
 	for pi := range d.Pages {
 		p := &d.Pages[pi]
-		// Framed grids first, read from their rules, and then the band reader over what they
-		// left: see lattice.
-		latticeTables(p, &n, &st)
+		// Framed grids first, read from their rules, then tables ruled only under their header,
+		// and then the band reader over what they left: see lattice and ruledTables.
+		read, taken := latticeTables(p, &n, &st)
+		read = append(read, ruledTables(p, &n, &st, taken)...)
+		placeTables(p, read, taken)
 		verts := verticals(append(append([]doc.Rule(nil), p.Rules...), p.Gutters...))
 		if len(verts) == 0 {
 			continue

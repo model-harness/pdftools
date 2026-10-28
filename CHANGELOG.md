@@ -5,6 +5,17 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+### Fixed — 2026-10-28 (Word's tables without tags)
+
+- **A Word table ruled only under its header converts as a table when the PDF has no tags.**
+  ADR 0055 read such a table through the structure tree; exported without one, it came out as
+  loose paragraphs, its header and a row's short cells run together. The extractor now splits a
+  table's lines at the columns its header rule draws, and the layout path reads the table from
+  them: a wrapped cell as one cell, a row where cells' tops line up, and the table ended where a
+  row would sit further off or a paragraph crosses its columns. New fixture
+  `word-report-untagged`, built by `word-report.ps1 -Untagged`, scoring 1.000 on every
+  dimension where v1.2.1 scored 0.000 on tables. ADR 0056.
+
 ## [1.2.1] — 2026-10-27
 
 Pictures and charts are described when inferd is busy, rather than left as `[image]`.

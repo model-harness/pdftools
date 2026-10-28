@@ -5,9 +5,10 @@
 # ours. Run from this directory on Windows with Word installed:
 #
 #   pwsh -File word-report.ps1
+#   pwsh -File word-report.ps1 -Untagged    # word-report-untagged.pdf: the same, with no tags
 #
 # The PDF depends on Word's version; the one committed is what Word 16.0 wrote.
-param([string]$Out = $PSScriptRoot)
+param([string]$Out = $PSScriptRoot, [switch]$Untagged)
 $ErrorActionPreference = 'Stop'
 
 $word = New-Object -ComObject Word.Application
@@ -70,7 +71,9 @@ try {
     # Word signs a document with the name of whoever runs it; the fixture is signed by the repo.
     $author = [System.__ComObject].InvokeMember('Item', 'GetProperty', $null, $d.BuiltInDocumentProperties, @('Author'))
     [System.__ComObject].InvokeMember('Value', 'SetProperty', $null, $author, @('pdftools')) | Out-Null
-    $d.ExportAsFixedFormat((Join-Path $Out 'word-report.pdf'), 17, $false, 0, 0, 1, 1, 0, $true, $true, 1, $true, $true, $false)
+    # Untagged, the export writes no structure tree: the layout path reads the same page.
+    $name = if ($Untagged) { 'word-report-untagged.pdf' } else { 'word-report.pdf' }
+    $d.ExportAsFixedFormat((Join-Path $Out $name), 17, $false, 0, 0, 1, 1, 0, $true, $true, 1, -not $Untagged, $true, $false)
     $d.Close($false)
 }
 finally {

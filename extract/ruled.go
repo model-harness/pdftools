@@ -1,8 +1,9 @@
-package layout
+package extract
 
 import (
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/model-harness/pdftools/doc"
 )
@@ -29,15 +30,15 @@ const (
 	abut = 0.5
 )
 
-// RuledHeaders returns the page's ruled headers, top down.
+// RuledHeaders returns the ruled headers among a page's rules, top down.
 //
 // Only a rule drawn as two or more cells' borders with a joint between each, the evidence a
 // producer gives of a table's columns where it draws no vertical rules. A rule drawn whole is
 // prose's, a page's or a caption's, and two segments that touch with no joint are a rule drawn
 // in two strokes; segments that overlap, as a shaded box's lines do, are not borders at all.
-func RuledHeaders(p *doc.Page) []RuledHeader {
+func RuledHeaders(rules []doc.Rule) []RuledHeader {
 	var hs []doc.Rule
-	for _, r := range p.Rules {
+	for _, r := range rules {
 		if !r.Vertical && r.To > r.From {
 			hs = append(hs, r)
 		}
@@ -113,4 +114,95 @@ func headersAt(rules []doc.Rule, y float64) []RuledHeader {
 	}
 	flush()
 	return out
+}
+
+// splitAtHeaders splits the lines of each table whose header the page rules cell by cell at its
+// columns' borders, as splitAtRules splits a line at a drawn vertical (ADR 0056). Word rules such
+// a table only under its header, and sets the cells of a line apart by position alone, so a
+// header's names, or a row's short cells, arrive as one fragment with a gap at each border.
+//
+// The table is the header's line, the nearest above the rule within two lines, and the lines below
+// it that its columns hold: each piece a line splits into lies within one column's border. The
+// first line over the columns that they do not hold, as a paragraph across the page does, ends
+// the table, and nothing below it is split. A header Word wraps keeps its upper lines whole.
+func (r *run) splitAtHeaders() {
+	for _, h := range RuledHeaders(r.rules) {
+		r.splitUnder(h)
+	}
+}
+
+// headerSlack is how far a cell's ink may reach past its column's border, in points.
+const headerSlack = 1.0
+
+// headerReach is how far above its rule a header's baseline can be, in its lines: Word's cell
+// padding sets it more than a line above, its foot 11.8 points over the rule in word-report.
+const headerReach = 2.0
+
+// splitUnder splits the table under one ruled header.
+func (r *run) splitUnder(h RuledHeader) {
+	lo, hi := h.Cols[0][0], h.Cols[len(h.Cols)-1][1]
+	var over []int
+	for i := range r.lines {
+		ln := &r.lines[i]
+		if ln.orient != 0 || len(ln.frags) == 0 {
+			continue
+		}
+		if a0, a1 := ln.frags[0].along0, ln.frags[len(ln.frags)-1].along1; a1 > lo && a0 < hi {
+			over = append(over, i)
+		}
+	}
+	sort.SliceStable(over, func(a, b int) bool { return r.lines[over[a]].cross > r.lines[over[b]].cross })
+	// The header is the nearest line above the rule: Word's cell padding sets it a line or so
+	// above, and a caption sits above that.
+	head := -1
+	for k, i := range over {
+		if ln := &r.lines[i]; ln.cross >= h.Y && ln.cross-h.Y <= headerReach*ln.height {
+			head = k
+		}
+	}
+	if head < 0 {
+		return
+	}
+	// The header is the last line at or above the rule within reach, so every line after it is
+	// below the rule.
+	for _, i := range over[head:] {
+		ln := &r.lines[i]
+		pieces, ok := h.cells(ln)
+		if !ok {
+			return
+		}
+		ln.frags = pieces
+	}
+}
+
+// cells splits ln at h's column borders, and reports whether each piece lies within a column.
+func (h RuledHeader) cells(ln *line) ([]frag, bool) {
+	var borders []doc.Rule
+	for k := 1; k < len(h.Cols); k++ {
+		borders = append(borders, doc.Rule{Vertical: true, Pos: (h.Cols[k-1][1] + h.Cols[k][0]) / 2,
+			From: ln.cross, To: ln.cross + ln.height})
+	}
+	var out []frag
+	for j := range ln.frags {
+		out = append(out, splitFrag(&ln.frags[j], borders, ln.cross)...)
+	}
+	for j := range out {
+		if !h.holds(&out[j]) {
+			return nil, false
+		}
+	}
+	return out, true
+}
+
+// holds reports whether f's ink lies within one of h's columns.
+func (h RuledHeader) holds(f *frag) bool {
+	if strings.TrimSpace(string(f.text)) == "" {
+		return true
+	}
+	for _, c := range h.Cols {
+		if f.along0 >= c[0]-headerSlack && f.along1 <= c[1]+headerSlack {
+			return true
+		}
+	}
+	return false
 }

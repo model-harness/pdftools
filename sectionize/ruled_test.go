@@ -11,7 +11,7 @@ import (
 )
 
 // headerRule is Word's rule under a header row of three cells at y: each cell's bottom border
-// and a quarter-point joint where two meet, as layout.RuledHeaders reads it.
+// and a quarter-point joint where two meet, as extract.RuledHeaders reads it.
 func headerRule(y float64) []doc.Rule {
 	h := func(x0, x1 float64) doc.Rule { return doc.Rule{Pos: y, From: x0, To: x1} }
 	return []doc.Rule{h(66, 140), h(140, 140.25), h(140.25, 244), h(244, 244.25), h(244.25, 545)}

@@ -367,15 +367,16 @@ func latticeCell(p *doc.Page, refs []spanRef, table, row, col int) doc.Block {
 	return out
 }
 
-// latticeTables replaces each framed table on page p with its cells, numbering tables from
-// *n, and leaves every span it did not take where it was. A table's cells stand where its
-// first span stood, and what a block held before and after its table spans stays before and
-// after them.
-func latticeTables(p *doc.Page, n *int, st *TableStats) {
-	type made struct {
-		at    spanRef
-		cells []doc.Block
-	}
+// made is a table read from a page's spans: its cells, and the first span it took, where its
+// cells stand.
+type made struct {
+	at    spanRef
+	cells []doc.Block
+}
+
+// latticeTables reads each framed table on page p into its cells, numbering tables from *n, and
+// returns them with the spans they took.
+func latticeTables(p *doc.Page, n *int, st *TableStats) ([]made, map[spanRef]bool) {
 	var tables []made
 	taken := map[spanRef]bool{}
 	for _, l := range lattices(p.Rules) {
@@ -400,6 +401,13 @@ func latticeTables(p *doc.Page, n *int, st *TableStats) {
 		}
 		tables = append(tables, m)
 	}
+	return tables, taken
+}
+
+// placeTables replaces the spans tables took on page p with their cells, and leaves every span
+// they did not take where it was. A table's cells stand where its first span stood, and what a
+// block held before and after its table spans stays before and after them.
+func placeTables(p *doc.Page, tables []made, taken map[spanRef]bool) {
 	if len(tables) == 0 {
 		return
 	}
