@@ -1,0 +1,58 @@
+docs/adr/0057-a-page-s-own-line-pitch-continues-a-paragraph.md
+  s_5cd1b28ed520c1::t_cf25175baff18d 40-46
+  s_5cd1b28ed520c1::t_11507c7c6dec60 1-10,14-39,48-53
+  s_5cd1b28ed520c1::t_3b18bde407dec1 47
+  s_5cd1b28ed520c1::t_c7d9b4bb98e402 11-13
+extract/leading.go
+  s_5cd1b28ed520c1::t_5c602dc7bc735b 71,75-76
+  s_5cd1b28ed520c1::t_7b1482acb94451 26-27,141,143-154
+  s_5cd1b28ed520c1::t_3a97bfc124e959 5
+  s_5cd1b28ed520c1::t_08a7f2056f3d50 1-2,6,11-16,31-40,48-49,66-69,81-85,87-96,102-113,120,124-125,127-129,131-132,155
+  s_5cd1b28ed520c1::t_ea8630b9a74fff 22-25,46-47,140
+  s_5cd1b28ed520c1::t_d58ba234725de6 10
+  s_5cd1b28ed520c1::t_5f758ab8472261 17,41-45,50-65,70,73-74,77-80,130,133-139
+  s_5cd1b28ed520c1::t_9bab779fecb352 114-119,121-123
+  s_5cd1b28ed520c1::t_66f5b0b90cfa4e 28-30,142
+  s_5cd1b28ed520c1::t_4eb58fa180b9f7 97-98
+  s_5cd1b28ed520c1::t_82cc3d252b629d 3-4,7-9,18-21,72,86,99-101,126
+extract/leading_test.go
+  s_5cd1b28ed520c1::t_71670963c7834d 42-47,81
+  s_5cd1b28ed520c1::t_08cb890345d517 73-75
+  s_5cd1b28ed520c1::t_9c9332613d0bcd 10-16,18-19,22-23,26,29-33,37-39,51-53,55-59,72,77-79
+  s_5cd1b28ed520c1::t_d58ba234725de6 27
+  s_5cd1b28ed520c1::t_492ac10e263d2e 8-9,20-21,34,36,60,62-71,76
+  s_5cd1b28ed520c1::t_3d23b9fda2af53 17
+  s_5cd1b28ed520c1::t_5c602dc7bc735b 35,61
+  s_5cd1b28ed520c1::t_920025bbc18eea 1-7,24-25,28,40-41,48-49,80,82
+  s_5cd1b28ed520c1::t_d90fcc1a2a2586 50,54
+extract/run.go
+  s_5cd1b28ed520c1::t_83c5a2d4864938 871,933
+  s_5cd1b28ed520c1::t_5f758ab8472261 919,934
+  s_5cd1b28ed520c1::t_82cc3d252b629d 844
+CHANGELOG.md
+  s_e8f623de6b146b::t_ebdea7f42fccf8 8-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "a8dce9fe8b490101867e375539b02c2d8a797ea1",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    },
+    "s_e8f623de6b146b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54d70c63-7337-4d73-82de-11aa373c167b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
