@@ -1,0 +1,29 @@
+site/index.html
+  s_5cd1b28ed520c1::t_3c81c1bacf894c 158,243
+skills/codex/pdfspec/SKILL.md
+  s_5cd1b28ed520c1::t_3c81c1bacf894c 40
+skills/generic/pdfspec.md
+  s_5cd1b28ed520c1::t_3c81c1bacf894c 35
+README.md
+  s_5cd1b28ed520c1::t_3c81c1bacf894c 17
+CHANGELOG.md
+  s_5cd1b28ed520c1::t_3c81c1bacf894c 8-12,4254-4255
+skills/claude/pdfspec/SKILL.md
+  s_5cd1b28ed520c1::t_3c81c1bacf894c 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "2.0.0",
+  "base_commit_sha": "f0609bb119c5517b4078fd6a2ad73c944bc5e5ee",
+  "prompts": {},
+  "sessions": {
+    "s_5cd1b28ed520c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "82e2267c-23d5-4c0c-8d96-7d91a00e70c4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "3rg0n <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
