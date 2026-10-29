@@ -5,6 +5,11 @@ All notable changes to this project are documented here, following
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-29
+
+Word tables convert without tags, pages set on a loose leading keep their paragraphs, and titles
+centred on the page are headings. On opendataloader-bench, headings rise from 0.522 to 0.599.
+
 ### Fixed — 2026-10-28 (centred titles)
 
 - **A title set large and centred on its page is a heading.** A heading had to start where the
@@ -4246,7 +4251,8 @@ tag rather than `@latest` — the API is not stable before 1.0.
   unexplained gap. Fixed by composing `Tm` with the CTM. Non-space character counts were
   unchanged afterwards, which is what confirms it removed only the spurious spaces.
 
-[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/model-harness/pdftools/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/model-harness/pdftools/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/model-harness/pdftools/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/model-harness/pdftools/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/model-harness/pdftools/compare/v1.1.0...v1.1.1

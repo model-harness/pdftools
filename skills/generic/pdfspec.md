@@ -32,7 +32,7 @@ irm https://raw.githubusercontent.com/model-harness/pdftools/main/install.ps1 | 
 With Go installed, this works too:
 
 ```sh
-go install github.com/model-harness/pdftools/cmd/pdfspec@v1.2.1
+go install github.com/model-harness/pdftools/cmd/pdfspec@v1.3.0
 ```
 
 Ask the user before installing anything, and if you can't install it, ask before falling back to
